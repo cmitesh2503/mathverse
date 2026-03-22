@@ -1,5 +1,8 @@
 from fastapi import APIRouter
 import uuid
+from backend.app.tutor_brain.tutor_engine import TutorEngine
+
+tutor_engine = TutorEngine()
 
 router = APIRouter(prefix="/session", tags=["Session"])
 
@@ -22,7 +25,9 @@ def send_message(data: dict):
         return {"error": "Invalid session"}
 
     sessions[session_id]["messages"].append(message)
+    
+    response = tutor_engine.process(session_id, message)
 
     return {
-        "response": "Hello, I am your MathVerse tutor"
+        "response": response
     }
