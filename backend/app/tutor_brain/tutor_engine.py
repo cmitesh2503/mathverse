@@ -1,6 +1,9 @@
 from backend.app.tutor_brain.lesson_state import LessonState
 from backend.app.services.ai_gateway import generate_response
 from backend.app.services.retrieval_service import retrieve_context
+from backend.app.services.question_service import generate_question
+from backend.app.services.evaluation_service import evaluate_answer
+from backend.app.services.hint_service import get_hint
 
 class TutorEngine:
     def __init__(self):
@@ -39,33 +42,31 @@ class TutorEngine:
 
         # STEP 2: QUESTION
         elif state.step == "QUESTION":
-            
-                answer = int(message)
 
-                if answer == 2:
-                    state.step = "FEEDBACK"
-                    return "Correct! x = 2 🎉"
+            # generate question if not exists
+            if not hasattr(state, "current_question"):
+                q = generate_question()
+                state.current_question = q
+                state.hint_level = 1
 
-                else:
-                    context = retrieve_context("linear_equations")
+                return q["question"]
 
-                    prompt = f"""
-                    Use NCERT content below:
+            # evaluate answer
+            is_correct = evaluate_answer(message, state.current_question["answer"])
 
-                    {context}
+            if is_correct:
+                state.step = "FEEDBACK"
+                return "Correct! x = 2 🎉"
 
-                    Student answered {answer}.
+            else:
+                hint = get_hint(state.hint_level)
+                state.hint_level += 1
 
-                    Explain step-by-step using NCERT method.
-                    """
-
-                    response = generate_response(prompt)
-
-                    if not response:
-                        return "No problem 😊 Let's solve it together.\n\nStep 1: Subtract 3 from both sides.\nWhat do you get?"
-                    return response
+                return f"Not quite 😊\nHint: {hint}"
 
         # STEP 3: FEEDBACK
         elif state.step == "FEEDBACK":
-               state.step = "QUESTION"
-        return "Good! Now try again: What is x in 2x + 3 = 7?"
+            state.step = "QUESTION"
+            del state.current_question   # reset
+
+            return "Great! Next question coming..."
