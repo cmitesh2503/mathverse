@@ -1,0 +1,12 @@
+[
+  {
+    "id": "1",
+    "topic": "linear_equations",
+    "text": "A linear equation in one variable is an equation of the form ax + b = 0 where a ≠ 0."
+  },
+  {
+    "id": "2",
+    "topic": "linear_equations",
+    "text": "To solve equation 2x + 3 = 7, subtract 3 from both sides to get 2x = 4, then divide by 2 to get x = 2."
+  }
+]
