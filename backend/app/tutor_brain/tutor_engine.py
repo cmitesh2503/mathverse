@@ -44,14 +44,38 @@ class TutorEngine:
         # STEP 2: QUESTION
         elif state.step == "QUESTION":
 
-            # generate question if not exists
-            if not hasattr(state, "current_question"):
-                q = generate_question()
-                state.current_question = q
-                state.hint_level = 1
+            # 👇 handle greeting / text input
+            if message.lower() in ["hi", "hello", "hey"]:
+                return "We are solving: 2x + 3 = 7 😊\nWhat is x?"
 
-                return q["question"]
+            try:
+                answer = int(message)
 
+                if answer == 2:
+                    state.step = "FEEDBACK"
+                    return "Correct! x = 2 🎉"
+
+                else:
+                    context = retrieve_context("linear_equations")
+
+                    prompt = f"""
+                    Use NCERT content:
+
+                    {context}
+
+                    Student answered {answer}.
+                    Explain step-by-step.
+                    """
+
+                    response = generate_response(prompt)
+
+                    if not response:
+                        return "Not quite 😊\n\n2x + 3 = 7 → subtract 3 → 2x = 4\nNow what is x?"
+
+                    return response
+            except:
+                    return "No problem 😊\n\nStep 1: Subtract 3 from both sides.\n2x = 4\nNow what is x?"
+   
             # evaluate answer
             is_correct = evaluate_answer(message, state.current_question["answer"])
 
@@ -69,6 +93,8 @@ class TutorEngine:
         # STEP 3: FEEDBACK
         elif state.step == "FEEDBACK":
             state.step = "QUESTION"
-            del state.current_question   # reset
+            if hasattr(state, "current_question"):
+                del state.current_question
 
+            state.hint_level = 1
             return "Great! Next question coming..."

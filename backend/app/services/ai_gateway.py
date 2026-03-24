@@ -4,7 +4,7 @@ from backend.app.core.config import GEMINI_API_KEY
 print("API KEY:", GEMINI_API_KEY)  # Debug print to verify API key is loaded
 genai.configure(api_key=GEMINI_API_KEY)
 
-model = genai.GenerativeModel("models/gemini-pro")  # safer model
+model = genai.GenerativeModel("models/gemini-1.5-flash")  # safer model
 
 
 def generate_response(prompt: str) -> str:
@@ -17,9 +17,9 @@ def generate_response(prompt: str) -> str:
         print("RAW RESPONSE:", response)
         
         if hasattr(response, "text") and response.text:
-            return response.text
+            return response.text.strip()
 
-        return "Let me explain step by step."
+        return None
         
     except Exception as e:
         print("Gemini API Error:", e)
