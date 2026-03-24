@@ -4,6 +4,7 @@ from backend.app.services.retrieval_service import retrieve_context
 from backend.app.services.question_service import generate_question
 from backend.app.services.evaluation_service import evaluate_answer
 from backend.app.services.hint_service import get_hint
+from backend.app.services.progress_service import save_progress
 
 class TutorEngine:
     def __init__(self):
@@ -54,16 +55,17 @@ class TutorEngine:
             # evaluate answer
             is_correct = evaluate_answer(message, state.current_question["answer"])
 
+            # 🔥 SAVE PROGRESS
+            save_progress(
+                student_id=session_id,
+                question=state.current_question["question"],
+                correct=is_correct,
+                hints_used=state.hint_level - 1
+            )
+
             if is_correct:
                 state.step = "FEEDBACK"
                 return "Correct! x = 2 🎉"
-
-            else:
-                hint = get_hint(state.hint_level)
-                state.hint_level += 1
-
-                return f"Not quite 😊\nHint: {hint}"
-
         # STEP 3: FEEDBACK
         elif state.step == "FEEDBACK":
             state.step = "QUESTION"
