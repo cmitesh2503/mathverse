@@ -1,5 +1,7 @@
 import google.generativeai as genai
 from backend.app.core.config import GEMINI_API_KEY
+from backend.app.cache.cache_manager import get_cache, set_cache
+from backend.app.guardrails.ai_guardrail import validate_response
 
 print("API KEY:", GEMINI_API_KEY)  # Debug print to verify API key is loaded
 genai.configure(api_key=GEMINI_API_KEY)
@@ -8,31 +10,33 @@ model = genai.GenerativeModel("models/gemini-1.5-flash")  # safer model
 
 
 def generate_response(prompt: str) -> str:
-    try:
-        print("PROMPT:", prompt)  # Debug print to verify prompt content
+    
+    def generate_response(prompt: str) -> str:
 
-        response = model.generate_content(prompt)
-        #return str(response)
+        print("AI CALL START")
+        print("PROMPT:", prompt)
 
-        print("RAW RESPONSE:", response)
-        
-        if hasattr(response, "text") and response.text:
-            return response.text.strip()
+        cached = get_cache(prompt)
+        if cached:
+            print("CACHE HIT")
+            return cached
 
-        return None
-        
-    except Exception as e:
-        print("Gemini API Error:", e)
-        return None
+        try:
+            response = model.generate_content(prompt)
 
-        # SAFEST extraction
-        if response.candidates:
-            parts = response.candidates[0].content.parts
-            if parts and hasattr(parts[0], "text"):
-                return parts[0].text
+            if response and hasattr(response, "text") and response.text:
+                text = response.text.strip()
 
-        return "Let me explain step by step."
+                text = validate_response(text)
 
-    except Exception as e:
-        print("Gemini Error:", e)
-        return "Something went wrong. Please try again."
+                set_cache(prompt, text)
+
+                print("RAW RESPONSE:", response)
+
+                return text
+
+            return None
+
+        except Exception as e:
+            print("Gemini API Error:", e)
+            return None

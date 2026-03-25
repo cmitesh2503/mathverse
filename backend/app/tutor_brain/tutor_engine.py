@@ -19,12 +19,16 @@ class TutorEngine:
 
         state = self.sessions[session_id]
         print("STATE:", state.step)
+        print("SESSION:", session_id)
+        print("MESSAGE:", message)
 
         # STEP 1: INTRO
         if state.step == "INTRO":
 
             context = retrieve_context("linear_equations")
-
+            
+            
+            
             prompt = f"""
             You are a CBSE Class 10 math teacher.
 
@@ -34,17 +38,20 @@ class TutorEngine:
 
             Explain simply and ask one question.
             """
-
+            print("PROMPT:", prompt)
             response = generate_response(prompt)
 
             state.step = "QUESTION"   # 🔥 IMPORTANT
-
+            
+            print("AI RESPONSE:", response)
             return response or "Let's start learning!"
 
         # STEP 2: QUESTION
         elif state.step == "QUESTION":
 
-            # 👇 handle greeting / text input
+            print("QUESTION STEP")
+            print("USER ANSWER:", message)
+
             if message.lower() in ["hi", "hello", "hey"]:
                 return "We are solving: 2x + 3 = 7 😊\nWhat is x?"
 
@@ -67,17 +74,21 @@ class TutorEngine:
                     Explain step-by-step.
                     """
 
+                    print("PROMPT:", prompt)
+
                     response = generate_response(prompt)
 
+                    print("AI RESPONSE:", response)
+
                     if not response:
-                        return "Not quite 😊\n\n2x + 3 = 7 → subtract 3 → 2x = 4\nNow what is x?"
+                        return "Let's solve this step by step 😊"
 
                     return response
+
             except:
-                    return "No problem 😊\n\nStep 1: Subtract 3 from both sides.\n2x = 4\nNow what is x?"
+                return "No problem 😊\n\nStep 1: Subtract 3 from both sides.\n2x = 4\nNow what is x?"
    
-            # evaluate answer
-            is_correct = evaluate_answer(message, state.current_question["answer"])
+            
 
             # 🔥 SAVE PROGRESS
             save_progress(
