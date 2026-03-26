@@ -109,3 +109,10 @@ class TutorEngine:
 
             state.hint_level = 1
             return "Great! Next question coming..."
+        
+    def build_prompt(self, session_id: str, message: str) -> str:
+        # reuse your internal logic
+        # same logic as process(), but STOP before LLM call
+        
+        prompt = ...  # however you're constructing it today
+        return prompt
