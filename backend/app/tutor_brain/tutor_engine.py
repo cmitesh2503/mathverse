@@ -114,5 +114,6 @@ class TutorEngine:
         # reuse your internal logic
         # same logic as process(), but STOP before LLM call
         
-        prompt = ...  # however you're constructing it today
-        return prompt
+       # prompt = ...  # however you're constructing it today
+        #return prompt
+        return f"Explain simply: {message}"
