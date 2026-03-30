@@ -72,11 +72,20 @@ async def tutor_ws(websocket: WebSocket):
                     mode = decide_mode(message, "current_state")
                     print("MODE:", mode)
 
-                    # 🚨 BREAK mode (no streaming)
+                    # 🚨 BREAK mode
                     if mode == "BREAK":
                         await websocket.send_json({
                             "type": "info",
                             "content": "Okay, let's take a short break 👍"
+                        })
+                        end_stream(session_id)
+                        continue
+
+                    # 🚨 OFF-TOPIC CONTROL (NEW 🔥)
+                    if not is_on_topic(message) and mode != "DOUBT":
+                        await websocket.send_json({
+                            "type": "info",
+                            "content": "Let’s stay focused on the current topic 👍 We’re learning slope right now."
                         })
                         end_stream(session_id)
                         continue
@@ -87,16 +96,11 @@ async def tutor_ws(websocket: WebSocket):
                     else:
                         prompt = tutor_engine.build_prompt(session_id, message)
 
-                    # 🧪 Safety check
-                    if not isinstance(prompt, str):
-                        raise ValueError(f"Invalid prompt: {prompt}")
-
                     # 🚀 Start streaming
                     await websocket.send_json({"type": "start"})
 
                     async for chunk in stream_response(prompt):
-                        await asyncio.sleep(0.1)
-                        # 🔴 Stop if interrupted
+
                         if is_cancelled(session_id):
                             print("STREAM CANCELLED")
                             await websocket.send_json({"type": "done"})
@@ -107,11 +111,9 @@ async def tutor_ws(websocket: WebSocket):
                             "content": chunk
                         })
 
-                    # ✅ Cleanup
                     end_stream(session_id)
 
                     await websocket.send_json({"type": "done"})
-
                 except Exception as e:
                     print("Streaming failed, fallback:", e)
 
