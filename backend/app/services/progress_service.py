@@ -1,4 +1,4 @@
-from backend.app.core.storage.firebase_client import db
+from ..core.storage.firebase_client import db
 from datetime import datetime
 
 def save_progress(student_id, question, correct, hints_used):

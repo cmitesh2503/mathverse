@@ -2,7 +2,7 @@ from email import message
 
 from fastapi import APIRouter
 import uuid
-from backend.app.tutor_brain.tutor_engine import TutorEngine
+from ...tutor_brain.tutor_engine import TutorEngine
 
 tutor_engine = TutorEngine()
 

@@ -1,10 +1,22 @@
-from google import genai
-from backend.app.core.config import GEMINI_API_KEY
-from backend.app.cache.cache_manager import get_cache, set_cache
-from backend.app.guardrails.ai_guardrail import validate_response
+import google.generativeai as genai
+from ..core.config import GEMINI_API_KEY
+from ..cache.cache_manager import get_cache, set_cache
+from ..guardrails.ai_guardrail import validate_response
 import asyncio
+from dotenv import load_dotenv
+import os
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+load_dotenv()  # Load environment variables from .env file
+
+genai.configure(api_key=GEMINI_API_KEY)
+
+def list_available_models():
+    """List all available models from Gemini API"""
+    try:
+        for model in genai.list_models():
+            print(f"Model: {model.name}")
+    except Exception as e:
+        print(f"Error listing models: {e}")
 
 def generate_response(prompt: str) -> str:
 
@@ -21,10 +33,8 @@ def generate_response(prompt: str) -> str:
         return cached
 
     try:
-        response = client.models.generate_content(
-            model="gemini-flash-latest",
-            contents=prompt,
-        )
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        response = model.generate_content(prompt)
 
         text = response.text if response.text else "Let’s solve step by step 😊"
 
@@ -52,10 +62,8 @@ async def stream_response(prompt: str):
 
     try:
         # ✅ 2. Gemini streaming call
-        response = client.models.generate_content_stream(
-            model="gemini-flash-latest",
-            contents=prompt,
-        )
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        response = model.generate_content(prompt, stream=True)
 
         full_text = ""
 

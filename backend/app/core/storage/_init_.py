@@ -1,1 +1,1 @@
-from backend.app.core.storage.firebase_client import db
+from .firebase_client import db
