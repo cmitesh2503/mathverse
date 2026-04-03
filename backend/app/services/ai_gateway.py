@@ -1,101 +1,81 @@
-import google.generativeai as genai
-from ..core.config import GEMINI_API_KEY
-from ..cache.cache_manager import get_cache, set_cache
-from ..guardrails.ai_guardrail import validate_response
+from __future__ import annotations
+
 import asyncio
-from dotenv import load_dotenv
-import os
+from functools import lru_cache
 
-load_dotenv()  # Load environment variables from .env file
+from ..cache.cache_manager import get_cache, set_cache
+from ..core.config import GEMINI_API_KEY, GEMINI_LIVE_MODEL, GEMINI_TEXT_MODEL
+from ..guardrails.ai_guardrail import validate_response
 
-genai.configure(api_key=GEMINI_API_KEY)
+try:
+    from google import genai as google_genai
+except ImportError:  # pragma: no cover - optional dependency
+    google_genai = None
 
-def list_available_models():
-    """List all available models from Gemini API"""
-    try:
-        for model in genai.list_models():
-            print(f"Model: {model.name}")
-    except Exception as e:
-        print(f"Error listing models: {e}")
+try:
+    import google.generativeai as legacy_genai
+except ImportError:  # pragma: no cover - optional dependency
+    legacy_genai = None
 
-def generate_response(prompt: str) -> str:
 
-    print("AI CALL START")
-    print("PROMPT:", prompt)
-    
-    #print("AVAILABLE MODELS:")
-    #for m in client.models.list():
-    #    print(m.name)
+DEFAULT_TEXT_MODEL = GEMINI_TEXT_MODEL
+DEFAULT_LIVE_MODEL = GEMINI_LIVE_MODEL
+FALLBACK_TEXT = "Let's work through that step by step."
 
+
+def live_api_available() -> bool:
+    return bool(GEMINI_API_KEY and google_genai is not None)
+
+
+@lru_cache(maxsize=1)
+def _new_sdk_client():
+    if not GEMINI_API_KEY or google_genai is None:
+        return None
+    return google_genai.Client(api_key=GEMINI_API_KEY)
+
+
+def get_live_client():
+    return _new_sdk_client()
+
+
+def _configure_legacy_sdk() -> bool:
+    if not GEMINI_API_KEY or legacy_genai is None:
+        return False
+    legacy_genai.configure(api_key=GEMINI_API_KEY)
+    return True
+
+
+def generate_response(prompt: str, model: str = DEFAULT_TEXT_MODEL) -> str:
     cached = get_cache(prompt)
     if cached:
-        print("CACHE HIT")
         return cached
 
-    try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        response = model.generate_content(prompt)
-
-        text = response.text if response.text else "Let’s solve step by step 😊"
-
-        text = validate_response(text)
-        set_cache(prompt, text)
-
-        return text
-
-    except Exception as e:
-        print("Gemini API Error:", e)
-        return "Let’s solve step by step 😊"
-    
-async def stream_response(prompt: str):
-    print("AI STREAM START")
-    print("PROMPT:", prompt)
-
-    # ✅ 1. Cache check (important)
-    cached = get_cache(prompt)
-    if cached:
-        print("CACHE HIT (STREAM)")
-        for word in cached.split():
-            yield word + " "
-            await asyncio.sleep(0.01)
-        return
+    text: str | None = None
 
     try:
-        # ✅ 2. Gemini streaming call
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        response = model.generate_content(prompt, stream=True)
+        client = _new_sdk_client()
+        if client is not None:
+            response = client.models.generate_content(model=model, contents=prompt)
+            text = getattr(response, "text", None)
+    except Exception as error:  # pragma: no cover - network dependent
+        print(f"GenAI SDK error: {error}")
 
-        full_text = ""
-
-        for chunk in response:
-            if chunk.text:
-                full_text += chunk.text
-                yield chunk.text  # 🔥 real streaming
-
-        # ✅ 3. Guardrail AFTER full response
-        full_text = validate_response(full_text)
-
-        # ✅ 4. Cache final validated response
-        set_cache(prompt, full_text)
-
-    except Exception as e:
-        print("Gemini STREAM Error:", e)
-
-        # ✅ 5. Fallback to non-stream
+    if text is None:
         try:
-            response = client.models.generate_content(
-                model="gemini-flash-latest",
-                contents=prompt,
-            )
+            if _configure_legacy_sdk():
+                legacy_model = legacy_genai.GenerativeModel(model)
+                response = legacy_model.generate_content(prompt)
+                text = getattr(response, "text", None)
+        except Exception as error:  # pragma: no cover - network dependent
+            print(f"Legacy Gemini SDK error: {error}")
 
-            text = response.text if response.text else "Let’s solve step by step 😊"
-            text = validate_response(text)
-            set_cache(prompt, text)
+    final_text = validate_response(text or FALLBACK_TEXT)
+    set_cache(prompt, final_text)
+    return final_text
 
-            for word in text.split():
-                yield word + " "
-                await asyncio.sleep(0.02)
 
-        except Exception as e:
-            print("Fallback Error:", e)
-            yield "Let’s solve step by step 😊"
+async def stream_response(prompt: str, model: str = DEFAULT_TEXT_MODEL):
+    text = generate_response(prompt, model=model)
+    for word in text.split():
+        yield word + " "
+        await asyncio.sleep(0.01)

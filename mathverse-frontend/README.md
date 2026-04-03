@@ -1,36 +1,90 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MathVerse Frontend
 
-## Getting Started
+MathVerse is a classroom-style CBSE mathematics tutor with:
 
-First, run the development server:
+- real-time tutor audio
+- session memory and class archive
+- whiteboard-guided explanations
+- provider-ready human avatar support
+
+## Local Run
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Human Avatar Setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Recommended: LiveAvatar
 
-## Learn More
+MathVerse now has a provider-specific path for LiveAvatar. The backend can create and start a LiveAvatar session, then the frontend loads the returned human-video room inside the classroom.
 
-To learn more about Next.js, take a look at the following resources:
+Backend environment:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```env
+LIVEAVATAR_API_KEY=...
+LIVEAVATAR_AVATAR_ID=...
+LIVEAVATAR_CONTEXT_ID=...
+LIVEAVATAR_VOICE_ID=...
+LIVEAVATAR_LANGUAGE=en
+LIVEAVATAR_IS_SANDBOX=true
+LIVEAVATAR_AUTO_START=false
+LIVEAVATAR_SPEECH_SPEED=0.78
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Copy `.env.local.example` to `.env.local` and choose one provider:
 
-## Deploy on Vercel
+```bash
+cp .env.local.example .env.local
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Then set one of these:
+For LiveAvatar:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```env
+NEXT_PUBLIC_TUTOR_AVATAR_PROVIDER=liveavatar
+```
+
+Then use the `Start Human Avatar` button in the classroom.
+
+### Other Providers
+
+### HeyGen
+
+```env
+NEXT_PUBLIC_TUTOR_AVATAR_PROVIDER=heygen
+NEXT_PUBLIC_HEYGEN_AVATAR_IFRAME_URL=https://...
+```
+
+### Tavus
+
+```env
+NEXT_PUBLIC_TUTOR_AVATAR_PROVIDER=tavus
+NEXT_PUBLIC_TAVUS_AVATAR_IFRAME_URL=https://...
+```
+
+### D-ID
+
+```env
+NEXT_PUBLIC_TUTOR_AVATAR_PROVIDER=did
+NEXT_PUBLIC_DID_AVATAR_IFRAME_URL=https://...
+```
+
+### Custom Iframe
+
+```env
+NEXT_PUBLIC_TUTOR_AVATAR_PROVIDER=custom
+NEXT_PUBLIC_TUTOR_AVATAR_IFRAME_URL=https://...
+```
+
+### Hosted Video
+
+```env
+NEXT_PUBLIC_TUTOR_AVATAR_PROVIDER=video
+NEXT_PUBLIC_TUTOR_AVATAR_VIDEO_SRC=https://...
+```
+
+If no avatar URL is configured, MathVerse falls back to the built-in teacher illustration.

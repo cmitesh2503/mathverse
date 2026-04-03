@@ -1,4 +1,4 @@
 from .tutor_engine import TutorEngine
 
 
-__all__ = ["TutorEngine"]
+tutor_engine = TutorEngine()

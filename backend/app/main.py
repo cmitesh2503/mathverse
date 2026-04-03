@@ -1,249 +1,197 @@
-import sys
+import asyncio
+import base64
+import json
 import os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import sys
 
 from dotenv import load_dotenv
-import os
-import json
-import asyncio
-from base64 import b64decode
-
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from .api.routes import session
-from .tutor_brain.tutor_engine import TutorEngine
-from .tutor_brain.lesson_state import LessonState
-from .services.ai_gateway import stream_response
-from .core.stream_manager import (
-    start_stream,
-    cancel_stream,
-    is_cancelled,
-    end_stream
-)
-import json
-import asyncio
+from fastapi.middleware.cors import CORSMiddleware
 
-# 🚀 Tutor engine now handles all message logic and off-topic detection
-# Removed: is_on_topic(), decide_mode() - tutor engine is the single source of truth
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from .api.routes import avatar, session
+from .core.stream_manager import cancel_stream, end_stream, is_cancelled, start_stream
+from .models.session import StartSessionRequest
+from .services.ai_gateway import live_api_available
+from .services.live_tutor_service import LiveTutorBridge
+from .services.session_service import session_service
+from .tutor_brain.runtime import tutor_engine
 
 load_dotenv()
 
-api_key = os.getenv("GEMINI_API_KEY")
 app = FastAPI(title="MathVerse API")
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(session.router)
+app.include_router(avatar.router)
 
-# Google Cloud Speech-to-Text Bidi (optional)
-speech_client = None
-speech = None
-try:
-    from google.cloud import speech_v1p1beta1 as speech
-    speech_client = speech.SpeechClient()
-except Exception:
+
+async def send_streamed_text(websocket: WebSocket, session_id: str, content: str) -> None:
+    start_stream(session_id)
+    await websocket.send_json({"type": "start"})
+
+    for word in content.split():
+        if is_cancelled(session_id):
+            break
+        await websocket.send_json({"type": "chunk", "content": word + " "})
+        await asyncio.sleep(0.02)
+
+    await websocket.send_json({"type": "done"})
+    end_stream(session_id)
+
+
+def _session_request_from_socket(websocket: WebSocket) -> StartSessionRequest:
+    params = websocket.query_params
+    requested_grade = params.get("grade", "10")
     try:
-        from google.cloud import speech
-        speech_client = speech.SpeechClient()
-    except Exception as e:
-        speech_client = None
-        print("Google Cloud speech unavailable:", e)
+        grade = int(requested_grade)
+    except ValueError:
+        grade = 10
 
-
-tutor_engine = TutorEngine()
-
-USE_STREAMING = True  # 🔥 Feature flag
-
-
-def transcribe_audio_chunk(base64_data):
-    if not speech_client:
-        return None
-
-    try:
-        audio_content = b64decode(base64_data)
-        audio = speech.RecognitionAudio(content=audio_content)
-        config = speech.RecognitionConfig(
-            encoding=speech.RecognitionConfig.AudioEncoding.WEBM_OPUS,
-            sample_rate_hertz=48000,
-            language_code="en-US",
-            enable_automatic_punctuation=True,
-            profanity_filter=False,
-        )
-
-        response = speech_client.recognize(config=config, audio=audio)
-        if response.results:
-            return response.results[-1].alternatives[0].transcript
-
-    except Exception as e:
-        print("STT transcription error:", e)
-
-    return None
+    return StartSessionRequest(
+        student_id=params.get("student_id", "local-student"),
+        grade=grade,
+        board=params.get("board", "CBSE"),
+        subject=params.get("subject", "Mathematics"),
+        session_id=params.get("session_id"),
+        topic_slug=params.get("topic_slug"),
+        start_new=params.get("start_new", "false").lower() == "true",
+    )
 
 
 @app.websocket("/ws/tutor")
 async def tutor_ws(websocket: WebSocket):
     await websocket.accept()
+    print("Tutor WebSocket connected")
 
-    # 🎓 Auto-start lesson like a real classroom teacher
-    session_id = "default_session"  # Use default session for auto-start
-    grade = 10  # Default grade
+    start_request = _session_request_from_socket(websocket)
+    session_record = session_service.create_or_resume_session(start_request)
+    session_id = session_record.session_id
+    tutor_engine.hydrate_session(session_id, session_record)
+    live_bridge = LiveTutorBridge(session_id, websocket.send_json)
+    live_connected = False
 
-    # Initialize session if needed
-    if session_id not in tutor_engine.sessions:
-        tutor_engine.sessions[session_id] = LessonState()
-    tutor_engine.sessions[session_id].grade = grade
-
-    # 🚀 Auto-start the topic introduction
-    if USE_STREAMING:
+    if live_bridge.available:
         try:
-            start_stream(session_id)
-            response = tutor_engine.process(session_id, "")  # Empty message to trigger auto-start
+            live_connected = await live_bridge.connect()
+        except Exception as error:  # pragma: no cover - network dependent
+            print(f"Gemini Live connect failed: {error}")
+            live_connected = False
 
-            await websocket.send_json({"type": "start"})
+    await websocket.send_json(
+        {
+            "type": "session_meta",
+            "session": session_service.serialize_session(session_record),
+            "archive": session_service.list_sessions(session_record.student_id, session_record.grade),
+            "live_capabilities": {
+                "native_audio_ready": live_api_available(),
+                "native_audio_connected": live_connected,
+                "transport": "server-websocket",
+            },
+        }
+    )
+    await websocket.send_json(
+        {
+            "type": "history",
+            "messages": [
+                {
+                    "role": turn.role,
+                    "content": turn.content,
+                    "transport": turn.transport,
+                    "timestamp": turn.timestamp.isoformat(),
+                }
+                for turn in session_record.transcript
+                if turn.role in {"user", "assistant"}
+            ],
+        }
+    )
+    await websocket.send_json(
+        {
+            "type": "state",
+            "state": tutor_engine.snapshot(session_id).model_dump(mode="json"),
+        }
+    )
 
-            for word in response.split():
-                if is_cancelled(session_id):
-                    break
-                await websocket.send_json({
-                    "type": "chunk",
-                    "content": word + " "
-                })
-                await asyncio.sleep(0.03)
-
-            await websocket.send_json({"type": "done"})
-            end_stream(session_id)
-
-        except Exception as e:
-            print(f"Auto-start streaming error: {e}")
-            # Fallback to non-streaming
-            response = tutor_engine.process(session_id, "")
-            await websocket.send_json({"type": "explanation", "content": response})
-
-    else:
-        response = tutor_engine.process(session_id, "")
-        await websocket.send_json({"type": "explanation", "content": response})
+    if not session_record.transcript:
+        intro = tutor_engine.process(session_id, "", session_record=session_record)
+        session_service.append_turn(session_id, "assistant", intro)
+        session_service.update_lesson_snapshot(session_id, tutor_engine.snapshot(session_id))
+        await send_streamed_text(websocket, session_id, intro)
 
     try:
         while True:
-            # 📥 Receive raw message
             raw_data = await websocket.receive_text()
-            print("RAW DATA:", raw_data)
-
-            # 🔄 Parse JSON safely
             try:
-                data = json.loads(raw_data)
-            except Exception:
-                print("Invalid JSON received:", raw_data)
+                payload = json.loads(raw_data)
+            except json.JSONDecodeError:
                 continue
-
-            # 🛡️ Validate payload
-            if isinstance(data, str):
-                print("Received raw string, converting to message")
-                data = {
-                    "session_id": "test123",  # default session
-                    "message": data
-                }
-
-            elif not isinstance(data, dict):
-                print("Invalid payload:", data)
-                continue
-
-            session_id = data.get("session_id", "test123")
-            grade = data.get("grade", 10)
 
             message = None
-            if data.get("type") == "audio_chunk" and "data" in data:
-                transcript = transcribe_audio_chunk(data["data"])
-                if transcript:
-                    message = transcript
-                    # send transcript back to client for transparency
-                    await websocket.send_json({"type": "transcript", "content": transcript})
-                else:
-                    print("Audio chunk could not be transcribed")
+            if payload.get("type") == "live_input_audio" and payload.get("data"):
+                if live_connected:
+                    await live_bridge.send_audio_chunk(
+                        base64.b64decode(payload["data"])
+                    )
                     continue
-            elif "message" in data:
-                message = data["message"]
+                await websocket.send_json(
+                    {
+                        "type": "live_warning",
+                        "content": "Native Gemini audio is not connected right now.",
+                    }
+                )
+                continue
+            if payload.get("type") == "audio_stream_end":
+                if live_connected:
+                    await live_bridge.end_audio_stream()
+                continue
+            if payload.get("message"):
+                message = payload["message"]
 
             if not message:
-                print("No valid message in payload:", data)
                 continue
 
-            print("WS INPUT:", message)
+            if live_connected:
+                await live_bridge.send_text_turn(message)
+                continue
 
-            # Set grade in session
-            if session_id not in tutor_engine.sessions:
-                tutor_engine.sessions[session_id] = LessonState()
-            tutor_engine.sessions[session_id].grade = grade
-
-            # 🚨 Cancel any previous stream
             cancel_stream(session_id)
+            session_service.append_turn(session_id, "user", message, "text")
+            session_record = session_service.get_session(session_id)
+            response = tutor_engine.process(session_id, message, session_record=session_record)
+            session_service.append_turn(session_id, "assistant", response)
+            snapshot = tutor_engine.snapshot(session_id)
+            session_service.update_lesson_snapshot(session_id, snapshot)
 
-            # 👉 STREAMING ENABLED
-            if USE_STREAMING:
-                try:
-                    # 🆕 Start new stream
-                    start_stream(session_id)
-
-                    # 🧠 Get response from TutorEngine (this handles everything now)
-                    response = tutor_engine.process(session_id, message)
-
-                    if not response:
-                        response = "Let’s solve it step by step 😊"
-
-                    # 🚀 Start streaming (simple MVP)
-                    await websocket.send_json({"type": "start"})
-
-                    for word in response.split():
-                        if is_cancelled(session_id):
-                            break
-
-                        await websocket.send_json({
-                            "type": "chunk",
-                            "content": word + " "
-                        })
-
-                        await asyncio.sleep(0.03)
-
-                    await websocket.send_json({"type": "done"})
-                    end_stream(session_id)
-
-                except Exception as e:
-                    print(f"Streaming error: {e}")
-                    # Fallback to non-streaming
-                    response = tutor_engine.process(session_id, message)
-                    if not response:
-                        response = "Let’s solve it step by step 😊"
-                    await websocket.send_json({"type": "explanation", "content": response})
-
-                    await websocket.send_json({"type": "done"})
-                except Exception as e:
-                    print("Streaming failed, fallback:", e)
-
-                    end_stream(session_id)
-
-                    # 🔁 FALLBACK to non-streaming
-                    response = tutor_engine.process(session_id, message)
-
-                    if not response:
-                        response = "Let’s solve it step by step 😊"
-
-                    await websocket.send_json({
-                        "type": "explanation",
-                        "content": response
-                    })
-
-            # 👉 STREAMING DISABLED
-            else:
-                response = tutor_engine.process(session_id, message)
-
-                if not response:
-                    response = "Let’s solve it step by step 😊"
-
-                await websocket.send_json({
-                    "type": "explanation",
-                    "content": response
-                })
+            await send_streamed_text(websocket, session_id, response)
+            await websocket.send_json(
+                {
+                    "type": "state",
+                    "state": snapshot.model_dump(mode="json"),
+                    "archive": session_service.list_sessions(
+                        session_record.student_id if session_record else start_request.student_id,
+                        start_request.grade,
+                    ),
+                }
+            )
 
     except WebSocketDisconnect:
-        print("Client disconnected")
+        print("Tutor WebSocket disconnected")
+        end_stream(session_id)
+    finally:
+        await live_bridge.close()
+
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="localhost", port=8000, reload=True)

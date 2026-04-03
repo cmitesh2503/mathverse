@@ -1,41 +1,61 @@
-from email import message
+from fastapi import APIRouter, HTTPException, Query
 
-from fastapi import APIRouter
-import uuid
-from ...tutor_brain.tutor_engine import TutorEngine
-
-tutor_engine = TutorEngine()
+from ...models.session import SessionMessageRequest, StartSessionRequest
+from ...services.session_service import session_service
+from ...tutor_brain.runtime import tutor_engine
 
 router = APIRouter(prefix="/session", tags=["Session"])
 
-# Temporary in-memory store
-sessions = {}
-
 
 @router.post("/start")
-def start_session():
-    session_id = str(uuid.uuid4())
-    sessions[session_id] = {"messages": []}
-    return {"session_id": session_id}
+def start_session(request: StartSessionRequest):
+    session = session_service.create_or_resume_session(request)
+    tutor_engine.hydrate_session(session.session_id, session)
+    return {
+        "session": session_service.serialize_session(session, include_transcript=True),
+        "archive": session_service.list_sessions(request.student_id, request.grade),
+    }
+
+
+@router.get("/history")
+def session_history(
+    student_id: str = Query(...),
+    grade: int | None = Query(default=None),
+):
+    return {"sessions": session_service.list_sessions(student_id, grade)}
+
+
+@router.get("/{session_id}")
+def get_session(session_id: str):
+    session = session_service.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return {"session": session_service.serialize_session(session, include_transcript=True)}
 
 
 @router.post("/message")
-def send_message(data: dict):
-    session_id = data.get("session_id")
-    message = data.get("message")
-    
-    
-    if session_id not in sessions:
-        return {"error": "Invalid session"}
+def send_message(request: SessionMessageRequest):
+    session = session_service.get_session(request.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
 
-    sessions[session_id]["messages"].append(message)
-    
-    print("API HIT /session/message")
-    print("INPUT:", message)
-    
-    response = tutor_engine.process(session_id, message)
-    print("output:", response)
+    tutor_engine.hydrate_session(session.session_id, session)
+    session_service.append_turn(session.session_id, "user", request.message)
+    refreshed_session = session_service.get_session(session.session_id)
+    response = tutor_engine.process(
+        session.session_id,
+        request.message,
+        session_record=refreshed_session,
+    )
+    session_service.append_turn(session.session_id, "assistant", response)
+    session_service.update_lesson_snapshot(
+        session.session_id,
+        tutor_engine.snapshot(session.session_id),
+    )
 
+    updated = session_service.get_session(session.session_id)
     return {
-        "response": response
+        "response": response,
+        "session": session_service.serialize_session(updated, include_transcript=True),
     }
