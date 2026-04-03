@@ -24,6 +24,63 @@ class TutorEngine:
         self.practice_keywords = ["practice", "quiz", "problem", "exercise", "test me"]
         self.revision_keywords = ["revise", "review", "summary", "recap"]
         self.greeting_keywords = ["hi", "hello", "hey", "good morning", "good afternoon", "good evening"]
+        self.affirmative_keywords = [
+            "yes",
+            "yeah",
+            "yep",
+            "sure",
+            "okay",
+            "ok",
+            "go ahead",
+            "go on",
+            "carry on",
+            "please continue",
+            "continue please",
+            "let's continue",
+            "lets continue",
+            "proceed",
+            "alright",
+            "all right",
+        ]
+        self.teaching_keywords = [
+            "teach me",
+            "explain",
+            "start teaching",
+            "teach this",
+            "start the lesson",
+            "continue the lesson",
+            "from the basics",
+        ]
+        self.confusion_keywords = [
+            "don't understand",
+            "dont understand",
+            "do not understand",
+            "didn't understand",
+            "didnt understand",
+            "not clear",
+            "confused",
+            "i am confused",
+            "i'm confused",
+            "i do not understand",
+            "explain again",
+            "say again",
+            "repeat",
+            "once more",
+            "slow down",
+            "slower",
+            "too fast",
+            "not getting",
+            "i don't get it",
+            "i dont get it",
+        ]
+        self.example_keywords = [
+            "example",
+            "another example",
+            "one more example",
+            "show me one",
+            "solve one",
+            "worked example",
+        ]
         self.math_keywords = [
             "math",
             "mathematics",
@@ -186,6 +243,10 @@ class TutorEngine:
         lower = message.lower()
         return any(keyword in lower for keyword in self.ready_keywords)
 
+    def is_affirmative(self, message: str) -> bool:
+        lower = message.lower().strip()
+        return any(keyword == lower or keyword in lower for keyword in self.affirmative_keywords)
+
     def is_break(self, message: str) -> bool:
         lower = message.lower()
         return any(keyword in lower for keyword in self.break_keywords)
@@ -201,6 +262,18 @@ class TutorEngine:
         lower = message.lower()
         return any(keyword in lower for keyword in self.revision_keywords)
 
+    def wants_teaching(self, message: str) -> bool:
+        lower = message.lower()
+        return any(keyword in lower for keyword in self.teaching_keywords)
+
+    def feels_confused(self, message: str) -> bool:
+        lower = message.lower()
+        return any(keyword in lower for keyword in self.confusion_keywords)
+
+    def wants_example(self, message: str) -> bool:
+        lower = message.lower()
+        return any(keyword in lower for keyword in self.example_keywords)
+
     def is_off_topic(self, message: str) -> bool:
         lower = message.lower()
         if any(keyword in lower for keyword in self.math_keywords):
@@ -210,17 +283,46 @@ class TutorEngine:
             for phrase in ["joke", "weather", "movie", "music", "sports", "politics", "your name", "who are you"]
         )
 
+    def _numbers_in_text(self, message: str) -> list[float]:
+        digits = re.findall(r"-?\d+\.?\d*", message)
+        if digits:
+            return [float(num) for num in digits]
+
+        word_map = {
+            "zero": 0,
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5,
+            "six": 6,
+            "seven": 7,
+            "eight": 8,
+            "nine": 9,
+            "ten": 10,
+            "eleven": 11,
+            "twelve": 12,
+            "thirteen": 13,
+            "fourteen": 14,
+            "fifteen": 15,
+            "sixteen": 16,
+            "seventeen": 17,
+            "eighteen": 18,
+            "nineteen": 19,
+            "twenty": 20,
+        }
+        words = re.findall(r"[a-z]+", message.lower())
+        return [float(word_map[w]) for w in words if w in word_map]
+
     def extract_number(self, message: str) -> float | None:
-        numbers = re.findall(r"-?\d+\.?\d*", message)
-        if not numbers:
-            return None
-        return float(numbers[0])
+        nums = self._numbers_in_text(message)
+        return nums[0] if nums else None
 
     def extract_pair(self, message: str) -> tuple[float, float] | None:
-        numbers = re.findall(r"-?\d+\.?\d*", message)
-        if len(numbers) < 2:
+        nums = self._numbers_in_text(message)
+        if len(nums) < 2:
             return None
-        return float(numbers[0]), float(numbers[1])
+        return nums[0], nums[1]
 
     def _ensure_topic(self, state: LessonState) -> dict:
         if not state.topic_slug:
@@ -267,24 +369,22 @@ class TutorEngine:
 
     def _build_intro(self, state: LessonState, session_record=None) -> str:
         topic = self._ensure_topic(state)
-        state.step = "TOPIC_INTRODUCTION"
-        state.notes = [
-            f"Board: CBSE Class {state.grade} Mathematics",
-            f"Focus chapter: {topic['title']}",
-            topic.get("classroom_goal", topic.get("summary", "")),
-        ]
-        state.last_summary = f"Started a guided class on {topic['title']}."
-
-        student_label = "there"
+        student_label = "Dhrumil"
         if session_record and session_record.student_id:
-            student_label = session_record.student_id.replace("-", " ")
+            student_label = (
+                "Dhrumil"
+                if session_record.student_id.startswith("student-")
+                else session_record.student_id.replace("-", " ")
+            )
 
-        return (
+        opening = (
             f"Hi {student_label}. I'm Ava, and today we'll work on {topic['title']} for Class {state.grade}.\n\n"
             f"By the end of this lesson, you should feel comfortable with {topic.get('classroom_goal', topic.get('summary', 'the main idea of this chapter'))}.\n\n"
-            "We'll keep it simple. First I will explain the idea in an easy way, then we'll see it on the whiteboard, and then you will try one question with me.\n\n"
-            "When you're ready, say ready. If you want to jump straight into a question, say practice."
+            "I'll start teaching right away, and you can interrupt me any time if you want a doubt cleared, one more example, or a question."
         )
+        lesson_start = self._build_guided_explanation(state)
+        state.last_summary = f"Started a guided class on {topic['title']}."
+        return f"{opening}\n\n{lesson_start}"
 
     def _build_resume(self, state: LessonState, session_record) -> str:
         topic = self._ensure_topic(state)
@@ -315,7 +415,7 @@ class TutorEngine:
                 f"Let's start with {topic['title']}.\n\n"
                 "We'll take one idea at a time and keep the pace calm.\n\n"
                 f"{topic.get('teaching_anchor', topic.get('summary', 'We will build the idea step by step.'))}\n\n"
-                "Ask a doubt any time, or say practice when you want a question."
+                "Ask a doubt any time, or tell me when you want a question."
             )
 
         board_steps = concept.get("board_work", [])[:3]
@@ -331,8 +431,92 @@ class TutorEngine:
             f"Here is the main idea in a simple way. {concept['explanation']}\n\n"
             f"{topic.get('teaching_anchor', 'We will connect the idea to classroom-style examples.')}\n\n"
             f"Now look at the whiteboard with me. {board_script}\n\n"
-            "Take a moment to notice the pattern. Then ask me a doubt, or say practice and I'll give you a guided question."
+            "Take a moment to notice the pattern. If you want, I can show one worked example next, or we can try a guided question together."
         )
+
+    def _build_worked_example(self, state: LessonState) -> str:
+        topic = self._ensure_topic(state)
+        concept = self._ensure_concept(state)
+        state.step = "WORKED_EXAMPLE"
+
+        if not concept:
+            state.last_summary = f"Worked example requested for {topic['title']}."
+            return (
+                f"Let's do one simple example from {topic['title']}.\n\n"
+                f"{topic.get('teaching_anchor', topic.get('summary', 'We will solve it step by step.'))}\n\n"
+                "After that, I will let you try one."
+            )
+
+        board_work = concept.get("board_work", [])
+        example_flow = " ".join(board_work[:3]) if board_work else concept["explanation"]
+        practice = concept.get("practice_problems", [])
+        prompt = practice[0]["prompt"] if practice else "We will use the same idea in a simple question."
+        state.notes = [
+            f"Worked example for {concept['title']}.",
+            example_flow,
+            f"Next student task: {prompt}",
+        ]
+        state.last_summary = f"Worked example shown for {concept['title']} in {topic['title']}."
+        return (
+            f"Let's do one worked example for {concept['title']}.\n\n"
+            f"Watch this carefully. {example_flow}\n\n"
+            f"Now you have seen the pattern. Next, I can give you a similar guided question: {prompt}"
+        )
+
+    def _build_reteach_support(self, state: LessonState) -> str:
+        topic = self._ensure_topic(state)
+        concept = self._ensure_concept(state)
+        state.step = "GUIDED_EXPLANATION"
+
+        if not concept:
+            state.last_summary = f"Re-explained the main idea in {topic['title']}."
+            return (
+                f"No problem. Let's slow it down.\n\n"
+                f"{topic.get('teaching_anchor', topic.get('summary', 'We will build the idea step by step.'))}\n\n"
+                "I'll keep it simple. After this, I can show one example."
+            )
+
+        board_work = concept.get("board_work", [])
+        simple_example = board_work[0] if board_work else "We will use one small example and build from there."
+        state.notes = [
+            f"Re-explaining {concept['title']} slowly.",
+            simple_example,
+            "Student asked for a simpler explanation.",
+        ]
+        state.last_summary = f"Re-explained {concept['title']} more slowly."
+        return (
+            f"No problem. Let's take {concept['title']} one step at a time.\n\n"
+            f"The key idea is this: {concept['explanation']}\n\n"
+            f"Keep this one example in mind: {simple_example}\n\n"
+            "Tell me if you want one more example, or I can give you a guided question."
+        )
+
+    def _repeat_practice_prompt(self, state: LessonState) -> str:
+        problem = self._current_problem(state)
+        if not problem:
+            return "Tell me when you are ready, and I will give you a guided problem."
+
+        return (
+            f"Take your time. Here is the question again: {problem['prompt']}\n\n"
+            "You can answer directly, or ask me for a hint."
+        )
+
+    def _is_attempt_response(self, state: LessonState, message: str) -> bool:
+        problem = self._current_problem(state)
+        if not problem:
+            return False
+
+        answer_type = problem.get("answer_type", "number")
+        lower = message.lower().strip()
+
+        if answer_type == "number":
+            return self.extract_number(message) is not None
+        if answer_type == "pair":
+            return self.extract_pair(message) is not None
+
+        accepted = [str(problem.get("answer", "")).lower()]
+        accepted.extend(str(item).lower() for item in problem.get("accepted_answers", []))
+        return lower in set(accepted) or any(value and value in lower for value in accepted)
 
     def _keyword_explanation(self, state: LessonState, message: str) -> str | None:
         lower = message.lower()
@@ -402,7 +586,7 @@ Student question:
         return (
             "Practice time.\n\n"
             f"Here is your first question: {problem['prompt']}\n\n"
-            "Say your answer when you're ready, or say hint if you want help."
+            "Answer in your own words when you're ready, or ask for a hint if you want help."
         )
 
     def _practice_help(self, state: LessonState) -> str:
@@ -416,7 +600,7 @@ Student question:
             "Let's work it out together.\n\n"
             f"Here is a helpful hint: {problem.get('hint', 'Take it one algebra step at a time.')}\n\n"
             f"Follow this flow with me. {steps}\n\n"
-            "Now you try the final answer."
+            "Now you try the final answer in your own words."
         )
 
     def _pair_matches(self, candidate: tuple[float, float] | None, expected: list[float]) -> bool:
@@ -446,7 +630,10 @@ Student question:
             lower = message.lower().strip()
             accepted = [current.get("answer", "")]
             accepted.extend(current.get("accepted_answers", []))
-            correct = lower in {str(item).lower() for item in accepted}
+            accepted_values = {str(item).lower() for item in accepted}
+            correct = lower in accepted_values or any(
+                value and value in lower for value in accepted_values
+            )
 
         state.total_attempts += 1
         state.last_answer_correct = correct
@@ -456,7 +643,7 @@ Student question:
             return (
                 "Not yet, but you're close.\n\n"
                 f"Here is a hint: {current.get('hint', 'Slow down and substitute carefully.')}\n\n"
-                "If you want, say explain the steps and I will solve it with you."
+                "If you want, ask me to explain the steps and I will solve it with you."
             )
 
         state.correct_answers_in_concept += 1
@@ -524,14 +711,11 @@ Say **revise** if you want a short recap right now."""
         requested_topic = find_topic_by_message(state.grade, cleaned)
         if requested_topic and requested_topic["slug"] != state.topic_slug:
             self._switch_topic(state, requested_topic)
-            return f"""Sure. We'll switch to **{requested_topic['title']}**.
-
-**Lesson reset**
-- Grade: **Class {state.grade}**
-- New chapter: **{requested_topic['title']}**
-- Focus: {requested_topic.get('summary', 'Guided understanding and practice')}
-
-Say **ready** when you want me to teach this chapter."""
+            return (
+                f"Sure. We'll switch to {requested_topic['title']} for Class {state.grade}.\n\n"
+                f"Our new focus is {requested_topic.get('summary', 'guided understanding and practice')}.\n\n"
+                "I can start teaching this now, or you can ask a doubt first."
+            )
 
         if self.is_off_topic(cleaned):
             state.last_summary = f"Redirected the conversation back to mathematics for Class {state.grade}."
@@ -542,7 +726,7 @@ Say **ready** when you want me to teach this chapter."""
 
         if self.is_break(cleaned):
             state.last_summary = f"Paused the class on {topic['title']}."
-            return "We can pause here. Your lesson is saved, so come back anytime and say **continue**."
+            return "We can pause here. Your lesson is saved, so come back anytime and tell me to continue."
 
         if self.is_greeting(cleaned) and state.step == "INTRO":
             return self._build_intro(state, session_record)
@@ -554,25 +738,29 @@ Say **ready** when you want me to teach this chapter."""
 
 {notes or f'- {topic.get("summary", "We are building understanding step by step.")}'}
 
-If you want, say **practice** for a new problem or ask a specific doubt."""
+If you want, I can give you a new problem or answer a specific doubt."""
 
         if state.step in {"INTRO", "TOPIC_INTRODUCTION"}:
+            if self.wants_practice(cleaned):
+                return self._start_practice(state)
+
+            if self.is_affirmative(cleaned) or self.is_ready(cleaned) or self.wants_teaching(cleaned):
+                return self._build_guided_explanation(state)
+
             if self.is_question(cleaned):
                 state.last_summary = f"Answered an introductory doubt in {topic['title']}."
                 answer = self._keyword_explanation(state, cleaned)
-                return f"{answer}\n\nSay **ready** when you want the guided lesson to begin."
+                return f"{answer}\n\nIf you want, I can start the guided lesson now."
 
-            if self.is_ready(cleaned) or self.wants_practice(cleaned):
-                if self.wants_practice(cleaned):
-                    return self._start_practice(state)
-                return self._build_guided_explanation(state)
-
-            return (
-                f"We're set up for **{topic['title']}**. Say **ready** to begin the guided lesson, "
-                "or ask a doubt before we start."
-            )
+            return self._build_guided_explanation(state)
 
         if state.step == "GUIDED_EXPLANATION":
+            if self.feels_confused(cleaned):
+                return self._build_reteach_support(state)
+
+            if self.wants_example(cleaned):
+                return self._build_worked_example(state)
+
             if self.is_question(cleaned):
                 state.last_summary = f"Answered a concept question in {topic['title']}."
                 return self._keyword_explanation(state, cleaned)
@@ -580,11 +768,39 @@ If you want, say **practice** for a new problem or ask a specific doubt."""
             if self.wants_practice(cleaned) or self.is_ready(cleaned):
                 return self._start_practice(state)
 
+            if self.is_affirmative(cleaned) or self.wants_teaching(cleaned):
+                return self._build_worked_example(state)
+
+            return self._build_worked_example(state)
+
+        if state.step == "WORKED_EXAMPLE":
+            if self.feels_confused(cleaned):
+                return self._build_reteach_support(state)
+
+            if self.is_question(cleaned):
+                return self._keyword_explanation(state, cleaned)
+
+            if self.wants_example(cleaned):
+                return self._build_worked_example(state)
+
+            if self.wants_practice(cleaned) or self.is_affirmative(cleaned) or self.is_ready(cleaned):
+                return self._start_practice(state)
+
             return self._start_practice(state)
 
         if state.step == "PRACTICE":
+            if self.feels_confused(cleaned) or self.wants_example(cleaned):
+                return self._practice_help(state)
+
             if self.is_question(cleaned) or "hint" in cleaned.lower() or "help" in cleaned.lower():
                 return self._practice_help(state)
+
+            if self.is_affirmative(cleaned) and not self._is_attempt_response(state, cleaned):
+                return self._repeat_practice_prompt(state)
+
+            if not self._is_attempt_response(state, cleaned):
+                return self._repeat_practice_prompt(state)
+
             return self._evaluate_practice(state, cleaned)
 
         if state.step == "REFLECTION":
@@ -592,14 +808,16 @@ If you want, say **practice** for a new problem or ask a specific doubt."""
                 state.step = "PRACTICE"
                 state.current_question_index = 0
                 return self._start_practice(state)
+            if self.is_affirmative(cleaned) or self.wants_teaching(cleaned):
+                return self._build_guided_explanation(state)
             if self.is_question(cleaned):
                 return self._keyword_explanation(state, cleaned)
             return (
-                "Your class notes are saved. Ask for a revision, try another chapter, or say **practice** for more problems."
+                "Your class notes are saved. Ask for a revision, try another chapter, or ask for more problems."
             )
 
         state.last_summary = f"Continuing guided teaching in {topic['title']}."
         return (
-            f"We're continuing with **{topic['title']}**. Ask a doubt, say **practice**, "
+            f"We're continuing with {topic['title']}. Ask a doubt, ask for a question, "
             "or ask me to switch to another chapter."
         )

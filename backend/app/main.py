@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import base64
 import json
 import os
@@ -153,6 +154,22 @@ async def tutor_ws(websocket: WebSocket):
             if payload.get("type") == "audio_stream_end":
                 if live_connected:
                     await live_bridge.end_audio_stream()
+                continue
+            if payload.get("type") == "interrupt":
+                cancel_stream(session_id)
+                end_stream(session_id)
+                await websocket.send_json({"type": "squelch"})
+                if live_connected:
+                    with contextlib.suppress(Exception):
+                        await live_bridge.close()
+                    await websocket.send_json(
+                        {
+                            "type": "live_warning",
+                            "content": "Stopped live audio so you can speak.",
+                        }
+                    )
+                    live_connected = False
+                await websocket.send_json({"type": "assistant_turn_complete", "reason": "interrupted"})
                 continue
             if payload.get("message"):
                 message = payload["message"]

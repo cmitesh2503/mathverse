@@ -152,6 +152,8 @@ class LiveTutorBridge:
             "Speak slowly with gentle pauses between ideas.\n"
             "Speak about twenty percent slower than a normal conversation.\n"
             "Keep each turn short unless the student asks for a full explanation.\n"
+            "If you detect the student talking, stop speaking immediately and listen; do not talk over them.\n"
+            "If you are interrupted, say \"Okay, go ahead\" and stay quiet until they finish, then briefly confirm their point before continuing.\n"
             "Usually explain one step, then pause and ask one small check-in question.\n"
             "Never sound like you are reading from slides, notes, markdown, or UI text.\n"
             "Open a new chapter like a teacher: welcome the student, say what they will learn today, and reassure them that you will solve it together.\n"
@@ -164,10 +166,6 @@ class LiveTutorBridge:
             f"Current classroom memory:\n{memory_context}\n\n"
             f"Curriculum grounding:\n{build_curriculum_grounding(session_record.grade)}"
         )
-
-        resume_handle = None
-        if session_record.metadata:
-            resume_handle = session_record.metadata.get("live_resumption_handle")
 
         return live_types.LiveConnectConfig(
             response_modalities=["AUDIO"],
@@ -191,14 +189,14 @@ class LiveTutorBridge:
             realtime_input_config=live_types.RealtimeInputConfig(
                 activity_handling=live_types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
                 turn_coverage=live_types.TurnCoverage.TURN_INCLUDES_ONLY_ACTIVITY,
+                # Ultra low latency interruption: minimal padding and silence window.
                 automatic_activity_detection=live_types.AutomaticActivityDetection(
-                    prefix_padding_ms=120,
-                    silence_duration_ms=900,
+                    prefix_padding_ms=20,
+                    silence_duration_ms=300,
                 )
             ),
             session_resumption=live_types.SessionResumptionConfig(
-                handle=resume_handle,
-                transparent=True,
+                handle=None,
             ),
             context_window_compression=live_types.ContextWindowCompressionConfig(
                 trigger_tokens=24000,
