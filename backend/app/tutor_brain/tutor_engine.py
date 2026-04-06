@@ -14,6 +14,7 @@ from .curriculum import (
     list_chapters,
 )
 from .lesson_state import LessonState
+from datetime import datetime, timedelta
 
 
 class TutorEngine:
@@ -41,6 +42,11 @@ class TutorEngine:
             "proceed",
             "alright",
             "all right",
+            "i understand",
+            "understood",
+            "got it",
+            "clear",
+            "makes sense",
         ]
         self.teaching_keywords = [
             "teach me",
@@ -347,6 +353,43 @@ class TutorEngine:
             state.current_concept_title = concept["title"]
         return concept
 
+    def _should_take_break(self, state: LessonState) -> bool:
+        if state.break_taken or not state.start_time:
+            return False
+        elapsed = datetime.now() - state.start_time
+        return elapsed >= timedelta(minutes=30)
+
+    def _build_break_message(self, state: LessonState) -> str:
+        state.break_taken = True
+        state.last_summary = f"Taking a 5-minute break in {state.topic_title} class."
+        return (
+            "We've been working for about 30 minutes. Let's take a 5-minute break.\n\n"
+            "Stretch, get some water, and come back when you're ready.\n\n"
+            "Say 'continue' or 'ready' when you want to resume the class."
+        )
+
+    def _build_analogy(self, state: LessonState) -> str:
+        topic = self._ensure_topic(state)
+        concept = self._ensure_concept(state)
+
+        if concept:
+            if topic["slug"] == "linear_equations_in_two_variables":
+                if concept["id"] == "form_and_solution":
+                    return "It is like choosing two numbers that keep a balance true; only the right pair of x and y makes the equation work."
+                if concept["id"] == "graphing_pairs":
+                    return "It is like plotting points on a map. Each solution is a point, and all the points together make a straight road."
+            if topic["slug"] == "pair_of_linear_equations_in_two_variables":
+                if concept["id"] == "graphical_meaning":
+                    return "It is like two roads meeting at one crossing point. That crossing is the solution that satisfies both equations."
+                if concept["id"] == "substitution_and_elimination":
+                    return "It is like using one equation to find one number first, then placing it into the other equation, or removing the same amount from both sides to simplify."
+
+        if topic["slug"] == "linear_equations_in_two_variables":
+            return "Think of it like a straight road on a map: each point that lies on the road is a solution to the equation."
+        if topic["slug"] == "pair_of_linear_equations_in_two_variables":
+            return "Imagine two lines on the same page. Their crossing point is the solution that works for both."
+        return "Think of this idea like a simple rule you can use again and again; once it clicks, you can solve similar problems with confidence."
+
     def _switch_topic(self, state: LessonState, topic: dict) -> None:
         state.topic_slug = topic["slug"]
         state.topic_title = topic["title"]
@@ -378,12 +421,14 @@ class TutorEngine:
             )
 
         opening = (
-            f"Hi {student_label}. I'm Ava, and today we'll work on {topic['title']} for Class {state.grade}.\n\n"
-            f"By the end of this lesson, you should feel comfortable with {topic.get('classroom_goal', topic.get('summary', 'the main idea of this chapter'))}.\n\n"
-            "I'll start teaching right away, and you can interrupt me any time if you want a doubt cleared, one more example, or a question."
+            f"Hi {student_label}. I'm Ava, and today we'll start Chapter {topic['title']} for Class {state.grade}.\n\n"
+            f"In this lesson, we'll learn {topic.get('classroom_goal', topic.get('summary', 'the main idea of this chapter'))}.\n\n"
+            "I'll explain the first idea clearly with a simple analogy, then ask if it makes sense before we move on."
         )
         lesson_start = self._build_guided_explanation(state)
         state.last_summary = f"Started a guided class on {topic['title']}."
+        if not state.start_time:
+            state.start_time = datetime.now()
         return f"{opening}\n\n{lesson_start}"
 
     def _build_resume(self, state: LessonState, session_record) -> str:
@@ -403,11 +448,12 @@ class TutorEngine:
     def _build_guided_explanation(self, state: LessonState) -> str:
         topic = self._ensure_topic(state)
         concept = self._ensure_concept(state)
-        state.step = "GUIDED_EXPLANATION"
+        state.step = "CONFIRM_UNDERSTANDING"
 
         if not concept:
+            analogy = self._build_analogy(state)
             state.notes = [
-                f"Discussing {topic['title']}.",
+                f"Discussing {topic['title']}",
                 topic.get("summary", "Concept discussion in progress."),
             ]
             state.last_summary = f"Guided explanation in progress for {topic['title']}."
@@ -415,11 +461,13 @@ class TutorEngine:
                 f"Let's start with {topic['title']}.\n\n"
                 "We'll take one idea at a time and keep the pace calm.\n\n"
                 f"{topic.get('teaching_anchor', topic.get('summary', 'We will build the idea step by step.'))}\n\n"
-                "Ask a doubt any time, or tell me when you want a question."
+                f"A helpful way to think about it is: {analogy}\n\n"
+                "Does that make sense so far? If you want, I can explain it again or show one example."
             )
 
         board_steps = concept.get("board_work", [])[:3]
         board_script = " ".join(board_steps) if board_steps else "We will solve a simple example together."
+        analogy = self._build_analogy(state)
         state.notes = [
             f"Concept: {concept['title']}",
             topic.get("teaching_anchor", topic.get("summary", "")),
@@ -429,9 +477,10 @@ class TutorEngine:
         return (
             f"Let's begin with {concept['title']}.\n\n"
             f"Here is the main idea in a simple way. {concept['explanation']}\n\n"
+            f"A helpful analogy is: {analogy}\n\n"
             f"{topic.get('teaching_anchor', 'We will connect the idea to classroom-style examples.')}\n\n"
             f"Now look at the whiteboard with me. {board_script}\n\n"
-            "Take a moment to notice the pattern. If you want, I can show one worked example next, or we can try a guided question together."
+            "Take a moment to notice the pattern. Do you understand this so far? I can explain it again in a simpler way or give you one more example."
         )
 
     def _build_worked_example(self, state: LessonState) -> str:
@@ -466,18 +515,21 @@ class TutorEngine:
     def _build_reteach_support(self, state: LessonState) -> str:
         topic = self._ensure_topic(state)
         concept = self._ensure_concept(state)
-        state.step = "GUIDED_EXPLANATION"
+        state.step = "CONFIRM_UNDERSTANDING"
 
         if not concept:
+            analogy = self._build_analogy(state)
             state.last_summary = f"Re-explained the main idea in {topic['title']}."
             return (
                 f"No problem. Let's slow it down.\n\n"
                 f"{topic.get('teaching_anchor', topic.get('summary', 'We will build the idea step by step.'))}\n\n"
+                f"A helpful way to remember it is: {analogy}\n\n"
                 "I'll keep it simple. After this, I can show one example."
             )
 
         board_work = concept.get("board_work", [])
         simple_example = board_work[0] if board_work else "We will use one small example and build from there."
+        analogy = self._build_analogy(state)
         state.notes = [
             f"Re-explaining {concept['title']} slowly.",
             simple_example,
@@ -487,6 +539,7 @@ class TutorEngine:
         return (
             f"No problem. Let's take {concept['title']} one step at a time.\n\n"
             f"The key idea is this: {concept['explanation']}\n\n"
+            f"A helpful analogy is: {analogy}\n\n"
             f"Keep this one example in mind: {simple_example}\n\n"
             "Tell me if you want one more example, or I can give you a guided question."
         )
@@ -508,12 +561,22 @@ class TutorEngine:
 
         answer_type = problem.get("answer_type", "number")
         lower = message.lower().strip()
+        
+        # Check if it looks like a pair answer (contains comma with numbers)
+        if "," in message:
+            pair = self.extract_pair(message)
+            if pair is not None:
+                return True
 
         if answer_type == "number":
-            return self.extract_number(message) is not None
+            # Don't match if it's clearly a pair (has comma)
+            if "," not in message:
+                return self.extract_number(message) is not None
+            return False
         if answer_type == "pair":
             return self.extract_pair(message) is not None
 
+        # For text answers
         accepted = [str(problem.get("answer", "")).lower()]
         accepted.extend(str(item).lower() for item in problem.get("accepted_answers", []))
         return lower in set(accepted) or any(value and value in lower for value in accepted)
@@ -577,15 +640,28 @@ Student question:
             state.last_summary = f"Practice requested for {state.topic_title}."
             return "Let's do guided practice. Ask me for a sample problem from this chapter and I will create one."
 
-        problem = concept["practice_problems"][state.current_question_index]
+        # Limit to 3 problems
+        problems = concept.get("practice_problems", [])[:3]
+
+        problem = problems[state.current_question_index]
         state.notes = [
             f"Practice started for {concept['title']}.",
-            "Student is solving a guided problem.",
+            "Student is solving guided problems (3-5 total).",
         ]
         state.last_summary = f"Practice has started for {concept['title']}."
+        
+        # Add expected answer format
+        format_hint = ""
+        if problem.get("answer_type") == "number":
+            format_hint = " (Give your answer as a number, like '5' or '2.5')"
+        elif problem.get("answer_type") == "pair":
+            format_hint = " (Give your answer as two numbers separated by a comma, like '2, 3')"
+        else:
+            format_hint = " (Give your answer clearly)"
+        
         return (
             "Practice time.\n\n"
-            f"Here is your first question: {problem['prompt']}\n\n"
+            f"Here is your first question: {problem['prompt']}{format_hint}\n\n"
             "Answer in your own words when you're ready, or ask for a hint if you want help."
         )
 
@@ -614,18 +690,38 @@ Student question:
             return "Let's choose a chapter with practice problems first."
 
         problems = concept.get("practice_problems", [])
+        # Limit to 3-5 problems
+        if len(problems) > 5:
+            problems = problems[:5]
+        elif len(problems) < 3:
+            problems = problems  # Use all if less than 3
+
         if not problems:
             return "This concept does not have stored practice yet, but I can still teach it step by step."
 
         current = problems[state.current_question_index]
         answer_type = current.get("answer_type", "number")
         correct = False
+        
+        # Try to deduce answer_type from the expected answer if not set
+        if not answer_type or answer_type == "number":
+            expected_answer = current.get("answer")
+            if isinstance(expected_answer, (list, tuple)) and len(expected_answer) == 2:
+                answer_type = "pair"
 
-        if answer_type == "number":
+        if answer_type == "pair":
+            # Check if message looks like a pair
+            if "," in message or self.extract_pair(message) is not None:
+                correct = self._pair_matches(self.extract_pair(message), current["answer"])
+            else:
+                # Try to extract two numbers anyway
+                nums = self._numbers_in_text(message)
+                if len(nums) >= 2:
+                    correct = self._pair_matches((nums[0], nums[1]), current["answer"])
+        elif answer_type == "number":
             number = self.extract_number(message)
-            correct = number is not None and abs(number - current["answer"]) < 0.01
-        elif answer_type == "pair":
-            correct = self._pair_matches(self.extract_pair(message), current["answer"])
+            if number is not None and isinstance(current["answer"], (int, float)):
+                correct = abs(number - current["answer"]) < 0.01
         else:
             lower = message.lower().strip()
             accepted = [current.get("answer", "")]
@@ -639,12 +735,40 @@ Student question:
         state.last_answer_correct = correct
 
         if not correct:
-            state.last_summary = f"Student is still working on {concept['title']}."
-            return (
-                "Not yet, but you're close.\n\n"
-                f"Here is a hint: {current.get('hint', 'Slow down and substitute carefully.')}\n\n"
-                "If you want, ask me to explain the steps and I will solve it with you."
-            )
+            state.last_summary = f"Student needs help with {concept['title']}."
+            # Show solution on whiteboard and explain
+            steps = " ".join(current.get("steps", [])[:4]) or f"The solution is {current.get('answer', 'shown above')}."
+            explanation = current.get("explanation", "Let's work through this together.")
+            state.notes = [
+                f"Student answered incorrectly for {concept['title']}.",
+                f"Correct answer: {current.get('answer', 'see whiteboard')}",
+                steps,
+            ]
+            # Move to next question after showing solution
+            state.current_question_index += 1
+            if state.current_question_index < len(problems):
+                next_problem = problems[state.current_question_index]
+                # Add format hint for next problem
+                format_hint = ""
+                next_answer_type = next_problem.get("answer_type", "number")
+                if isinstance(next_problem.get("answer"), (list, tuple)) or next_answer_type == "pair":
+                    format_hint = " (Answer as two numbers with comma: like '2, 1')"
+                elif next_answer_type == "number":
+                    format_hint = " (Give a number)"
+                return (
+                    f"Not quite right. Let me show you: {steps}\n\n"
+                    f"{explanation}\n\n"
+                    f"Now try this: {next_problem['prompt']}{format_hint}"
+                )
+            else:
+                # End practice if no more questions
+                state.step = "REFLECTION"
+                state.homework_given = True
+                return (
+                    f"Not quite right. Here's the correct way: {steps}\n\n"
+                    f"{explanation}\n\n"
+                    "That's all the practice for now. Great effort!"
+                )
 
         state.correct_answers_in_concept += 1
         state.current_question_index += 1
@@ -653,12 +777,36 @@ Student question:
             f"Correct responses in this concept: {state.correct_answers_in_concept}.",
         ]
 
+        # Limit to 3-5 problems: after 3 correct answers, move to reflection
+        if state.correct_answers_in_concept >= 3:
+            state.step = "REFLECTION"
+            state.homework_given = True
+            state.notes = [
+                f"Completed guided practice in {state.topic_title}.",
+                "Homework suggested for revision.",
+                "Saved for future review in the class archive.",
+            ]
+            state.last_summary = f"Completed the guided class on {state.topic_title} with successful practice."
+            return f"""Excellent work today.
+
+**Class wrap-up**
+- You completed guided practice for **{state.topic_title}**
+- You can reopen this class later from your archive
+- Next time we can revise, solve harder questions, or switch chapters
+
+**Homework**
+- Create one more example like today's problem
+- Solve it by showing every step
+- Come back and ask me to check it
+
+Say **revise** if you want a short recap right now."""
+
         if state.current_question_index < len(problems):
             next_problem = problems[state.current_question_index]
             state.last_summary = f"Student is progressing through practice in {concept['title']}."
             return (
-                "Correct.\n\n"
-                f"Let's take the next guided problem. {next_problem['prompt']}"
+                "Correct! Well done.\n\n"
+                f"Next question: {next_problem['prompt']}"
             )
 
         next_concept = get_next_concept(state.grade, state.topic_slug, state.current_concept_id)
@@ -703,7 +851,11 @@ Say **revise** if you want a short recap right now."""
         topic = self._ensure_topic(state)
         cleaned = message.strip()
 
-        if not cleaned:
+        # Check for break time
+        if self._should_take_break(state):
+            return self._build_break_message(state)
+
+        if not cleaned and state.step == "INTRO":
             if session_record and session_record.transcript:
                 return self._build_resume(state, session_record)
             return self._build_intro(state, session_record)
@@ -727,6 +879,11 @@ Say **revise** if you want a short recap right now."""
         if self.is_break(cleaned):
             state.last_summary = f"Paused the class on {topic['title']}."
             return "We can pause here. Your lesson is saved, so come back anytime and tell me to continue."
+
+        # Handle break resumption
+        if state.break_taken and (self.is_ready(cleaned) or self.is_affirmative(cleaned) or "continue" in cleaned.lower()):
+            state.last_summary = f"Resumed class on {topic['title']} after break."
+            return f"Welcome back. Let's continue with {topic['title']}.\n\n{self._build_guided_explanation(state) if state.step == 'GUIDED_EXPLANATION' else 'What would you like to do next?'}"
 
         if self.is_greeting(cleaned) and state.step == "INTRO":
             return self._build_intro(state, session_record)
@@ -772,6 +929,22 @@ If you want, I can give you a new problem or answer a specific doubt."""
                 return self._build_worked_example(state)
 
             return self._build_worked_example(state)
+
+        if state.step == "CONFIRM_UNDERSTANDING":
+            if self.is_affirmative(cleaned):
+                return self._build_worked_example(state)
+
+            if self.feels_confused(cleaned):
+                return self._build_reteach_support(state)
+
+            if self.is_question(cleaned):
+                state.last_summary = f"Answered a question during understanding check in {topic['title']}."
+                return self._keyword_explanation(state, cleaned)
+
+            if self.wants_example(cleaned):
+                return self._build_worked_example(state)
+
+            return "Do you understand this concept? Say 'yes' if you're ready to move on, or tell me if you need it explained again."
 
         if state.step == "WORKED_EXAMPLE":
             if self.feels_confused(cleaned):

@@ -11,6 +11,7 @@ type TeacherAvatarProps = {
   chapter: string;
   isSpeaking: boolean;
   liveReady: boolean;
+  mounted?: boolean;
   name: string;
   stageMode?: "default" | "focus";
   status: string;
@@ -34,6 +35,7 @@ export default function TeacherAvatar({
   chapter,
   isSpeaking,
   liveReady,
+  mounted = false,
   name,
   stageMode = "default",
   status,
@@ -131,9 +133,11 @@ export default function TeacherAvatar({
               />
               {classroomMood}
             </div>
-            <div className="rounded-full border border-slate-200 bg-white/85 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600">
-              {avatarProviderLabel || avatarProvider.label}
-            </div>
+            {mounted && (
+              <div className="rounded-full border border-slate-200 bg-white/85 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600">
+                {avatarProviderLabel || (avatarProviderLabel === null ? "Loading..." : avatarProvider.label)}
+              </div>
+            )}
           </div>
         </div>
 
@@ -285,10 +289,10 @@ export default function TeacherAvatar({
           </div>
         </div>
 
-        {!showIframe && !showVideoAvatar && (avatarSetupHint || avatarProvider.setupHint) && (
+        {mounted && !showIframe && !showVideoAvatar && (avatarSetupHint || avatarProvider.setupHint) && (
           <div className="mt-4 rounded-2xl border border-dashed border-amber-300 bg-amber-50/80 px-4 py-3 text-sm text-slate-700">
             <div className="font-semibold text-slate-900">Human avatar setup pending</div>
-            <div className="mt-1 leading-6">{avatarSetupHint || avatarProvider.setupHint}</div>
+            <div className="mt-1 leading-6">{/* avatarSetupHint || avatarProvider.setupHint */}</div>
           </div>
         )}
 

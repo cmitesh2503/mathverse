@@ -123,6 +123,7 @@ type BrowserSpeechRecognition = {
   maxAlternatives: number;
   start: () => void;
   stop: () => void;
+  onstart: (() => void) | null;
   onresult: ((event: SpeechRecognitionEventLike) => void) | null;
   onend: (() => void) | null;
   onerror: ((event: { error?: string }) => void) | null;
@@ -292,7 +293,7 @@ export default function Chat() {
   const [isBootstrapping, setIsBootstrapping] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isHandsFreeMode, setIsHandsFreeMode] = useState(true);
-  const [tutorAudioMuted, setTutorAudioMuted] = useState(true);
+  const [tutorAudioMuted, setTutorAudioMuted] = useState(false);
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   const [speechRecognitionSupported, setSpeechRecognitionSupported] = useState(false);
   const [liveAudioSupported, setLiveAudioSupported] = useState(false);
@@ -307,8 +308,13 @@ export default function Chat() {
   const [isBootingHumanAvatar, setIsBootingHumanAvatar] = useState(false);
   const [avatarStatusRefreshKey, setAvatarStatusRefreshKey] = useState(0);
   const [wsReopenTick, setWsReopenTick] = useState(0);
+  const [mounted, setMounted] = useState(false);
   const [activeApiBase, setActiveApiBase] = useState<string>(ENV_API_BASE ?? "");
   const [activeWsBase, setActiveWsBase] = useState<string>(ENV_WS_BASE ?? "");
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const {
     messages,
@@ -400,11 +406,8 @@ export default function Chat() {
     stopLiveAudioPlayback();
     setIsSpeaking(false);
     liveSquelchRef.current = true;
-    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      ws.current.send(JSON.stringify({ type: "interrupt" }));
-      ws.current.close();
-      setWsReopenTick((current) => current + 1);
-    }
+    // Don't close the websocket - we need it to send the recognized speech back to the server
+    // The interruption is just stopping the playback, not closing the connection
   });
 
   const pauseStudentListening = () => {
@@ -526,6 +529,7 @@ export default function Chat() {
     setLessonState(null);
     setSessionMeta(null);
     setLiveAvatarEmbedUrl(null);
+    setTutorAudioMuted(false);
     setTutorStatus("Starting a fresh classroom...");
     void bootstrapSession({
       gradeOverride: grade,
@@ -562,6 +566,21 @@ export default function Chat() {
 
     void loadStatus();
   }, [activeApiBase, avatarProvider.provider, avatarStatusRefreshKey, requestBackend]);
+
+  useEffect(() => {
+    if (
+      avatarProvider.provider !== "liveavatar" ||
+      !liveAvatarStatus ||
+      !liveAvatarStatus.configured ||
+      !liveAvatarStatus.auto_start ||
+      liveAvatarEmbedUrl ||
+      isBootingHumanAvatar
+    ) {
+      return;
+    }
+
+    void startHumanAvatar();
+  }, [avatarProvider.provider, liveAvatarStatus, liveAvatarEmbedUrl, isBootingHumanAvatar]);
 
   useEffect(() => {
     const browserWindow = window as BrowserWindow;
@@ -612,6 +631,7 @@ export default function Chat() {
             speechRestartTimerRef.current = null;
           }
           setIsListening(false);
+          setTutorStatus("Processing your answer...");
           handleRecognizedSpeech(spoken);
           recognition.stop();
         }
@@ -640,6 +660,8 @@ export default function Chat() {
       };
       recognition.onerror = (event) => {
         const isAbort = event.error === "aborted";
+        const errorMessage = event.error || "unknown error";
+        
         speechTurnRequestedRef.current = false;
         speechResultCapturedRef.current = false;
         if (speechRestartTimerRef.current) {
@@ -647,8 +669,17 @@ export default function Chat() {
           speechRestartTimerRef.current = null;
         }
         setIsListening(false);
+        
         if (!isAbort) {
-          setTutorStatus("I could not hear that clearly. Try again or type your question.");
+          if (errorMessage === "no-speech") {
+            setTutorStatus("No speech detected. Please try again or type your answer.");
+          } else if (errorMessage === "network") {
+            setTutorStatus("Network error. Please check your internet connection.");
+          } else if (errorMessage === "not-allowed") {
+            setTutorStatus("Microphone permission denied. Enable in browser settings.");
+          } else {
+            setTutorStatus(`Voice error: ${errorMessage}. Please try again or type.`);
+          }
         }
       };
       recognitionRef.current = recognition;
@@ -951,6 +982,21 @@ export default function Chat() {
     }
   };
 
+  const getPreferredTutorVoice = (voices: SpeechSynthesisVoice[]) => {
+    if (!voices.length) {
+      return null;
+    }
+
+    const englishVoices = voices.filter((voice) => /en(-|_)?/i.test(voice.lang));
+    const femaleVoiceHints = /female|woman|girl|samantha|kendra|zira|susan|natalie|victoria|olivia|emma|aria|luna|amy|lucy|alloy|serena|aimee|fiona/i;
+    const femaleEnglish = englishVoices.find((voice) => femaleVoiceHints.test(voice.name.toLowerCase()));
+
+    if (femaleEnglish) {
+      return femaleEnglish;
+    }
+    return englishVoices[0] ?? voices[0];
+  };
+
   const speakLastMessage = () => {
     if (tutorAudioMuted || !("speechSynthesis" in window)) {
       return;
@@ -963,8 +1009,7 @@ export default function Chat() {
 
     const utterance = new SpeechSynthesisUtterance(toSpokenText(lastMessage.content));
     const voices = window.speechSynthesis.getVoices();
-    const preferredVoice =
-      voices.find((voice) => /en(-|_)?/i.test(voice.lang)) ?? voices[0];
+    const preferredVoice = getPreferredTutorVoice(voices);
 
     if (preferredVoice) {
       utterance.voice = preferredVoice;
@@ -1013,21 +1058,36 @@ export default function Chat() {
 
     pauseStudentListening();
     stopLiveAudioPlayback();
-    speechTurnRequestedRef.current = true;
-    speechResultCapturedRef.current = false;
-    if (speechRestartTimerRef.current) {
-      window.clearTimeout(speechRestartTimerRef.current);
-      speechRestartTimerRef.current = null;
-    }
-    setIsListening(true);
-    setTutorStatus("I am listening. Ask your maths question and pause when you finish.");
-    try {
-      recognitionRef.current.start();
-    } catch {
-      speechTurnRequestedRef.current = false;
+    
+    // Request microphone permission first if not already granted
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      // Stop the stream - we just wanted to request permission
+      stream.getTracks().forEach(track => track.stop());
+      
+      // Now start speech recognition
+      speechTurnRequestedRef.current = true;
+      speechResultCapturedRef.current = false;
+      if (speechRestartTimerRef.current) {
+        window.clearTimeout(speechRestartTimerRef.current);
+        speechRestartTimerRef.current = null;
+      }
+      setIsListening(true);
+      setTutorStatus("I am listening. Ask your maths question and pause when you finish.");
+      try {
+        if (recognitionRef.current) {
+          recognitionRef.current.start();
+        } else {
+          throw new Error("Speech recognition not initialized");
+        }
+      } catch (err) {
+        speechTurnRequestedRef.current = false;
+        setIsListening(false);
+        setTutorStatus("Could not start voice input. Please check microphone permissions.");
+      }
+    }).catch(() => {
+      setTutorStatus("Microphone access denied. Please enable microphone permissions in browser settings.");
       setIsListening(false);
-      setTutorStatus("I could not start voice input. Please try again.");
-    }
+    });
   };
 
   const stopListening = () => {
@@ -1256,28 +1316,20 @@ export default function Chat() {
     lessonState?.whiteboard ??
     ((sessionMeta?.metadata?.whiteboard as WhiteboardPayload | undefined) ?? null);
   const avatarProviderLabel =
-    avatarProvider.provider === "liveavatar" && liveAvatarStatus?.configured
+    mounted && avatarProvider.provider === "liveavatar" && liveAvatarStatus?.configured
       ? liveAvatarEmbedUrl
         ? "LiveAvatar Human Video"
         : "LiveAvatar Ready"
       : null;
   const avatarSetupHint =
-    avatarProvider.provider === "liveavatar" ? liveAvatarStatus?.setup_hint : undefined;
+    mounted && avatarProvider.provider === "liveavatar" ? liveAvatarStatus?.setup_hint : undefined;
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f7f2e8_0%,#efe6d3_46%,#f8f5ef_100%)] text-slate-900">
       {isFocusScreen ? (
         <div className="mx-auto max-w-[1720px] p-4 md:p-6">
           <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
-            {tutorAudioMuted && (
-              <button
-                onClick={() => setTutorAudioMuted(false)}
-                className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-700"
-              >
-                Enable Tutor Voice
-              </button>
-            )}
-            {avatarProvider.provider === "liveavatar" && (
+            {mounted && avatarProvider.provider === "liveavatar" && (
               <button
                 onClick={() => void startHumanAvatar()}
                 disabled={
@@ -1320,6 +1372,7 @@ export default function Chat() {
               avatarSetupHint={avatarSetupHint}
               isSpeaking={isSpeaking}
               liveReady={liveConnected}
+              mounted={mounted}
               name={sessionMeta?.tutor_name ?? "Ava"}
               stageMode="focus"
               status={tutorStatus}
@@ -1461,6 +1514,7 @@ export default function Chat() {
                   avatarSetupHint={avatarSetupHint}
                   isSpeaking={isSpeaking}
                   liveReady={liveConnected}
+                  mounted={mounted}
                   name={sessionMeta?.tutor_name ?? "Ava"}
                   stageMode="default"
                   status={tutorStatus}
@@ -1615,24 +1669,9 @@ export default function Chat() {
 
                   <div className="rounded-[1.6rem] border border-slate-200 bg-white p-3">
                     <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
-                      {tutorAudioMuted ? (
-                        <button
-                          onClick={() => setTutorAudioMuted(false)}
-                          className="rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white"
-                        >
-                          Enable Tutor Voice
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setTutorAudioMuted(true);
-                            stopLiveAudioPlayback();
-                          }}
-                          className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700"
-                        >
-                          Tutor voice enabled
-                        </button>
-                      )}
+                      <div className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+                        Tutor voice enabled
+                      </div>
                       <button
                         onClick={() => {
                           const next = !isHandsFreeMode;
@@ -1797,7 +1836,7 @@ export default function Chat() {
                         ? "SDK available, waiting for live session"
                         : "backend will use text stream fallback"}
                   </div>
-                  {avatarProvider.provider === "liveavatar" && (
+                  {mounted && avatarProvider.provider === "liveavatar" && (
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
                       <span className="font-semibold text-slate-900">Human avatar:</span>{" "}
                       {liveAvatarEmbedUrl

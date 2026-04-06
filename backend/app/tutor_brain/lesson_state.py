@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 
 @dataclass
@@ -21,6 +22,8 @@ class LessonState:
     notes: list[str] = field(default_factory=list)
     last_summary: str = ""
     whiteboard: dict = field(default_factory=dict)
+    start_time: datetime | None = None
+    break_taken: bool = False
 
     @property
     def question_index(self) -> int:
