@@ -14,6 +14,7 @@ from ..core.config import (
     GEMINI_LIVE_VOICE,
 )
 from ..services.ai_gateway import get_live_client, live_api_available
+from ..services.retrieval_service import retrieve_context
 from ..services.session_service import session_service
 from ..tutor_brain.curriculum import build_curriculum_grounding, get_topic
 from ..tutor_brain.runtime import tutor_engine
@@ -144,6 +145,17 @@ class LiveTutorBridge:
         topic = get_topic(session_record.grade, session_record.topic_slug)
         topic_title = topic["title"] if topic else session_record.topic_title or "CBSE Mathematics"
 
+        source_material = retrieve_context(topic_title, session_record.grade)
+        curriculum_grounding = build_curriculum_grounding(session_record.grade)
+
+        if source_material:
+            source_material = source_material[:1800]
+            curriculum_grounding += (
+                "\n\nSource material from NCERT / CBSE PDF curriculum:\n"
+                "Use this textbook-backed content when teaching this chapter.\n"
+                f"{source_material}"
+            )
+
         system_prompt = (
             "You are Ava, a real-time CBSE mathematics tutor.\n"
             "Act like a live online teacher, not a generic chatbot.\n"
@@ -168,7 +180,7 @@ class LiveTutorBridge:
             "Allow time for the student to write, and ask if they have any doubts occasionally, not too frequently.\n\n"
             f"Current chapter focus: {topic_title}\n"
             f"Current classroom memory:\n{memory_context}\n\n"
-            f"Curriculum grounding:\n{build_curriculum_grounding(session_record.grade)}"
+            f"Curriculum grounding:\n{curriculum_grounding}"
         )
 
         return live_types.LiveConnectConfig(

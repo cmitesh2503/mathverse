@@ -49,13 +49,15 @@ def send_message(request: SessionMessageRequest):
         session_record=refreshed_session,
     )
     session_service.append_turn(session.session_id, "assistant", response)
+    snapshot = tutor_engine.snapshot(session.session_id)
     session_service.update_lesson_snapshot(
         session.session_id,
-        tutor_engine.snapshot(session.session_id),
+        snapshot,
     )
 
     updated = session_service.get_session(session.session_id)
     return {
         "response": response,
+        "whiteboard": snapshot.whiteboard if snapshot else None,
         "session": session_service.serialize_session(updated, include_transcript=True),
     }
