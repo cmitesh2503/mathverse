@@ -1,27 +1,42 @@
-// This route is kept for potential future use
-// For now, Gemini Live API is accessed directly from the browser using the official SDK
-
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    console.log("📨 /api/live called with:", Object.keys(body));
+    const { sdp } = await req.json();
 
-    // Currently, the browser connects directly to Gemini Live API
-    // This endpoint can be used for additional processing if needed
+    if (!sdp) {
+      return new Response(
+        JSON.stringify({ error: "Missing SDP" }),
+        { status: 400 }
+      );
+    }
 
-    return new Response(
-      JSON.stringify({
-        status: "ok",
-        message: "Gemini Live API connection handled via browser WebSocket",
-      }),
-      { headers: { "Content-Type": "application/json" } }
+    // 🔥 Call Gemini Live API correctly
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:live?key=${process.env.GOOGLE_API_KEY}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/sdp",
+        },
+        body: sdp,
+      }
     );
-  } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    console.error("❌ /api/live ERROR:", errMsg);
+
+    const text = await response.text();
+
+    // 🔍 Debug log (important)
+    console.log("Gemini SDP length:", text?.length);
 
     return new Response(
-      JSON.stringify({ error: `Server error: ${errMsg}` }),
+      JSON.stringify({ sdp: text }),
+      {
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  } catch (err: any) {
+    console.error("❌ /api/live ERROR:", err);
+
+    return new Response(
+      JSON.stringify({ error: err.message }),
       { status: 500 }
     );
   }

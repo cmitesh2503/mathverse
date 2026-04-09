@@ -18,15 +18,19 @@ from .services.ai_gateway import live_api_available
 from .services.live_tutor_service import LiveTutorBridge
 from .services.session_service import session_service
 from .tutor_brain.runtime import tutor_engine
+from backend.app.tutor_brain.tutor_engine import init_cbse
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
 app = FastAPI(title="MathVerse API")
+app.include_router(session.router, prefix="/session")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "http://127.0.0.1:3000",
+        "http://172.26.128.1:3000",
     ],
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
@@ -68,6 +72,11 @@ def _session_request_from_socket(websocket: WebSocket) -> StartSessionRequest:
         topic_slug=params.get("topic_slug"),
         start_new=params.get("start_new", "false").lower() == "true",
     )
+    
+
+@app.on_event("startup")
+async def startup_event():
+    init_cbse()
 
 
 @app.websocket("/ws/tutor")
@@ -119,7 +128,7 @@ async def tutor_ws(websocket: WebSocket):
     await websocket.send_json(
         {
             "type": "state",
-            "state": tutor_engine.snapshot(session_id).model_dump(mode="json"),
+            "state": tutor_engine.snapshot(session_id),
         }
     )
 
