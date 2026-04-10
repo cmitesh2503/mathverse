@@ -19,10 +19,31 @@ from .lesson_state import LessonState
 class TutorEngine:
     def __init__(self):
         self.sessions: dict[str, LessonState] = {}
-        self.ready_keywords = ["ready", "start", "begin", "continue", "let's go", "lets go"]
+        self.ready_keywords = [
+            "ready",
+            "start",
+            "begin",
+            "continue",
+            "let's go",
+            "lets go",
+            "i am ready",
+            "i'm ready",
+            "can we start",
+            "start the lesson",
+        ]
         self.break_keywords = ["pause", "stop", "break", "rest"]
-        self.practice_keywords = ["practice", "quiz", "problem", "exercise", "test me"]
-        self.revision_keywords = ["revise", "review", "summary", "recap"]
+        self.practice_keywords = [
+            "practice",
+            "quiz",
+            "problem",
+            "exercise",
+            "test me",
+            "ask me a question",
+            "give me a question",
+            "let me try",
+            "one more",
+        ]
+        self.revision_keywords = ["revise", "review", "summary", "recap", "go over", "repeat"]
         self.greeting_keywords = ["hi", "hello", "hey", "good morning", "good afternoon", "good evening"]
         self.math_keywords = [
             "math",
@@ -262,8 +283,19 @@ class TutorEngine:
         state.last_summary = f"Switched to {topic['title']} for guided teaching."
 
     def _chapter_menu(self, grade: int) -> str:
-        top_chapters = list_chapters(grade)[:6]
-        return "\n".join(f"- {chapter['title']}" for chapter in top_chapters)
+        chapters = list_chapters(grade)
+        return "\n".join(f"- {chapter['title']}" for chapter in chapters)
+
+    def _lesson_timing_line(self, state: LessonState) -> str:
+        pace_map = {
+            "INTRO": (0, 45),
+            "TOPIC_INTRODUCTION": (5, 40),
+            "GUIDED_EXPLANATION": (15, 30),
+            "PRACTICE": (30, 15),
+            "REFLECTION": (40, 5),
+        }
+        elapsed, remaining = pace_map.get(state.step, (20, 25))
+        return f"Class plan: 45 minutes total. About {elapsed} minutes done and {remaining} minutes left."
 
     def _build_intro(self, state: LessonState, session_record=None) -> str:
         topic = self._ensure_topic(state)
@@ -281,9 +313,12 @@ class TutorEngine:
 
         return (
             f"Hi {student_label}. I'm Ava, and today we'll work on {topic['title']} for Class {state.grade}.\n\n"
+            "I will teach strictly from the loaded CBSE NCERT chapter map for your class, with grounded examples only.\n\n"
+            f"For Class {state.grade}, our NCERT chapter list is:\n{self._chapter_menu(state.grade)}\n\n"
             f"By the end of this lesson, you should feel comfortable with {topic.get('classroom_goal', topic.get('summary', 'the main idea of this chapter'))}.\n\n"
-            "We'll keep it simple. First I will explain the idea in an easy way, then we'll see it on the whiteboard, and then you will try one question with me.\n\n"
-            "When you're ready, say ready. If you want to jump straight into a question, say practice."
+            f"{self._lesson_timing_line(state)}\n"
+            "We'll keep a moderate pace with small pauses between ideas so the explanation stays clear.\n\n"
+            "You can reply naturally, for example: let's start, explain again, give me a question, or I need a hint."
         )
 
     def _build_resume(self, state: LessonState, session_record) -> str:
@@ -297,6 +332,7 @@ class TutorEngine:
             "Welcome back.\n\n"
             f"Last time we were working on {topic['title']} in Class {state.grade}. "
             f"Our last checkpoint was: {session_record.summary or 'we are ready to continue.'}\n\n"
+            f"I remember what we covered from your saved notes, and I'll continue from that exact point. {self._lesson_timing_line(state)}\n\n"
             "If you want, we can continue from there, do a quick revision, or switch chapters."
         )
 
@@ -313,9 +349,9 @@ class TutorEngine:
             state.last_summary = f"Guided explanation in progress for {topic['title']}."
             return (
                 f"Let's start with {topic['title']}.\n\n"
-                "We'll take one idea at a time and keep the pace calm.\n\n"
+                "We'll take one idea at a time at moderate-to-slow speed, with pauses after each step.\n\n"
                 f"{topic.get('teaching_anchor', topic.get('summary', 'We will build the idea step by step.'))}\n\n"
-                "Ask a doubt any time, or say practice when you want a question."
+                f"{self._lesson_timing_line(state)} Ask a doubt any time, or ask for a guided question."
             )
 
         board_steps = concept.get("board_work", [])[:3]
@@ -418,6 +454,21 @@ Student question:
             f"Follow this flow with me. {steps}\n\n"
             "Now you try the final answer."
         )
+
+
+    def _looks_like_answer_attempt(self, state: LessonState, message: str) -> bool:
+        problem = self._current_problem(state)
+        if not problem:
+            return False
+
+        answer_type = problem.get("answer_type", "number")
+        if answer_type == "number":
+            return self.extract_number(message) is not None
+        if answer_type == "pair":
+            return self.extract_pair(message) is not None
+
+        lower = message.lower().strip()
+        return lower in {"yes", "no", "true", "false"} or len(lower.split()) <= 4
 
     def _pair_matches(self, candidate: tuple[float, float] | None, expected: list[float]) -> bool:
         if candidate is None:
@@ -568,8 +619,9 @@ If you want, say **practice** for a new problem or ask a specific doubt."""
                 return self._build_guided_explanation(state)
 
             return (
-                f"We're set up for **{topic['title']}**. Say **ready** to begin the guided lesson, "
-                "or ask a doubt before we start."
+                f"We are set up for {topic['title']}. "
+                "I will stay grounded to CBSE NCERT and keep a moderate pace with pauses. "
+                "You can say something natural like start the lesson, explain this chapter, or ask your doubt first."
             )
 
         if state.step == "GUIDED_EXPLANATION":
@@ -583,7 +635,12 @@ If you want, say **practice** for a new problem or ask a specific doubt."""
             return self._start_practice(state)
 
         if state.step == "PRACTICE":
-            if self.is_question(cleaned) or "hint" in cleaned.lower() or "help" in cleaned.lower():
+            lower = cleaned.lower()
+            if "hint" in lower or "help" in lower or "explain" in lower or "how" in lower:
+                return self._practice_help(state)
+            if self._looks_like_answer_attempt(state, cleaned):
+                return self._evaluate_practice(state, cleaned)
+            if self.is_question(cleaned):
                 return self._practice_help(state)
             return self._evaluate_practice(state, cleaned)
 
@@ -595,7 +652,7 @@ If you want, say **practice** for a new problem or ask a specific doubt."""
             if self.is_question(cleaned):
                 return self._keyword_explanation(state, cleaned)
             return (
-                "Your class notes are saved. Ask for a revision, try another chapter, or say **practice** for more problems."
+                "Your class notes are saved. I remember what we covered. Ask for a revision, try another chapter, or simply say give me another problem."
             )
 
         state.last_summary = f"Continuing guided teaching in {topic['title']}."
