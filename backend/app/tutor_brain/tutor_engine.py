@@ -10,6 +10,63 @@ from .curriculum import find_topic_by_message, get_concept, get_default_topic_sl
 from .lesson_state import LessonState
 
 
+class TutorEngine:
+    def __init__(self):
+        self.sessions: dict[str, LessonState] = {}
+        self.ready_keywords = [
+            "ready",
+            "start",
+            "begin",
+            "continue",
+            "let's go",
+            "lets go",
+            "i am ready",
+            "i'm ready",
+            "can we start",
+            "start the lesson",
+        ]
+        self.break_keywords = ["pause", "stop", "break", "rest"]
+        self.practice_keywords = [
+            "practice",
+            "quiz",
+            "problem",
+            "exercise",
+            "test me",
+            "ask me a question",
+            "give me a question",
+            "let me try",
+            "one more",
+        ]
+        self.revision_keywords = ["revise", "review", "summary", "recap", "go over", "repeat"]
+        self.greeting_keywords = ["hi", "hello", "hey", "good morning", "good afternoon", "good evening"]
+        self.math_keywords = [
+            "math",
+            "mathematics",
+            "equation",
+            "algebra",
+            "triangle",
+            "trigonometry",
+            "coordinate",
+            "circle",
+            "probability",
+            "statistics",
+            "volume",
+            "linear",
+            "solve",
+            "graph",
+            "variable",
+            "number",
+        ]
+
+    def _state_for(self, session_id: str) -> LessonState:
+        if session_id not in self.sessions:
+            self.sessions[session_id] = LessonState()
+        return self.sessions[session_id]
+
+    def hydrate_session(self, session_id: str, session_record=None) -> LessonState:
+        state = self._state_for(session_id)
+        if not session_record:
+            return state
 retriever = None
 retriever_lock = Lock()
 
@@ -154,6 +211,94 @@ class TutorEngine:
             current_question_index=state.current_question_index,
         )
 
+    def extract_number(self, message: str) -> float | None:
+        numbers = re.findall(r"-?\d+\.?\d*", message)
+        if not numbers:
+            return None
+        return float(numbers[0])
+
+    def extract_pair(self, message: str) -> tuple[float, float] | None:
+        numbers = re.findall(r"-?\d+\.?\d*", message)
+        if len(numbers) < 2:
+            return None
+        return float(numbers[0]), float(numbers[1])
+
+    def _ensure_topic(self, state: LessonState) -> dict:
+        if not state.topic_slug:
+            state.topic_slug = get_default_topic_slug(state.grade)
+
+        topic = get_topic(state.grade, state.topic_slug)
+        if topic:
+            state.topic_title = topic["title"]
+        else:
+            topic = get_topic(state.grade, get_default_topic_slug(state.grade))
+            state.topic_slug = topic["slug"]
+            state.topic_title = topic["title"]
+
+        return topic
+
+    def _ensure_concept(self, state: LessonState) -> dict | None:
+        topic = self._ensure_topic(state)
+        concept = get_concept(state.grade, topic["slug"], state.current_concept_id or None)
+        if concept:
+            state.current_concept = concept
+            state.current_concept_id = concept["id"]
+            state.current_concept_title = concept["title"]
+        return concept
+
+    def _switch_topic(self, state: LessonState, topic: dict) -> None:
+        state.topic_slug = topic["slug"]
+        state.topic_title = topic["title"]
+        state.step = "TOPIC_INTRODUCTION"
+        state.current_concept_id = ""
+        state.current_concept_title = ""
+        state.current_concept = None
+        state.current_question_index = 0
+        state.correct_answers_in_concept = 0
+        state.homework_given = False
+        state.notes = [
+            f"Topic switched to {topic['title']}.",
+            topic.get("summary", ""),
+        ]
+        state.last_summary = f"Switched to {topic['title']} for guided teaching."
+
+    def _chapter_menu(self, grade: int) -> str:
+        chapters = list_chapters(grade)
+        return "\n".join(f"- {chapter['title']}" for chapter in chapters)
+
+    def _lesson_timing_line(self, state: LessonState) -> str:
+        pace_map = {
+            "INTRO": (0, 45),
+            "TOPIC_INTRODUCTION": (5, 40),
+            "GUIDED_EXPLANATION": (15, 30),
+            "PRACTICE": (30, 15),
+            "REFLECTION": (40, 5),
+        }
+        elapsed, remaining = pace_map.get(state.step, (20, 25))
+        return f"Class plan: 45 minutes total. About {elapsed} minutes done and {remaining} minutes left."
+
+    def _build_intro(self, state: LessonState, session_record=None) -> str:
+        topic = self._ensure_topic(state)
+        state.step = "TOPIC_INTRODUCTION"
+        state.notes = [
+            f"Board: CBSE Class {state.grade} Mathematics",
+            f"Focus chapter: {topic['title']}",
+            topic.get("classroom_goal", topic.get("summary", "")),
+        ]
+        state.last_summary = f"Started a guided class on {topic['title']}."
+
+        student_label = "there"
+        if session_record and session_record.student_id:
+            student_label = session_record.student_id.replace("-", " ")
+
+        return (
+            f"Hi {student_label}. I'm Ava, and today we'll work on {topic['title']} for Class {state.grade}.\n\n"
+            "I will teach strictly from the loaded CBSE NCERT chapter map for your class, with grounded examples only.\n\n"
+            f"For Class {state.grade}, our NCERT chapter list is:\n{self._chapter_menu(state.grade)}\n\n"
+            f"By the end of this lesson, you should feel comfortable with {topic.get('classroom_goal', topic.get('summary', 'the main idea of this chapter'))}.\n\n"
+            f"{self._lesson_timing_line(state)}\n"
+            "We'll keep a moderate pace with small pauses between ideas so the explanation stays clear.\n\n"
+            "You can reply naturally, for example: let's start, explain again, give me a question, or I need a hint."
     def generate_response(self, message: str, state: Optional[LessonState] = None) -> str:
         return self.process("stateless", message)
 
@@ -213,6 +358,39 @@ class TutorEngine:
         chapter = topic["title"] if topic else state.topic_title or "the current chapter"
         first_concept = concept["title"] if concept else "the basics"
         return (
+            "Welcome back.\n\n"
+            f"Last time we were working on {topic['title']} in Class {state.grade}. "
+            f"Our last checkpoint was: {session_record.summary or 'we are ready to continue.'}\n\n"
+            f"I remember what we covered from your saved notes, and I'll continue from that exact point. {self._lesson_timing_line(state)}\n\n"
+            "If you want, we can continue from there, do a quick revision, or switch chapters."
+        )
+
+    def _build_guided_explanation(self, state: LessonState) -> str:
+        topic = self._ensure_topic(state)
+        concept = self._ensure_concept(state)
+        state.step = "GUIDED_EXPLANATION"
+
+        if not concept:
+            state.notes = [
+                f"Discussing {topic['title']}.",
+                topic.get("summary", "Concept discussion in progress."),
+            ]
+            state.last_summary = f"Guided explanation in progress for {topic['title']}."
+            return (
+                f"Let's start with {topic['title']}.\n\n"
+                "We'll take one idea at a time at moderate-to-slow speed, with pauses after each step.\n\n"
+                f"{topic.get('teaching_anchor', topic.get('summary', 'We will build the idea step by step.'))}\n\n"
+                f"{self._lesson_timing_line(state)} Ask a doubt any time, or ask for a guided question."
+            )
+
+        board_steps = concept.get("board_work", [])[:3]
+        board_script = " ".join(board_steps) if board_steps else "We will solve a simple example together."
+        state.notes = [
+            f"Concept: {concept['title']}",
+            topic.get("teaching_anchor", topic.get("summary", "")),
+            "Next move: guided practice.",
+        ]
+        state.last_summary = f"Explaining {concept['title']} in {topic['title']}."
             f"Welcome back. Today we are starting {chapter}.\n\n"
             f"We will do this like a classroom: first {first_concept.lower()}, then one board example, then one short question for you.\n\n"
             "Say ready when you want me to begin."
@@ -410,6 +588,23 @@ class TutorEngine:
                 return concept
         return None
 
+
+    def _looks_like_answer_attempt(self, state: LessonState, message: str) -> bool:
+        problem = self._current_problem(state)
+        if not problem:
+            return False
+
+        answer_type = problem.get("answer_type", "number")
+        if answer_type == "number":
+            return self.extract_number(message) is not None
+        if answer_type == "pair":
+            return self.extract_pair(message) is not None
+
+        lower = message.lower().strip()
+        return lower in {"yes", "no", "true", "false"} or len(lower.split()) <= 4
+
+    def _pair_matches(self, candidate: tuple[float, float] | None, expected: list[float]) -> bool:
+        if candidate is None:
     def _should_treat_as_answer(self, state: ClassroomState, lowered: str) -> bool:
         if state.active_problem is None:
             return False
@@ -475,6 +670,130 @@ class TutorEngine:
         else:
             state.summary = f"{topic_title}: guided classroom session is ready."
 
+You've completed this part of **{state.topic_title}**. Next, we move to **{next_concept['title']}** so your understanding builds naturally.
+
+{self._build_guided_explanation(state)}"""
+
+        state.step = "REFLECTION"
+        state.homework_given = True
+        state.notes = [
+            f"Completed guided practice in {state.topic_title}.",
+            "Homework suggested for revision.",
+            "Saved for future review in the class archive.",
+        ]
+        state.last_summary = f"Completed the guided class on {state.topic_title} with successful practice."
+        return f"""Excellent work today.
+
+**Class wrap-up**
+- You completed guided practice for **{state.topic_title}**
+- You can reopen this class later from your archive
+- Next time we can revise, solve harder questions, or switch chapters
+
+**Homework**
+- Create one more example like today's problem
+- Solve it by showing every step
+- Come back and ask me to check it
+
+Say **revise** if you want a short recap right now."""
+
+    def process(self, session_id: str, message: str, session_record=None) -> str:
+        state = self.hydrate_session(session_id, session_record)
+        topic = self._ensure_topic(state)
+        cleaned = message.strip()
+
+        if not cleaned:
+            if session_record and session_record.transcript:
+                return self._build_resume(state, session_record)
+            return self._build_intro(state, session_record)
+
+        requested_topic = find_topic_by_message(state.grade, cleaned)
+        if requested_topic and requested_topic["slug"] != state.topic_slug:
+            self._switch_topic(state, requested_topic)
+            return f"""Sure. We'll switch to **{requested_topic['title']}**.
+
+**Lesson reset**
+- Grade: **Class {state.grade}**
+- New chapter: **{requested_topic['title']}**
+- Focus: {requested_topic.get('summary', 'Guided understanding and practice')}
+
+Say **ready** when you want me to teach this chapter."""
+
+        if self.is_off_topic(cleaned):
+            state.last_summary = f"Redirected the conversation back to mathematics for Class {state.grade}."
+            return (
+                f"I'm here as your mathematics tutor, so let's stay inside **CBSE Class {state.grade} Mathematics**. "
+                f"We can continue with **{topic['title']}** or switch to another chapter from your syllabus."
+            )
+
+        if self.is_break(cleaned):
+            state.last_summary = f"Paused the class on {topic['title']}."
+            return "We can pause here. Your lesson is saved, so come back anytime and say **continue**."
+
+        if self.is_greeting(cleaned) and state.step == "INTRO":
+            return self._build_intro(state, session_record)
+
+        if self.wants_revision(cleaned):
+            state.last_summary = f"Revision requested for {topic['title']}."
+            notes = "\n".join(f"- {note}" for note in state.notes[:4])
+            return f"""Quick revision for **{topic['title']}**.
+
+{notes or f'- {topic.get("summary", "We are building understanding step by step.")}'}
+
+If you want, say **practice** for a new problem or ask a specific doubt."""
+
+        if state.step in {"INTRO", "TOPIC_INTRODUCTION"}:
+            if self.is_question(cleaned):
+                state.last_summary = f"Answered an introductory doubt in {topic['title']}."
+                answer = self._keyword_explanation(state, cleaned)
+                return f"{answer}\n\nSay **ready** when you want the guided lesson to begin."
+
+            if self.is_ready(cleaned) or self.wants_practice(cleaned):
+                if self.wants_practice(cleaned):
+                    return self._start_practice(state)
+                return self._build_guided_explanation(state)
+
+            return (
+                f"We are set up for {topic['title']}. "
+                "I will stay grounded to CBSE NCERT and keep a moderate pace with pauses. "
+                "You can say something natural like start the lesson, explain this chapter, or ask your doubt first."
+            )
+
+        if state.step == "GUIDED_EXPLANATION":
+            if self.is_question(cleaned):
+                state.last_summary = f"Answered a concept question in {topic['title']}."
+                return self._keyword_explanation(state, cleaned)
+
+            if self.wants_practice(cleaned) or self.is_ready(cleaned):
+                return self._start_practice(state)
+
+            return self._start_practice(state)
+
+        if state.step == "PRACTICE":
+            lower = cleaned.lower()
+            if "hint" in lower or "help" in lower or "explain" in lower or "how" in lower:
+                return self._practice_help(state)
+            if self._looks_like_answer_attempt(state, cleaned):
+                return self._evaluate_practice(state, cleaned)
+            if self.is_question(cleaned):
+                return self._practice_help(state)
+            return self._evaluate_practice(state, cleaned)
+
+        if state.step == "REFLECTION":
+            if self.wants_practice(cleaned):
+                state.step = "PRACTICE"
+                state.current_question_index = 0
+                return self._start_practice(state)
+            if self.is_question(cleaned):
+                return self._keyword_explanation(state, cleaned)
+            return (
+                "Your class notes are saved. I remember what we covered. Ask for a revision, try another chapter, or simply say give me another problem."
+            )
+
+        state.last_summary = f"Continuing guided teaching in {topic['title']}."
+        return (
+            f"We're continuing with **{topic['title']}**. Ask a doubt, say **practice**, "
+            "or ask me to switch to another chapter."
+        )
     def _build_note_cards(self, topic: dict | None, concept: dict | None) -> list[str]:
         cards: list[str] = []
         if topic:
