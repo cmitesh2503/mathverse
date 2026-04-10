@@ -15,7 +15,6 @@ from ..models.session import (
     TutorSessionRecord,
     utc_now,
 )
-from ..tutor_brain.curriculum import get_default_topic_slug, get_topic
 
 
 STORE_PATH = Path(__file__).resolve().parent.parent / "data" / "class_sessions.json"
@@ -143,6 +142,8 @@ class SessionService:
         return sessions
 
     def create_or_resume_session(self, request: StartSessionRequest) -> TutorSessionRecord:
+        from ..tutor_brain.curriculum import get_default_topic_slug, get_topic
+
         with self._lock:
             store = self._load_store()
             profile = self._ensure_profile(store, request)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
 import ClassWhiteboard, { type WhiteboardPayload } from "./ClassWhiteboard";
@@ -8,10 +8,40 @@ import TeacherAvatar from "./TeacherAvatar";
 import { getAvatarProviderConfig } from "../lib/avatar-provider";
 import { useChatStore } from "../store/useChatStore";
 
-const API_BASE = "http://localhost:8000";
-const WS_BASE = "ws://localhost:8000/ws/tutor";
+const ENV_API_BASE = process.env.NEXT_PUBLIC_API_BASE;
+const ENV_WS_BASE = process.env.NEXT_PUBLIC_WS_BASE;
 const STUDENT_ID_KEY = "mathverse-student-id";
 const LIVE_INPUT_SAMPLE_RATE = 16000;
+
+const dedupeValues = (values: Array<string | undefined>) =>
+  Array.from(new Set(values.filter((value): value is string => Boolean(value))));
+
+const buildApiBaseCandidates = () => {
+  const browserHost =
+    typeof window !== "undefined" && window.location.hostname
+      ? window.location.hostname
+      : "127.0.0.1";
+
+  return dedupeValues([
+    ENV_API_BASE,
+    `http://${browserHost}:8000`,
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+  ]);
+};
+
+const wsBaseFromApiBase = (apiBase: string) => {
+  if (ENV_WS_BASE) {
+    return ENV_WS_BASE;
+  }
+
+  const url = new URL(apiBase);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.pathname = "/ws/tutor";
+  url.search = "";
+  url.hash = "";
+  return url.toString().replace(/\/$/, "");
+};
 
 type ArchiveSession = {
   session_id: string;
@@ -93,6 +123,7 @@ type BrowserSpeechRecognition = {
   maxAlternatives: number;
   start: () => void;
   stop: () => void;
+  onstart: (() => void) | null;
   onresult: ((event: SpeechRecognitionEventLike) => void) | null;
   onend: (() => void) | null;
   onerror: ((event: { error?: string }) => void) | null;
@@ -113,6 +144,12 @@ const getStudentId = () => {
     return existing;
   }
 
+  const next = `student-${window.crypto.randomUUID()}`;
+  window.localStorage.setItem(STUDENT_ID_KEY, next);
+  return next;
+};
+
+const createFreshStudentId = () => {
   const next = `student-${window.crypto.randomUUID()}`;
   window.localStorage.setItem(STUDENT_ID_KEY, next);
   return next;
@@ -256,7 +293,7 @@ export default function Chat() {
   const [isBootstrapping, setIsBootstrapping] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isHandsFreeMode, setIsHandsFreeMode] = useState(true);
-  const [tutorAudioMuted, setTutorAudioMuted] = useState(true);
+  const [tutorAudioMuted, setTutorAudioMuted] = useState(false);
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   const [speechRecognitionSupported, setSpeechRecognitionSupported] = useState(false);
   const [liveAudioSupported, setLiveAudioSupported] = useState(false);
@@ -267,8 +304,17 @@ export default function Chat() {
   const [showFullTranscript, setShowFullTranscript] = useState(false);
   const [liveAvatarStatus, setLiveAvatarStatus] = useState<LiveAvatarStatusPayload | null>(null);
   const [liveAvatarEmbedUrl, setLiveAvatarEmbedUrl] = useState<string | null>(null);
+  const liveSquelchRef = useRef(false);
   const [isBootingHumanAvatar, setIsBootingHumanAvatar] = useState(false);
   const [avatarStatusRefreshKey, setAvatarStatusRefreshKey] = useState(0);
+  const [wsReopenTick, setWsReopenTick] = useState(0);
+  const [mounted, setMounted] = useState(false);
+  const [activeApiBase, setActiveApiBase] = useState<string>(ENV_API_BASE ?? "");
+  const [activeWsBase, setActiveWsBase] = useState<string>(ENV_WS_BASE ?? "");
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const {
     messages,
@@ -355,6 +401,15 @@ export default function Chat() {
     sendMessage(transcript);
   });
 
+  const startStudentListening = useEffectEvent(() => {
+    // Interrupt tutor audio immediately when the student starts talking.
+    stopLiveAudioPlayback();
+    setIsSpeaking(false);
+    liveSquelchRef.current = true;
+    // Don't close the websocket - we need it to send the recognized speech back to the server
+    // The interruption is just stopping the playback, not closing the connection
+  });
+
   const pauseStudentListening = () => {
     speechTurnRequestedRef.current = false;
     speechResultCapturedRef.current = false;
@@ -385,6 +440,50 @@ export default function Chat() {
     speakLastMessage();
   });
 
+  const requestBackend = useCallback(
+    async (path: string, init?: RequestInit) => {
+      const candidates = dedupeValues([
+        ...buildApiBaseCandidates(),
+        activeApiBase,
+      ]);
+      const errors: string[] = [];
+      let lastError: Error | null = null;
+
+      for (const base of candidates) {
+        const controller = new AbortController();
+        const timeoutMs = path === "/session/start" ? 30000 : 15000;
+        const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const response = await fetch(`${base}${path}`, {
+            ...init,
+            signal: controller.signal,
+          });
+          setActiveApiBase(base);
+          setActiveWsBase(wsBaseFromApiBase(base));
+          window.clearTimeout(timeout);
+          return response;
+        } catch (error) {
+          window.clearTimeout(timeout);
+          if (error instanceof DOMException && error.name === "AbortError") {
+            lastError = new Error(
+              `Request to ${base}${path} timed out after ${timeoutMs / 1000}s.`
+            );
+          } else if (error instanceof Error) {
+            lastError = error;
+          } else {
+            lastError = new Error("Could not reach the backend.");
+          }
+          errors.push(lastError.message);
+          console.warn(`[mathverse] backend request failed for ${base}${path}:`, lastError);
+        }
+      }
+
+      const suffix = errors.length ? ` Tried: ${errors.join(" | ")}` : "";
+      throw lastError ?? new Error(`Could not reach the backend.${suffix}`);
+    },
+    [activeApiBase]
+  );
+
   const startHumanAvatar = async () => {
     if (avatarProvider.provider !== "liveavatar" || isBootingHumanAvatar) {
       return;
@@ -394,7 +493,7 @@ export default function Chat() {
     setTutorStatus("Starting the human avatar classroom...");
 
     try {
-      const response = await fetch(`${API_BASE}/avatar/liveavatar/bootstrap`, {
+      const response = await requestBackend("/avatar/liveavatar/bootstrap", {
         method: "POST",
       });
       const data = (await response.json()) as LiveAvatarStatusPayload & {
@@ -423,6 +522,25 @@ export default function Chat() {
     }
   };
 
+  const startFreshClassroom = () => {
+    const nextStudentId = createFreshStudentId();
+    pauseStudentListening();
+    stopLiveAudioPlayback();
+    clearMessages();
+    setInput("");
+    setArchive([]);
+    setLessonState(null);
+    setSessionMeta(null);
+    setLiveAvatarEmbedUrl(null);
+    setTutorAudioMuted(false);
+    setTutorStatus("Starting a fresh classroom...");
+    void bootstrapSession({
+      gradeOverride: grade,
+      startNew: true,
+      studentIdOverride: nextStudentId,
+    });
+  };
+
   useEffect(() => {
     setStudentId(getStudentId());
   }, []);
@@ -434,7 +552,7 @@ export default function Chat() {
 
     const loadStatus = async () => {
       try {
-        const response = await fetch(`${API_BASE}/avatar/liveavatar/status`);
+        const response = await requestBackend("/avatar/liveavatar/status");
         const data = (await response.json()) as LiveAvatarStatusPayload;
         if (!response.ok) {
           throw new Error("Could not load LiveAvatar status.");
@@ -450,7 +568,22 @@ export default function Chat() {
     };
 
     void loadStatus();
-  }, [avatarProvider.provider, avatarStatusRefreshKey]);
+  }, [activeApiBase, avatarProvider.provider, avatarStatusRefreshKey, requestBackend]);
+
+  useEffect(() => {
+    if (
+      avatarProvider.provider !== "liveavatar" ||
+      !liveAvatarStatus ||
+      !liveAvatarStatus.configured ||
+      !liveAvatarStatus.auto_start ||
+      liveAvatarEmbedUrl ||
+      isBootingHumanAvatar
+    ) {
+      return;
+    }
+
+    void startHumanAvatar();
+  }, [avatarProvider.provider, liveAvatarStatus, liveAvatarEmbedUrl, isBootingHumanAvatar]);
 
   useEffect(() => {
     const browserWindow = window as BrowserWindow;
@@ -463,6 +596,10 @@ export default function Chat() {
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
+      recognition.onstart = () => {
+        startStudentListening();
+      };
+
       recognition.onresult = (event: SpeechRecognitionEventLike) => {
         let interimTranscript = "";
         let finalTranscript = "";
@@ -497,6 +634,7 @@ export default function Chat() {
             speechRestartTimerRef.current = null;
           }
           setIsListening(false);
+          setTutorStatus("Processing your answer...");
           handleRecognizedSpeech(spoken);
           recognition.stop();
         }
@@ -525,6 +663,8 @@ export default function Chat() {
       };
       recognition.onerror = (event) => {
         const isAbort = event.error === "aborted";
+        const errorMessage = event.error || "unknown error";
+        
         speechTurnRequestedRef.current = false;
         speechResultCapturedRef.current = false;
         if (speechRestartTimerRef.current) {
@@ -532,8 +672,17 @@ export default function Chat() {
           speechRestartTimerRef.current = null;
         }
         setIsListening(false);
+        
         if (!isAbort) {
-          setTutorStatus("I could not hear that clearly. Try again or type your question.");
+          if (errorMessage === "no-speech") {
+            setTutorStatus("No speech detected. Please try again or type your answer.");
+          } else if (errorMessage === "network") {
+            setTutorStatus("Network error. Please check your internet connection.");
+          } else if (errorMessage === "not-allowed") {
+            setTutorStatus("Microphone permission denied. Enable in browser settings.");
+          } else {
+            setTutorStatus(`Voice error: ${errorMessage}. Please try again or type.`);
+          }
         }
       };
       recognitionRef.current = recognition;
@@ -577,20 +726,24 @@ export default function Chat() {
   }, [videoStream]);
 
   useEffect(() => {
-    if (!studentId) {
+    if (!studentId || sessionMeta?.student_id === studentId) {
       return;
     }
 
     handleInitialBootstrap(initialGradeRef.current);
-  }, [studentId]);
+  }, [sessionMeta?.student_id, studentId]);
 
   useEffect(() => {
     if (!studentId || !sessionMeta?.session_id) {
       return;
     }
 
+    const socketBase =
+      activeWsBase ||
+      (activeApiBase ? wsBaseFromApiBase(activeApiBase) : wsBaseFromApiBase(buildApiBaseCandidates()[0]));
+
     const socket = new WebSocket(
-      `${WS_BASE}?student_id=${encodeURIComponent(studentId)}&grade=${grade}&session_id=${encodeURIComponent(sessionMeta.session_id)}`
+      `${socketBase}?student_id=${encodeURIComponent(studentId)}&grade=${grade}&session_id=${encodeURIComponent(sessionMeta.session_id)}`
     );
     ws.current = socket;
 
@@ -653,7 +806,19 @@ export default function Chat() {
           setInput("");
         }
 
+        if (data.type === "squelch") {
+          liveSquelchRef.current = true;
+          stopLiveAudioPlayback();
+          setIsSpeaking(false);
+          return;
+        }
+
+        if (liveSquelchRef.current && data.type !== "assistant_turn_start" && data.type !== "start") {
+          return;
+        }
+
         if (data.type === "assistant_turn_start" || data.type === "start") {
+          liveSquelchRef.current = false;
           pauseStudentListening();
           startAssistantMessage();
           setTutorStatus("Ava is explaining the lesson...");
@@ -664,6 +829,9 @@ export default function Chat() {
         }
 
         if (data.type === "live_audio" && data.data) {
+          if (liveSquelchRef.current) {
+            return;
+          }
           void playLiveAudioChunk(data.data, data.sample_rate ?? 24000);
         }
 
@@ -676,7 +844,13 @@ export default function Chat() {
           if (data.archive) {
             setArchive(data.archive);
           }
-          handlePlaybackFallback();
+          if (data.reason !== "interrupted") {
+            handlePlaybackFallback();
+          } else {
+            liveSquelchRef.current = false;
+            stopLiveAudioPlayback();
+            setIsSpeaking(false);
+          }
         }
       } catch {
         setTutorStatus("A classroom event could not be parsed.");
@@ -688,6 +862,8 @@ export default function Chat() {
     };
   }, [
     addUserMessage,
+    activeApiBase,
+    activeWsBase,
     appendToAssistant,
     endStreaming,
     grade,
@@ -695,6 +871,7 @@ export default function Chat() {
     sessionMeta?.session_id,
     startAssistantMessage,
     studentId,
+    wsReopenTick,
   ]);
 
   useEffect(() => {
@@ -728,12 +905,15 @@ export default function Chat() {
     requestedSessionId,
     gradeOverride,
     startNew = false,
+    studentIdOverride,
   }: {
     requestedSessionId?: string;
     gradeOverride?: number;
     startNew?: boolean;
+    studentIdOverride?: string;
   }) => {
-    if (!studentId) {
+    const activeStudentId = studentIdOverride ?? studentId;
+    if (!activeStudentId) {
       return;
     }
 
@@ -741,14 +921,20 @@ export default function Chat() {
     setIsBootstrapping(true);
     clearMessages();
     setLiveAvatarEmbedUrl(null);
-    setTutorStatus("Loading your classroom memory...");
+    setTutorStatus(
+      startNew
+        ? "Starting a fresh classroom..."
+        : requestedSessionId
+          ? "Opening your saved classroom..."
+          : "Loading your classroom memory..."
+    );
 
     try {
-      const response = await fetch(`${API_BASE}/session/start`, {
+      const response = await requestBackend("/session/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          student_id: studentId,
+          student_id: activeStudentId,
           grade: nextGrade,
           session_id: requestedSessionId,
           start_new: startNew,
@@ -761,6 +947,7 @@ export default function Chat() {
       }
 
       const nextSession = data.session as SessionMeta;
+      setStudentId(nextSession.student_id);
       setGrade(nextSession.grade);
       setSessionMeta(nextSession);
       setArchive(data.archive ?? []);
@@ -789,11 +976,28 @@ export default function Chat() {
       setAvatarStatusRefreshKey((current) => current + 1);
     } catch (error) {
       setTutorStatus(
-        error instanceof Error ? error.message : "Could not load the classroom."
+        error instanceof Error
+          ? `${error.message} Check that the backend is running on port 8000.`
+          : "Could not load the classroom."
       );
     } finally {
       setIsBootstrapping(false);
     }
+  };
+
+  const getPreferredTutorVoice = (voices: SpeechSynthesisVoice[]) => {
+    if (!voices.length) {
+      return null;
+    }
+
+    const englishVoices = voices.filter((voice) => /en(-|_)?/i.test(voice.lang));
+    const femaleVoiceHints = /female|woman|girl|samantha|kendra|zira|susan|natalie|victoria|olivia|emma|aria|luna|amy|lucy|alloy|serena|aimee|fiona/i;
+    const femaleEnglish = englishVoices.find((voice) => femaleVoiceHints.test(voice.name.toLowerCase()));
+
+    if (femaleEnglish) {
+      return femaleEnglish;
+    }
+    return englishVoices[0] ?? voices[0];
   };
 
   const speakLastMessage = () => {
@@ -808,14 +1012,13 @@ export default function Chat() {
 
     const utterance = new SpeechSynthesisUtterance(toSpokenText(lastMessage.content));
     const voices = window.speechSynthesis.getVoices();
-    const preferredVoice =
-      voices.find((voice) => /en(-|_)?/i.test(voice.lang)) ?? voices[0];
+    const preferredVoice = getPreferredTutorVoice(voices);
 
     if (preferredVoice) {
       utterance.voice = preferredVoice;
     }
 
-    utterance.rate = 0.74;
+    utterance.rate = 0.64;
     utterance.pitch = 0.94;
     utterance.volume = 1;
     utterance.onstart = () => setIsSpeaking(true);
@@ -858,21 +1061,36 @@ export default function Chat() {
 
     pauseStudentListening();
     stopLiveAudioPlayback();
-    speechTurnRequestedRef.current = true;
-    speechResultCapturedRef.current = false;
-    if (speechRestartTimerRef.current) {
-      window.clearTimeout(speechRestartTimerRef.current);
-      speechRestartTimerRef.current = null;
-    }
-    setIsListening(true);
-    setTutorStatus("I am listening. Ask your maths question and pause when you finish.");
-    try {
-      recognitionRef.current.start();
-    } catch {
-      speechTurnRequestedRef.current = false;
+    
+    // Request microphone permission first if not already granted
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      // Stop the stream - we just wanted to request permission
+      stream.getTracks().forEach(track => track.stop());
+      
+      // Now start speech recognition
+      speechTurnRequestedRef.current = true;
+      speechResultCapturedRef.current = false;
+      if (speechRestartTimerRef.current) {
+        window.clearTimeout(speechRestartTimerRef.current);
+        speechRestartTimerRef.current = null;
+      }
+      setIsListening(true);
+      setTutorStatus("I am listening. Ask your maths question and pause when you finish.");
+      try {
+        if (recognitionRef.current) {
+          recognitionRef.current.start();
+        } else {
+          throw new Error("Speech recognition not initialized");
+        }
+      } catch (err) {
+        speechTurnRequestedRef.current = false;
+        setIsListening(false);
+        setTutorStatus("Could not start voice input. Please check microphone permissions.");
+      }
+    }).catch(() => {
+      setTutorStatus("Microphone access denied. Please enable microphone permissions in browser settings.");
       setIsListening(false);
-      setTutorStatus("I could not start voice input. Please try again.");
-    }
+    });
   };
 
   const stopListening = () => {
@@ -1019,6 +1237,16 @@ export default function Chat() {
       }
       const rms = Math.sqrt(energy / Math.max(1, inputData.length));
 
+      if (rms > 0.012 && !inputSpeechDetectedRef.current) {
+        // First detection of student voice: hard interrupt tutor audio.
+        inputSpeechDetectedRef.current = true;
+        liveSquelchRef.current = true;
+        stopLiveAudioPlayback();
+        if (ws.current.readyState === WebSocket.OPEN) {
+          ws.current.send(JSON.stringify({ type: "interrupt" }));
+        }
+      }
+
       const pcm = downsampleFloat32ToInt16(
         inputData,
         audioContext.sampleRate,
@@ -1091,28 +1319,20 @@ export default function Chat() {
     lessonState?.whiteboard ??
     ((sessionMeta?.metadata?.whiteboard as WhiteboardPayload | undefined) ?? null);
   const avatarProviderLabel =
-    avatarProvider.provider === "liveavatar" && liveAvatarStatus?.configured
+    mounted && avatarProvider.provider === "liveavatar" && liveAvatarStatus?.configured
       ? liveAvatarEmbedUrl
         ? "LiveAvatar Human Video"
         : "LiveAvatar Ready"
       : null;
   const avatarSetupHint =
-    avatarProvider.provider === "liveavatar" ? liveAvatarStatus?.setup_hint : undefined;
+    mounted && avatarProvider.provider === "liveavatar" ? liveAvatarStatus?.setup_hint : undefined;
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f7f2e8_0%,#efe6d3_46%,#f8f5ef_100%)] text-slate-900">
       {isFocusScreen ? (
         <div className="mx-auto max-w-[1720px] p-4 md:p-6">
           <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
-            {tutorAudioMuted && (
-              <button
-                onClick={() => setTutorAudioMuted(false)}
-                className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-700"
-              >
-                Enable Tutor Voice
-              </button>
-            )}
-            {avatarProvider.provider === "liveavatar" && (
+            {mounted && avatarProvider.provider === "liveavatar" && (
               <button
                 onClick={() => void startHumanAvatar()}
                 disabled={
@@ -1139,6 +1359,12 @@ export default function Chat() {
             >
               Open Classroom
             </button>
+            <button
+              onClick={startFreshClassroom}
+              className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-900 transition hover:bg-rose-100"
+            >
+              Fresh Classroom
+            </button>
           </div>
 
           <div className="grid min-h-[calc(100vh-7rem)] gap-6 xl:grid-cols-[minmax(460px,0.84fr)_minmax(0,1.28fr)]">
@@ -1149,6 +1375,7 @@ export default function Chat() {
               avatarSetupHint={avatarSetupHint}
               isSpeaking={isSpeaking}
               liveReady={liveConnected}
+              mounted={mounted}
               name={sessionMeta?.tutor_name ?? "Ava"}
               stageMode="focus"
               status={tutorStatus}
@@ -1206,6 +1433,12 @@ export default function Chat() {
               className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
             >
               Start New Class
+            </button>
+            <button
+              onClick={startFreshClassroom}
+              className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-900 transition hover:bg-rose-100"
+            >
+              Fresh Classroom
             </button>
           </div>
         </div>
@@ -1284,6 +1517,7 @@ export default function Chat() {
                   avatarSetupHint={avatarSetupHint}
                   isSpeaking={isSpeaking}
                   liveReady={liveConnected}
+                  mounted={mounted}
                   name={sessionMeta?.tutor_name ?? "Ava"}
                   stageMode="default"
                   status={tutorStatus}
@@ -1438,24 +1672,9 @@ export default function Chat() {
 
                   <div className="rounded-[1.6rem] border border-slate-200 bg-white p-3">
                     <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
-                      {tutorAudioMuted ? (
-                        <button
-                          onClick={() => setTutorAudioMuted(false)}
-                          className="rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white"
-                        >
-                          Enable Tutor Voice
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setTutorAudioMuted(true);
-                            stopLiveAudioPlayback();
-                          }}
-                          className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700"
-                        >
-                          Tutor voice enabled
-                        </button>
-                      )}
+                      <div className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+                        Tutor voice enabled
+                      </div>
                       <button
                         onClick={() => {
                           const next = !isHandsFreeMode;
@@ -1620,7 +1839,7 @@ export default function Chat() {
                         ? "SDK available, waiting for live session"
                         : "backend will use text stream fallback"}
                   </div>
-                  {avatarProvider.provider === "liveavatar" && (
+                  {mounted && avatarProvider.provider === "liveavatar" && (
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
                       <span className="font-semibold text-slate-900">Human avatar:</span>{" "}
                       {liveAvatarEmbedUrl

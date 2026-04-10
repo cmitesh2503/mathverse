@@ -16,10 +16,20 @@ def extract_text_from_pdf(pdf_path):
             text += page.extract_text()
     return text
 
-def chunk_text(text, grade, subject="Math"):
+def chunk_text(text, grade, subject="Math", topic=None, source=None):
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = splitter.split_text(text)
-    chunk_data = [{"text": chunk, "grade": grade, "subject": subject, "topic": f"grade_{grade}_topic"} for chunk in chunks]
+    topic_name = topic or f"grade_{grade}_topic"
+    chunk_data = [
+        {
+            "text": chunk,
+            "grade": grade,
+            "subject": subject,
+            "topic": topic_name,
+            "source": source or "ncert_pdf",
+        }
+        for chunk in chunks
+    ]
     return chunk_data
 
 def embed_text(text):
@@ -36,17 +46,22 @@ def store_chunks(chunks):
     for i, chunk in enumerate(chunks):
         embedding = embed_text(chunk["text"])
         collection.add(
-            ids=[f"chunk_{i}"],
+            ids=[f"chunk_{chunk['grade']}_{chunk['topic']}_{i}"],
             embeddings=[embedding],
-            metadatas=[{"grade": chunk["grade"], "subject": chunk["subject"], "topic": chunk["topic"]}],
+            metadatas=[{
+                "grade": chunk["grade"],
+                "subject": chunk["subject"],
+                "topic": chunk["topic"],
+                "source": chunk.get("source", "ncert_pdf"),
+            }],
             documents=[chunk["text"]]
         )
 
-def process_pdf(pdf_path, grade):
+def process_pdf(pdf_path, grade, topic=None, subject="Math", source=None):
     text = extract_text_from_pdf(pdf_path)
-    chunks = chunk_text(text, grade)
+    chunks = chunk_text(text, grade, subject=subject, topic=topic, source=source)
     store_chunks(chunks)
-    print(f"Processed {len(chunks)} chunks for grade {grade}")
+    print(f"Processed {len(chunks)} chunks for grade {grade}, topic={topic}")
 
 # Example usage
-# process_pdf("path/to/cbse_math_grade_10.pdf", 10)
+# process_pdf("path/to/cbse_math_grade_10.pdf", 10, topic="pair_of_linear_equations_in_two_variables", source="NCERT_Mathematics_Grade_10")

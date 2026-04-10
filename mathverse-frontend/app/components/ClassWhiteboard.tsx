@@ -96,7 +96,6 @@ export default function ClassWhiteboard({
     if (!isNarrating || revealedCharacters >= totalCharacters) {
       return;
     }
-
     const timer = window.setTimeout(() => {
       setRevealedCharacters((current) =>
         Math.min(totalCharacters, current + WHITEBOARD_TYPING_STEP)
@@ -107,6 +106,24 @@ export default function ClassWhiteboard({
       window.clearTimeout(timer);
     };
   }, [isNarrating, revealedCharacters, totalCharacters]);
+
+  const [liveBoard, setLiveBoard] = useState<WhiteboardPayload | null>(whiteboard);
+
+  useEffect(() => {
+  const handler = (e: any) => {
+    const payload = e.detail;
+
+    console.log("liveBoard event:", payload);
+
+    // 👉 TODO: map payload → your whiteboard state
+  };
+
+  window.addEventListener("liveBoard", handler);
+
+  return () => {
+    window.removeEventListener("liveBoard", handler);
+  };
+}, []);
 
   const effectiveRevealedCharacters = isNarrating ? revealedCharacters : totalCharacters;
   const revealedSegments = revealSequence(boardSegments, effectiveRevealedCharacters);

@@ -50,6 +50,27 @@ NEXT_PUBLIC_TUTOR_AVATAR_PROVIDER=liveavatar
 
 Then use the `Start Human Avatar` button in the classroom.
 
+If `LIVEAVATAR_AUTO_START=true` is set in the backend, the authenticated LiveAvatar session will also auto-start when the classroom loads.
+
+If you are using a different avatar provider, set one of these instead:
+
+```env
+NEXT_PUBLIC_TUTOR_AVATAR_PROVIDER=heygen
+NEXT_PUBLIC_HEYGEN_AVATAR_IFRAME_URL=https://...
+
+NEXT_PUBLIC_TUTOR_AVATAR_PROVIDER=tavus
+NEXT_PUBLIC_TAVUS_AVATAR_IFRAME_URL=https://...
+
+NEXT_PUBLIC_TUTOR_AVATAR_PROVIDER=did
+NEXT_PUBLIC_DID_AVATAR_IFRAME_URL=https://...
+
+NEXT_PUBLIC_TUTOR_AVATAR_PROVIDER=custom
+NEXT_PUBLIC_TUTOR_AVATAR_IFRAME_URL=https://...
+
+NEXT_PUBLIC_TUTOR_AVATAR_PROVIDER=video
+NEXT_PUBLIC_TUTOR_AVATAR_VIDEO_SRC=https://...
+```
+
 ### Other Providers
 
 ### HeyGen

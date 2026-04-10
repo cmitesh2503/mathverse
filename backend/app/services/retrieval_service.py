@@ -8,7 +8,7 @@ def load_chunks():
     with open("backend/app/data/ncert_chunks.json", "r") as f:
         return json.load(f)
 
-def retrieve_context(topic: str, grade: int = None):
+def retrieve_context(topic: str, grade: int = None, n_results: int = 5) -> str:
     try:
         import chromadb
         chroma_client = chromadb.PersistentClient(path="./chroma_db")
@@ -16,24 +16,27 @@ def retrieve_context(topic: str, grade: int = None):
 
         query_embedding = embed_text(topic)
 
-        if grade:
+        if grade is not None:
             results = collection.query(
                 query_embeddings=[query_embedding],
-                n_results=5,
+                n_results=n_results,
                 where={"grade": grade}
             )
         else:
             results = collection.query(
                 query_embeddings=[query_embedding],
-                n_results=5
+                n_results=n_results
             )
 
-        return "\n".join(results["documents"])
-    except:
+        documents = results.get("documents", [])
+        if documents:
+            return "\n\n".join(documents)
+        return ""
+    except Exception:
         # Fallback to old method
         chunks = load_chunks()
-        results = [c["text"] for c in chunks if c["topic"] == topic]
-        return "\n".join(results[:2])
+        results = [c["text"] for c in chunks if c.get("topic") == topic]
+        return "\n\n".join(results[:n_results])
 
 def embed_text(text):
     result = genai.embed_content(

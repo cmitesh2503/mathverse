@@ -21,3 +21,4 @@ LIVEAVATAR_SPEECH_SPEED=0.78
 ```
 
 Frontend setup is documented in `mathverse-frontend/README.md`.
+See `backend/.env.example` for backend environment variables and `mathverse-frontend/.env.local.example` for frontend avatar provider settings.

@@ -14,8 +14,8 @@ from ..core.config import (
     GEMINI_LIVE_VOICE,
 )
 from ..services.ai_gateway import get_live_client, live_api_available
+from ..services.retrieval_service import retrieve_context
 from ..services.session_service import session_service
-from ..tutor_brain.curriculum import build_curriculum_grounding, get_topic
 from ..tutor_brain.runtime import tutor_engine
 
 try:
@@ -141,8 +141,23 @@ class LiveTutorBridge:
 
     def _build_connect_config(self, session_record):
         memory_context = session_service.build_memory_context(self.session_id)
-        topic = get_topic(session_record.grade, session_record.topic_slug)
-        topic_title = topic["title"] if topic else session_record.topic_title or "CBSE Mathematics"
+        topic_title = session_record.topic_title or "CBSE Mathematics"
+
+        source_material = retrieve_context(topic_title, session_record.grade)
+        curriculum_grounding = (
+            f"Board: {session_record.board}\n"
+            f"Subject: {session_record.subject}\n"
+            f"Grade: {session_record.grade}\n"
+            f"Current chapter: {topic_title}"
+        )
+
+        if source_material:
+            source_material = source_material[:1800]
+            curriculum_grounding += (
+                "\n\nSource material from NCERT / CBSE PDF curriculum:\n"
+                "Use this textbook-backed content when teaching this chapter.\n"
+                f"{source_material}"
+            )
 
         system_prompt = (
             "You are Ava, a real-time CBSE mathematics tutor.\n"
@@ -153,7 +168,12 @@ class LiveTutorBridge:
             "Use everyday spoken English that feels natural for an Indian classroom.\n"
             "Speak at moderate-to-low speed with clear pauses between ideas.\n"
             "Speak about twenty percent slower than a normal conversation.\n"
+            "Speak slowly with gentle pauses between ideas - take your time to explain clearly.\n"
+            "Speak about thirty percent slower than a normal conversation to give students time to think.\n"
+            "Pause naturally after each key point, like a real teacher would.\n"
             "Keep each turn short unless the student asks for a full explanation.\n"
+            "If you detect the student talking, stop speaking immediately and listen; do not talk over them.\n"
+            "If you are interrupted, say 'Okay, go ahead' and stay quiet until they finish, then briefly confirm their point before continuing.\n"
             "Usually explain one step, then pause and ask one small check-in question.\n"
             "Never sound like you are reading from slides, notes, markdown, or UI text.\n"
             "Each class is a 45-minute session: pace it as intro, concept teaching, guided practice, then recap.\n"
@@ -162,15 +182,14 @@ class LiveTutorBridge:
             "Do not sound ceremonial, corporate, or overly formal.\n"
             "When the student is confused, slow down and use one worked example.\n"
             "Refer naturally to the whiteboard, equations, graphs, and examples.\n"
-            "Do not drift into non-maths small talk.\n\n"
+            "Do not drift into non-maths small talk.\n"
+            "For a 75-minute class, include a 5-minute break around the 30-minute mark.\n"
+            "After teaching the concept and confirming understanding, explain 3-5 problems step by step on the whiteboard.\n"
+            "Allow time for the student to write, and ask if they have any doubts occasionally, not too frequently.\n\n"
             f"Current chapter focus: {topic_title}\n"
             f"Current classroom memory:\n{memory_context}\n\n"
-            f"Curriculum grounding:\n{build_curriculum_grounding(session_record.grade)}"
+            f"Curriculum grounding:\n{curriculum_grounding}"
         )
-
-        resume_handle = None
-        if session_record.metadata:
-            resume_handle = session_record.metadata.get("live_resumption_handle")
 
         return live_types.LiveConnectConfig(
             response_modalities=["AUDIO"],
@@ -194,14 +213,14 @@ class LiveTutorBridge:
             realtime_input_config=live_types.RealtimeInputConfig(
                 activity_handling=live_types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
                 turn_coverage=live_types.TurnCoverage.TURN_INCLUDES_ONLY_ACTIVITY,
+                # Ultra low latency interruption: minimal padding and silence window.
                 automatic_activity_detection=live_types.AutomaticActivityDetection(
-                    prefix_padding_ms=120,
-                    silence_duration_ms=900,
+                    prefix_padding_ms=20,
+                    silence_duration_ms=300,
                 )
             ),
             session_resumption=live_types.SessionResumptionConfig(
-                handle=resume_handle,
-                transparent=True,
+                handle=None,
             ),
             context_window_compression=live_types.ContextWindowCompressionConfig(
                 trigger_tokens=24000,

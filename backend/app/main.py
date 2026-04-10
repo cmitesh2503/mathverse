@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import base64
 import json
 import os
@@ -12,20 +13,18 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from .api.routes import avatar, session
 from .core.stream_manager import cancel_stream, end_stream, is_cancelled, start_stream
-from .models.session import StartSessionRequest
-from .services.ai_gateway import live_api_available
-from .services.live_tutor_service import LiveTutorBridge
-from .services.session_service import session_service
-from .tutor_brain.runtime import tutor_engine
 
 load_dotenv()
 
+
 app = FastAPI(title="MathVerse API")
+app.include_router(session.router, prefix="/session")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "http://127.0.0.1:3000",
+        "http://172.26.128.1:3000",
     ],
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
@@ -50,7 +49,9 @@ async def send_streamed_text(websocket: WebSocket, session_id: str, content: str
     end_stream(session_id)
 
 
-def _session_request_from_socket(websocket: WebSocket) -> StartSessionRequest:
+def _session_request_from_socket(websocket: WebSocket):
+    from .models.session import StartSessionRequest
+
     params = websocket.query_params
     requested_grade = params.get("grade", "10")
     try:
@@ -69,24 +70,57 @@ def _session_request_from_socket(websocket: WebSocket) -> StartSessionRequest:
     )
 
 
+def _serialize_lesson_state(snapshot):
+    if hasattr(snapshot, "model_dump"):
+        return snapshot.model_dump(mode="json")
+    return snapshot
+    
+
+
+
+
 @app.websocket("/ws/tutor")
 async def tutor_ws(websocket: WebSocket):
     await websocket.accept()
+
+    from .services.session_service import session_service
+    from .tutor_brain.tutor_engine import init_cbse
+    from .tutor_brain.runtime import tutor_engine
+
     print("Tutor WebSocket connected")
 
     start_request = _session_request_from_socket(websocket)
     session_record = session_service.create_or_resume_session(start_request)
     session_id = session_record.session_id
     tutor_engine.hydrate_session(session_id, session_record)
-    live_bridge = LiveTutorBridge(session_id, websocket.send_json)
+    live_bridge = None
     live_connected = False
 
-    if live_bridge.available:
+    async def ensure_live_bridge() -> bool:
+        nonlocal live_bridge
+        nonlocal live_connected
+
+        if live_connected:
+            return True
+
+        if live_bridge is None:
+            from .services.ai_gateway import live_api_available
+
+            if not live_api_available():
+                return False
+
+            from .services.live_tutor_service import LiveTutorBridge
+
+            live_bridge = LiveTutorBridge(session_id, websocket.send_json)
+            if not live_bridge.available:
+                return False
+
         try:
             live_connected = await live_bridge.connect()
         except Exception as error:  # pragma: no cover - network dependent
             print(f"Gemini Live connect failed: {error}")
             live_connected = False
+        return live_connected
 
     await websocket.send_json(
         {
@@ -94,7 +128,7 @@ async def tutor_ws(websocket: WebSocket):
             "session": session_service.serialize_session(session_record),
             "archive": session_service.list_sessions(session_record.student_id, session_record.grade),
             "live_capabilities": {
-                "native_audio_ready": live_api_available(),
+                "native_audio_ready": False,
                 "native_audio_connected": live_connected,
                 "transport": "server-websocket",
             },
@@ -118,9 +152,11 @@ async def tutor_ws(websocket: WebSocket):
     await websocket.send_json(
         {
             "type": "state",
-            "state": tutor_engine.snapshot(session_id).model_dump(mode="json"),
+            "state": _serialize_lesson_state(tutor_engine.snapshot(session_id)),
         }
     )
+
+    asyncio.create_task(asyncio.to_thread(init_cbse))
 
     if not session_record.transcript:
         intro = tutor_engine.process(session_id, "", session_record=session_record)
@@ -138,7 +174,7 @@ async def tutor_ws(websocket: WebSocket):
 
             message = None
             if payload.get("type") == "live_input_audio" and payload.get("data"):
-                if live_connected:
+                if await ensure_live_bridge():
                     await live_bridge.send_audio_chunk(
                         base64.b64decode(payload["data"])
                     )
@@ -151,8 +187,24 @@ async def tutor_ws(websocket: WebSocket):
                 )
                 continue
             if payload.get("type") == "audio_stream_end":
-                if live_connected:
+                if await ensure_live_bridge():
                     await live_bridge.end_audio_stream()
+                continue
+            if payload.get("type") == "interrupt":
+                cancel_stream(session_id)
+                end_stream(session_id)
+                await websocket.send_json({"type": "squelch"})
+                if live_connected:
+                    with contextlib.suppress(Exception):
+                        await live_bridge.close()
+                    await websocket.send_json(
+                        {
+                            "type": "live_warning",
+                            "content": "Stopped live audio so you can speak.",
+                        }
+                    )
+                    live_connected = False
+                await websocket.send_json({"type": "assistant_turn_complete", "reason": "interrupted"})
                 continue
             if payload.get("message"):
                 message = payload["message"]
@@ -176,7 +228,7 @@ async def tutor_ws(websocket: WebSocket):
             await websocket.send_json(
                 {
                     "type": "state",
-                    "state": snapshot.model_dump(mode="json"),
+                    "state": _serialize_lesson_state(tutor_engine.snapshot(session_id)),
                     "archive": session_service.list_sessions(
                         session_record.student_id if session_record else start_request.student_id,
                         start_request.grade,
@@ -188,7 +240,8 @@ async def tutor_ws(websocket: WebSocket):
         print("Tutor WebSocket disconnected")
         end_stream(session_id)
     finally:
-        await live_bridge.close()
+        if live_bridge is not None:
+            await live_bridge.close()
 
 
 if __name__ == "__main__":
