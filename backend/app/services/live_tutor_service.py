@@ -16,7 +16,6 @@ from ..core.config import (
 from ..services.ai_gateway import get_live_client, live_api_available
 from ..services.retrieval_service import retrieve_context
 from ..services.session_service import session_service
-from ..tutor_brain.curriculum import build_curriculum_grounding, get_topic
 from ..tutor_brain.runtime import tutor_engine
 
 try:
@@ -142,11 +141,15 @@ class LiveTutorBridge:
 
     def _build_connect_config(self, session_record):
         memory_context = session_service.build_memory_context(self.session_id)
-        topic = get_topic(session_record.grade, session_record.topic_slug)
-        topic_title = topic["title"] if topic else session_record.topic_title or "CBSE Mathematics"
+        topic_title = session_record.topic_title or "CBSE Mathematics"
 
         source_material = retrieve_context(topic_title, session_record.grade)
-        curriculum_grounding = build_curriculum_grounding(session_record.grade)
+        curriculum_grounding = (
+            f"Board: {session_record.board}\n"
+            f"Subject: {session_record.subject}\n"
+            f"Grade: {session_record.grade}\n"
+            f"Current chapter: {topic_title}"
+        )
 
         if source_material:
             source_material = source_material[:1800]

@@ -12,6 +12,7 @@ starlette==0.52.1
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 uvicorn==0.42.0
+python-dotenv==1.2.2
 PyPDF2==3.0.1
 langchain==0.1.0
 chromadb==0.4.18

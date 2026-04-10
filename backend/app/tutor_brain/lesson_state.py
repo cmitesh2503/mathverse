@@ -1,29 +1,21 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 
-@dataclass
-class LessonState:
-    step: str = "INTRO"
-    grade: int = 10
-    topic_slug: str = ""
-    topic_title: str = ""
-    current_concept_id: str = ""
-    current_concept_title: str = ""
-    current_concept: dict | None = None
-    correct_answers_in_concept: int = 0
-    total_attempts: int = 0
-    mastery_threshold: int = 2
+class LessonState(BaseModel):
+    stage: str | None = None
+    topic_slug: str | None = None
+    topic_title: str | None = None
+    summary: str = ""
+    note_cards: list[str] = Field(default_factory=list)
+    concept_id: str | None = None
+    concept_title: str = ""
+    messages: list[str] = Field(default_factory=list)
+    whiteboard: dict[str, Any] = Field(default_factory=dict)
     current_question_index: int = 0
-    last_answer_correct: bool = False
-    homework_given: bool = False
-    notes: list[str] = field(default_factory=list)
-    last_summary: str = ""
-    whiteboard: dict = field(default_factory=dict)
-    start_time: datetime | None = None
-    break_taken: bool = False
 
     @property
     def question_index(self) -> int:

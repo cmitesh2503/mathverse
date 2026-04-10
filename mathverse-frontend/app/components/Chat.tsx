@@ -442,13 +442,16 @@ export default function Chat() {
 
   const requestBackend = useCallback(
     async (path: string, init?: RequestInit) => {
-      const candidates = dedupeValues([activeApiBase, ...buildApiBaseCandidates()]);
+      const candidates = dedupeValues([
+        ...buildApiBaseCandidates(),
+        activeApiBase,
+      ]);
       const errors: string[] = [];
       let lastError: Error | null = null;
 
       for (const base of candidates) {
         const controller = new AbortController();
-        const timeoutMs = 15000;
+        const timeoutMs = path === "/session/start" ? 30000 : 15000;
         const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
         try {
           const response = await fetch(`${base}${path}`, {

@@ -1,8 +1,7 @@
-from .content_loader import load_ncert_content
-
-
 class TutorBrain:
     def __init__(self):
+        from .content_loader import load_ncert_content
+
         print("🧠 Initializing TutorBrain...")
 
         try:
