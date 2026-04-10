@@ -26,6 +26,9 @@ class LessonSnapshot(BaseModel):
     summary: str = ""
     note_cards: list[str] = Field(default_factory=list)
     whiteboard: dict[str, Any] = Field(default_factory=dict)
+    homework: list[str] = Field(default_factory=list)
+    class_duration_minutes: int = 45
+    chapter_label: str = ""
 
 
 class TutorSessionRecord(BaseModel):

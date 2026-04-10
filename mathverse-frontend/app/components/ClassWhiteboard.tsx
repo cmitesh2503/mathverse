@@ -36,8 +36,8 @@ type ClassWhiteboardProps = {
 const BOARD_WIDTH = 360;
 const BOARD_HEIGHT = 250;
 const PADDING = 28;
-const WHITEBOARD_TYPING_STEP = 3;
-const WHITEBOARD_TYPING_INTERVAL_MS = 42;
+const WHITEBOARD_TYPING_STEP = 1;
+const WHITEBOARD_TYPING_INTERVAL_MS = 72;
 
 const mapPoint = (
   x: number,
@@ -93,6 +93,16 @@ export default function ClassWhiteboard({
   );
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setRevealedCharacters(isNarrating ? 0 : totalCharacters);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [isNarrating, totalCharacters]);
+
+  useEffect(() => {
     if (!isNarrating || revealedCharacters >= totalCharacters) {
       return;
     }
@@ -106,24 +116,6 @@ export default function ClassWhiteboard({
       window.clearTimeout(timer);
     };
   }, [isNarrating, revealedCharacters, totalCharacters]);
-
-  const [liveBoard, setLiveBoard] = useState<WhiteboardPayload | null>(whiteboard);
-
-  useEffect(() => {
-  const handler = (e: any) => {
-    const payload = e.detail;
-
-    console.log("liveBoard event:", payload);
-
-    // 👉 TODO: map payload → your whiteboard state
-  };
-
-  window.addEventListener("liveBoard", handler);
-
-  return () => {
-    window.removeEventListener("liveBoard", handler);
-  };
-}, []);
 
   const effectiveRevealedCharacters = isNarrating ? revealedCharacters : totalCharacters;
   const revealedSegments = revealSequence(boardSegments, effectiveRevealedCharacters);

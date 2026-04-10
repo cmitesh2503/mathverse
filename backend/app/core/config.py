@@ -36,6 +36,6 @@ LIVEAVATAR_AUTO_START = _env_flag("LIVEAVATAR_AUTO_START", default=False)
 
 _speed_value = os.getenv("LIVEAVATAR_SPEECH_SPEED")
 try:
-    LIVEAVATAR_SPEECH_SPEED = float(_speed_value) if _speed_value else 0.65
+    LIVEAVATAR_SPEECH_SPEED = float(_speed_value) if _speed_value else 0.55
 except ValueError:
-    LIVEAVATAR_SPEECH_SPEED = 0.65
+    LIVEAVATAR_SPEECH_SPEED = 0.55

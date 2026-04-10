@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import type { WhiteboardPayload } from "../components/ClassWhiteboard";
 
-export function useLiveTutor(onWhiteboard: (data: any) => void) {
+export function useLiveTutor(onWhiteboard: (data: WhiteboardPayload) => void) {
   const pcRef = useRef<RTCPeerConnection | null>(null);
 
   useEffect(() => {
@@ -47,7 +48,6 @@ export function useLiveTutor(onWhiteboard: (data: any) => void) {
         // SDP handshake
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-"""
         // ✅ CALL BACKEND (NO CORS ISSUE)
         const res = await fetch("/api/live", {
           method: "POST",
@@ -74,7 +74,6 @@ export function useLiveTutor(onWhiteboard: (data: any) => void) {
         console.error("Live Tutor Error:", error);
       }
     };
-"""
     startSession();
-  }, []);
+  }, [onWhiteboard]);
 }

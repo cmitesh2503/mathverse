@@ -88,6 +88,9 @@ type LessonStatePayload = {
   summary: string;
   note_cards: string[];
   whiteboard?: WhiteboardPayload | null;
+   homework?: string[];
+   class_duration_minutes?: number;
+   chapter_label?: string;
 };
 
 type LiveAvatarStatusPayload = {
@@ -289,7 +292,7 @@ export default function Chat() {
   const [archive, setArchive] = useState<ArchiveSession[]>([]);
   const [lessonState, setLessonState] = useState<LessonStatePayload | null>(null);
   const [wsStatus, setWsStatus] = useState("Offline");
-  const [tutorStatus, setTutorStatus] = useState("Preparing your classroom...");
+  const [tutorStatus, setTutorStatus] = useState("Preparing your lesson...");
   const [isBootstrapping, setIsBootstrapping] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isHandsFreeMode, setIsHandsFreeMode] = useState(true);
@@ -311,6 +314,7 @@ export default function Chat() {
   const [mounted, setMounted] = useState(false);
   const [activeApiBase, setActiveApiBase] = useState<string>(ENV_API_BASE ?? "");
   const [activeWsBase, setActiveWsBase] = useState<string>(ENV_WS_BASE ?? "");
+  const [resourceTab, setResourceTab] = useState<"notes" | "homework">("notes");
 
   useEffect(() => {
     setMounted(true);
@@ -490,7 +494,7 @@ export default function Chat() {
     }
 
     setIsBootingHumanAvatar(true);
-    setTutorStatus("Starting the human avatar classroom...");
+    setTutorStatus("Starting the human avatar lesson view...");
 
     try {
       const response = await requestBackend("/avatar/liveavatar/bootstrap", {
@@ -533,7 +537,7 @@ export default function Chat() {
     setSessionMeta(null);
     setLiveAvatarEmbedUrl(null);
     setTutorAudioMuted(false);
-    setTutorStatus("Starting a fresh classroom...");
+    setTutorStatus("Starting a fresh lesson...");
     void bootstrapSession({
       gradeOverride: grade,
       startNew: true,
@@ -754,7 +758,7 @@ export default function Chat() {
 
     socket.onerror = () => {
       setWsStatus("Connection error");
-      setTutorStatus("The live classroom connection needs attention.");
+        setTutorStatus("The live lesson connection needs attention.");
     };
 
     socket.onclose = () => {
@@ -853,7 +857,7 @@ export default function Chat() {
           }
         }
       } catch {
-        setTutorStatus("A classroom event could not be parsed.");
+          setTutorStatus("A lesson event could not be parsed.");
       }
     };
 
@@ -923,10 +927,10 @@ export default function Chat() {
     setLiveAvatarEmbedUrl(null);
     setTutorStatus(
       startNew
-        ? "Starting a fresh classroom..."
+        ? "Starting a fresh lesson..."
         : requestedSessionId
-          ? "Opening your saved classroom..."
-          : "Loading your classroom memory..."
+          ? "Opening your saved lesson..."
+          : "Loading your lesson memory..."
     );
 
     try {
@@ -951,15 +955,26 @@ export default function Chat() {
       setGrade(nextSession.grade);
       setSessionMeta(nextSession);
       setArchive(data.archive ?? []);
-      setLessonState({
-        stage: nextSession.lesson_stage,
-        topic_slug: nextSession.topic_slug,
-        topic_title: nextSession.topic_title,
-        summary: nextSession.summary,
-        note_cards: nextSession.lesson_notes ?? [],
-        whiteboard:
-          nextSession.metadata?.whiteboard &&
-          typeof nextSession.metadata.whiteboard === "object"
+        setLessonState({
+          stage: nextSession.lesson_stage,
+          topic_slug: nextSession.topic_slug,
+          topic_title: nextSession.topic_title,
+          summary: nextSession.summary,
+          note_cards: nextSession.lesson_notes ?? [],
+          homework: Array.isArray(nextSession.metadata?.homework)
+            ? nextSession.metadata.homework.filter((item): item is string => typeof item === "string")
+            : [],
+          class_duration_minutes:
+            typeof nextSession.metadata?.class_duration_minutes === "number"
+              ? nextSession.metadata.class_duration_minutes
+              : 45,
+          chapter_label:
+            typeof nextSession.metadata?.chapter_label === "string"
+              ? nextSession.metadata.chapter_label
+              : "",
+          whiteboard:
+            nextSession.metadata?.whiteboard &&
+            typeof nextSession.metadata.whiteboard === "object"
             ? (nextSession.metadata.whiteboard as WhiteboardPayload)
             : null,
         concept_id:
@@ -978,7 +993,7 @@ export default function Chat() {
       setTutorStatus(
         error instanceof Error
           ? `${error.message} Check that the backend is running on port 8000.`
-          : "Could not load the classroom."
+          : "Could not load the lesson."
       );
     } finally {
       setIsBootstrapping(false);
@@ -1000,6 +1015,76 @@ export default function Chat() {
     return englishVoices[0] ?? voices[0];
   };
 
+  const buildSpeechSegments = (text: string) => {
+    const normalized = text.replace(/\s+/g, " ").trim();
+    if (!normalized) {
+      return [];
+    }
+
+    const sentences = normalized.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [normalized];
+    const segments: string[] = [];
+    const maxSegmentLength = 180;
+    let current = "";
+
+    const pushWrapped = (value: string) => {
+      const words = value.split(" ").filter(Boolean);
+      let buffer = "";
+      for (const word of words) {
+        if (!buffer) {
+          buffer = word;
+          continue;
+        }
+
+        if (`${buffer} ${word}`.length <= maxSegmentLength) {
+          buffer = `${buffer} ${word}`;
+          continue;
+        }
+
+        segments.push(buffer);
+        buffer = word;
+      }
+      if (buffer) {
+        segments.push(buffer);
+      }
+    };
+
+    for (const sentence of sentences) {
+      const chunk = sentence.trim();
+      if (!chunk) {
+        continue;
+      }
+
+      if (!current) {
+        if (chunk.length > maxSegmentLength) {
+          pushWrapped(chunk);
+          current = "";
+          continue;
+        }
+        current = chunk;
+        continue;
+      }
+
+      if (`${current} ${chunk}`.length <= maxSegmentLength) {
+        current = `${current} ${chunk}`;
+        continue;
+      }
+
+      segments.push(current);
+      if (chunk.length > maxSegmentLength) {
+        pushWrapped(chunk);
+        current = "";
+      } else {
+        current = chunk;
+      }
+    }
+
+    if (current) {
+      segments.push(current);
+    }
+
+    return segments;
+  };
+
   const speakLastMessage = () => {
     if (tutorAudioMuted || !("speechSynthesis" in window)) {
       return;
@@ -1010,23 +1095,54 @@ export default function Chat() {
       return;
     }
 
-    const utterance = new SpeechSynthesisUtterance(toSpokenText(lastMessage.content));
+    const spoken = toSpokenText(lastMessage.content);
+    const segments = buildSpeechSegments(spoken);
+    if (!segments.length) {
+      return;
+    }
+
     const voices = window.speechSynthesis.getVoices();
     const preferredVoice = getPreferredTutorVoice(voices);
 
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
-    }
-
-    utterance.rate = 0.64;
-    utterance.pitch = 0.94;
-    utterance.volume = 1;
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-
     window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
+
+    const pauseBetweenSegmentsMs = 300;
+    let index = 0;
+
+    const speakNext = () => {
+      if (tutorAudioMuted) {
+        setIsSpeaking(false);
+        return;
+      }
+      const segment = segments[index];
+      if (!segment) {
+        setIsSpeaking(false);
+        return;
+      }
+
+      const utterance = new SpeechSynthesisUtterance(segment);
+      if (preferredVoice) {
+        utterance.voice = preferredVoice;
+      }
+
+      utterance.rate = 0.52;
+      utterance.pitch = 0.94;
+      utterance.volume = 1;
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onerror = () => setIsSpeaking(false);
+      utterance.onend = () => {
+        index += 1;
+        if (index >= segments.length) {
+          setIsSpeaking(false);
+          return;
+        }
+        window.setTimeout(speakNext, pauseBetweenSegmentsMs);
+      };
+
+      window.speechSynthesis.speak(utterance);
+    };
+
+    speakNext();
   };
 
   const sendMessage = (overrideText?: string) => {
@@ -1308,6 +1424,25 @@ export default function Chat() {
             "Your class notes will appear here as Ava explains the concept.",
             "Every session is saved so you can revisit it later.",
           ];
+  const visibleHomework =
+    lessonState?.homework?.length
+      ? lessonState.homework
+      : Array.isArray(sessionMeta?.metadata?.homework)
+        ? sessionMeta.metadata.homework.filter((item): item is string => typeof item === "string")
+        : [
+            "Homework will appear here when Ava finishes the class.",
+            "Each class ends with 2-3 NCERT homework questions.",
+          ];
+  const classDurationMinutes =
+    lessonState?.class_duration_minutes ??
+    (typeof sessionMeta?.metadata?.class_duration_minutes === "number"
+      ? sessionMeta.metadata.class_duration_minutes
+      : 45);
+  const chapterLabel =
+    lessonState?.chapter_label ||
+    (typeof sessionMeta?.metadata?.chapter_label === "string"
+      ? sessionMeta.metadata.chapter_label
+      : "Chapter sequence");
 
   const visibleTranscriptMessages = showFullTranscript ? messages : messages.slice(-4);
   const hiddenTurnCount = Math.max(0, messages.length - visibleTranscriptMessages.length);
@@ -1367,30 +1502,69 @@ export default function Chat() {
             </button>
           </div>
 
-          <div className="grid min-h-[calc(100vh-7rem)] gap-6 xl:grid-cols-[minmax(460px,0.84fr)_minmax(0,1.28fr)]">
-            <TeacherAvatar
-              avatarIframeUrl={liveAvatarEmbedUrl}
-              avatarLaunchUrl={liveAvatarEmbedUrl}
-              avatarProviderLabel={avatarProviderLabel}
-              avatarSetupHint={avatarSetupHint}
-              isSpeaking={isSpeaking}
-              liveReady={liveConnected}
-              mounted={mounted}
-              name={sessionMeta?.tutor_name ?? "Ava"}
-              stageMode="focus"
-              status={tutorStatus}
-              chapter={lessonState?.topic_title || sessionMeta?.topic_title || "CBSE mathematics"}
-              summary={lessonState?.summary || sessionMeta?.summary || "Preparing the class."}
-              videoRef={videoRef}
-              videoStream={videoStream}
-            />
+          <div className="space-y-6">
+            <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
+              <TeacherAvatar
+                avatarIframeUrl={liveAvatarEmbedUrl}
+                avatarLaunchUrl={liveAvatarEmbedUrl}
+                avatarProviderLabel={avatarProviderLabel}
+                avatarSetupHint={avatarSetupHint}
+                isSpeaking={isSpeaking}
+                liveReady={liveConnected}
+                mounted={mounted}
+                name={sessionMeta?.tutor_name ?? "Ava"}
+                stageMode="focus"
+                status={tutorStatus}
+                chapter={lessonState?.topic_title || sessionMeta?.topic_title || "CBSE mathematics"}
+                summary={lessonState?.summary || sessionMeta?.summary || "Preparing the class."}
+                videoRef={videoRef}
+                videoStream={videoStream}
+              />
 
-            <ClassWhiteboard
-              key={JSON.stringify(currentWhiteboard)}
-              isNarrating={isTeacherNarrating}
-              stageMode="focus"
-              whiteboard={currentWhiteboard}
-            />
+              <div className="rounded-[1.75rem] border border-white/60 bg-white/80 p-4 shadow-[0_24px_70px_rgba(52,36,21,0.12)] backdrop-blur">
+                <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-amber-800">
+                  <span className="rounded-full bg-amber-50 px-3 py-2">{chapterLabel}</span>
+                  <span className="rounded-full bg-emerald-50 px-3 py-2 text-emerald-800">
+                    {classDurationMinutes}-Minute Class
+                  </span>
+                  <span className="rounded-full bg-sky-50 px-3 py-2 text-sky-800">
+                    {lessonState?.concept_title || "Guided chapter flow"}
+                  </span>
+                </div>
+                <div className="mt-3 text-sm leading-6 text-slate-600">
+                  Focus mode keeps the avatar, the core teaching controls, and the center whiteboard only.
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <button
+                    onClick={() => quickPrompt("ready")}
+                    className="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900"
+                  >
+                    Start Lesson
+                  </button>
+                  <button
+                    onClick={() => quickPrompt("homework")}
+                    className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900"
+                  >
+                    Homework
+                  </button>
+                  <button
+                    onClick={() => setShowFullTranscript(true)}
+                    className="rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-900"
+                  >
+                    Open Classroom
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mx-auto max-w-[1180px]">
+              <ClassWhiteboard
+                key={JSON.stringify(currentWhiteboard)}
+                isNarrating={isTeacherNarrating}
+                stageMode="focus"
+                whiteboard={currentWhiteboard}
+              />
+            </div>
           </div>
         </div>
       ) : (
@@ -1465,7 +1639,7 @@ export default function Chat() {
                   <span className="font-semibold">Mathematics</span>
                 </div>
                 <div className="flex items-center justify-between rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm">
-                  <span>Live classroom</span>
+                  <span>Live lesson</span>
                   <span className="font-semibold">{wsStatus}</span>
                 </div>
               </div>
@@ -1509,68 +1683,88 @@ export default function Chat() {
 
           <main className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_360px]">
             <section className="rounded-[2rem] border border-white/60 bg-white/75 p-4 shadow-[0_28px_100px_rgba(52,36,21,0.13)] backdrop-blur md:p-5">
-              <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-                <TeacherAvatar
-                  avatarIframeUrl={liveAvatarEmbedUrl}
-                  avatarLaunchUrl={liveAvatarEmbedUrl}
-                  avatarProviderLabel={avatarProviderLabel}
-                  avatarSetupHint={avatarSetupHint}
-                  isSpeaking={isSpeaking}
-                  liveReady={liveConnected}
-                  mounted={mounted}
-                  name={sessionMeta?.tutor_name ?? "Ava"}
-                  stageMode="default"
-                  status={tutorStatus}
-                  chapter={
-                    lessonState?.topic_title || sessionMeta?.topic_title || "CBSE mathematics"
-                  }
-                  summary={lessonState?.summary || sessionMeta?.summary || "Preparing the class."}
-                  videoRef={videoRef}
-                  videoStream={videoStream}
-                />
+              <div className="space-y-4">
+                <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+                  <TeacherAvatar
+                    avatarIframeUrl={liveAvatarEmbedUrl}
+                    avatarLaunchUrl={liveAvatarEmbedUrl}
+                    avatarProviderLabel={avatarProviderLabel}
+                    avatarSetupHint={avatarSetupHint}
+                    isSpeaking={isSpeaking}
+                    liveReady={liveConnected}
+                    mounted={mounted}
+                    name={sessionMeta?.tutor_name ?? "Ava"}
+                    stageMode="default"
+                    status={tutorStatus}
+                    chapter={
+                      lessonState?.topic_title || sessionMeta?.topic_title || "CBSE mathematics"
+                    }
+                    summary={lessonState?.summary || sessionMeta?.summary || "Preparing the class."}
+                    videoRef={videoRef}
+                    videoStream={videoStream}
+                  />
 
-                <div className="space-y-4">
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <button
-                      onClick={() => quickPrompt("ready")}
-                      className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-left"
-                    >
-                      <div className="font-semibold">Start Guided Lesson</div>
-                      <div className="mt-1 text-sm text-slate-600">Let Ava teach in classroom mode.</div>
-                    </button>
-                    <button
-                      onClick={() => quickPrompt("practice")}
-                      className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-left"
-                    >
-                      <div className="font-semibold">Give Me Practice</div>
-                      <div className="mt-1 text-sm text-slate-600">Jump into guided problem solving.</div>
-                    </button>
-                    <button
-                      onClick={() => quickPrompt("revise last class")}
-                      className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-left"
-                    >
-                      <div className="font-semibold">Revise Last Class</div>
-                      <div className="mt-1 text-sm text-slate-600">Pull memory forward from saved sessions.</div>
-                    </button>
-                    <button
-                      onClick={() =>
-                        quickPrompt(
-                          `Teach me ${sessionMeta?.topic_title || "the current chapter"} from the basics.`
-                        )
-                      }
-                      className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-left"
-                    >
-                      <div className="font-semibold">Teach From Basics</div>
-                      <div className="mt-1 text-sm text-slate-600">Rebuild the concept slowly.</div>
-                    </button>
+                  <div className="space-y-4">
+                    <div className="rounded-[1.6rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#fbfaf7_100%)] p-4">
+                      <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-amber-800">
+                        <span className="rounded-full bg-amber-50 px-3 py-2">{chapterLabel}</span>
+                        <span className="rounded-full bg-emerald-50 px-3 py-2 text-emerald-800">
+                          {classDurationMinutes}-Minute Class
+                        </span>
+                        <span className="rounded-full bg-sky-50 px-3 py-2 text-sky-800">
+                          {lessonState?.concept_title || "Guided chapter flow"}
+                        </span>
+                      </div>
+                      <div className="mt-3 text-sm leading-6 text-slate-600">
+                        Ava is following NCERT chapter order, solving on the center board, and saving homework for later revision.
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <button
+                        onClick={() => quickPrompt("ready")}
+                        className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-left"
+                      >
+                        <div className="font-semibold">Start Lesson</div>
+                        <div className="mt-1 text-sm text-slate-600">Begin with the current chapter and topic.</div>
+                      </button>
+                      <button
+                        onClick={() => quickPrompt("practice")}
+                        className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-left"
+                      >
+                        <div className="font-semibold">Give Me Practice</div>
+                        <div className="mt-1 text-sm text-slate-600">Jump into guided problem solving.</div>
+                      </button>
+                      <button
+                        onClick={() => quickPrompt("homework")}
+                        className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-left"
+                      >
+                        <div className="font-semibold">Show Homework</div>
+                        <div className="mt-1 text-sm text-slate-600">See the chapter homework for this class.</div>
+                      </button>
+                      <button
+                        onClick={() =>
+                          quickPrompt(
+                            `Teach me ${sessionMeta?.topic_title || "the current chapter"} from the basics.`
+                          )
+                        }
+                        className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-left"
+                      >
+                        <div className="font-semibold">Teach From Basics</div>
+                        <div className="mt-1 text-sm text-slate-600">Rebuild the concept slowly.</div>
+                      </button>
+                    </div>
                   </div>
+                </div>
 
+                <div className="mx-auto max-w-[1050px]">
                   <ClassWhiteboard
                     key={JSON.stringify(currentWhiteboard)}
                     isNarrating={isTeacherNarrating}
                     stageMode="default"
                     whiteboard={currentWhiteboard}
                   />
+                </div>
 
                   <div className="rounded-[1.6rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#fbfaf7_100%)] p-3">
                     <div className="flex items-center justify-between border-b border-slate-200 px-2 pb-3">
@@ -1681,9 +1875,9 @@ export default function Chat() {
                           setIsHandsFreeMode(next);
                           if (!next) {
                             pauseStudentListening();
-                            setTutorStatus("Hands-free classroom mode is off.");
+                            setTutorStatus("Hands-free lesson mode is off.");
                           } else {
-                            setTutorStatus("Hands-free classroom mode is on.");
+                            setTutorStatus("Hands-free lesson mode is on.");
                           }
                         }}
                         className={`rounded-full px-3 py-2 text-xs font-semibold ${
@@ -1764,7 +1958,6 @@ export default function Chat() {
                         Send
                       </button>
                     </div>
-                  </div>
                 </div>
               </div>
             </section>
@@ -1789,6 +1982,21 @@ export default function Chat() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Chapter Flow</div>
+                      <div className="mt-2 font-semibold text-slate-900">
+                        {chapterLabel}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Class Length</div>
+                      <div className="mt-2 font-semibold text-slate-900">
+                        {classDurationMinutes} minutes
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                       <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Lesson Stage</div>
                       <div className="mt-2 font-semibold text-slate-900">
                         {lessonState?.stage || sessionMeta?.lesson_stage || "INTRO"}
@@ -1805,18 +2013,54 @@ export default function Chat() {
               </div>
 
               <div className="rounded-[1.75rem] border border-white/60 bg-white/80 p-4 shadow-[0_24px_70px_rgba(52,36,21,0.12)] backdrop-blur">
-                <div className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-700">
-                  Class Notes
-                </div>
-                <div className="mt-4 space-y-3">
-                  {visibleNotes.map((note, index) => (
-                    <div
-                      key={`${note}-${index}`}
-                      className="rounded-2xl border border-amber-100 bg-amber-50 px-3 py-3 text-sm text-slate-700"
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-700">
+                    Lesson Resources
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setResourceTab("notes")}
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        resourceTab === "notes"
+                          ? "bg-amber-100 text-amber-900"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
                     >
-                      {note}
-                    </div>
-                  ))}
+                      Notes
+                    </button>
+                    <button
+                      onClick={() => setResourceTab("homework")}
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        resourceTab === "homework"
+                          ? "bg-emerald-100 text-emerald-900"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      Homework
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  {resourceTab === "notes" &&
+                    visibleNotes.map((note, index) => (
+                      <div
+                        key={`${note}-${index}`}
+                        className="rounded-2xl border border-amber-100 bg-amber-50 px-3 py-3 text-sm text-slate-700"
+                      >
+                        {note}
+                      </div>
+                    ))}
+
+                  {resourceTab === "homework" &&
+                    visibleHomework.map((item, index) => (
+                      <div
+                        key={`${item}-${index}`}
+                        className="rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-3 text-sm text-slate-700"
+                      >
+                        {item}
+                      </div>
+                    ))}
                 </div>
               </div>
 
@@ -1843,7 +2087,7 @@ export default function Chat() {
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
                       <span className="font-semibold text-slate-900">Human avatar:</span>{" "}
                       {liveAvatarEmbedUrl
-                        ? "LiveAvatar session started in the classroom"
+                        ? "LiveAvatar session started for the lesson"
                         : liveAvatarStatus?.configured
                           ? liveAvatarStatus.is_sandbox
                             ? "LiveAvatar is configured in sandbox mode and ready to launch"

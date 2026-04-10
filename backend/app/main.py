@@ -35,9 +35,24 @@ app.include_router(session.router)
 app.include_router(avatar.router)
 
 
-async def send_streamed_text(websocket: WebSocket, session_id: str, content: str) -> None:
+async def send_streamed_text(
+    websocket: WebSocket,
+    session_id: str,
+    content: str,
+    *,
+    state: dict | None = None,
+    archive: list[dict] | None = None,
+) -> None:
     start_stream(session_id)
     await websocket.send_json({"type": "start"})
+    if state is not None:
+        await websocket.send_json(
+            {
+                "type": "state",
+                "state": state,
+                "archive": archive,
+            }
+        )
 
     for word in content.split():
         if is_cancelled(session_id):
@@ -45,7 +60,13 @@ async def send_streamed_text(websocket: WebSocket, session_id: str, content: str
         await websocket.send_json({"type": "chunk", "content": word + " "})
         await asyncio.sleep(0.02)
 
-    await websocket.send_json({"type": "done"})
+    await websocket.send_json(
+        {
+            "type": "done",
+            "state": state,
+            "archive": archive,
+        }
+    )
     end_stream(session_id)
 
 
@@ -161,8 +182,14 @@ async def tutor_ws(websocket: WebSocket):
     if not session_record.transcript:
         intro = tutor_engine.process(session_id, "", session_record=session_record)
         session_service.append_turn(session_id, "assistant", intro)
-        session_service.update_lesson_snapshot(session_id, tutor_engine.snapshot(session_id))
-        await send_streamed_text(websocket, session_id, intro)
+        intro_snapshot = tutor_engine.snapshot(session_id)
+        session_service.update_lesson_snapshot(session_id, intro_snapshot)
+        await send_streamed_text(
+            websocket,
+            session_id,
+            intro,
+            state=_serialize_lesson_state(intro_snapshot),
+        )
 
     try:
         while True:
@@ -224,16 +251,16 @@ async def tutor_ws(websocket: WebSocket):
             snapshot = tutor_engine.snapshot(session_id)
             session_service.update_lesson_snapshot(session_id, snapshot)
 
-            await send_streamed_text(websocket, session_id, response)
-            await websocket.send_json(
-                {
-                    "type": "state",
-                    "state": _serialize_lesson_state(tutor_engine.snapshot(session_id)),
-                    "archive": session_service.list_sessions(
-                        session_record.student_id if session_record else start_request.student_id,
-                        start_request.grade,
-                    ),
-                }
+            archive = session_service.list_sessions(
+                session_record.student_id if session_record else start_request.student_id,
+                start_request.grade,
+            )
+            await send_streamed_text(
+                websocket,
+                session_id,
+                response,
+                state=_serialize_lesson_state(snapshot),
+                archive=archive,
             )
 
     except WebSocketDisconnect:

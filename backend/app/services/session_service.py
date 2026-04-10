@@ -142,15 +142,25 @@ class SessionService:
         return sessions
 
     def create_or_resume_session(self, request: StartSessionRequest) -> TutorSessionRecord:
-        from ..tutor_brain.curriculum import get_default_topic_slug, get_topic
+        from ..tutor_brain.curriculum import (
+            get_default_topic_slug,
+            get_next_topic,
+            get_topic,
+            list_chapters,
+        )
 
         with self._lock:
             store = self._load_store()
             profile = self._ensure_profile(store, request)
 
+            latest_session_id = self._latest_session_id(store, request.student_id, request.grade)
+            latest_session: TutorSessionRecord | None = None
+            if latest_session_id and latest_session_id in store["sessions"]:
+                latest_session = TutorSessionRecord.model_validate(store["sessions"][latest_session_id])
+
             session_id = request.session_id
             if not request.start_new and not session_id:
-                session_id = self._latest_session_id(store, request.student_id, request.grade)
+                session_id = latest_session_id
 
             if session_id and session_id in store["sessions"]:
                 session = TutorSessionRecord.model_validate(store["sessions"][session_id])
@@ -159,9 +169,37 @@ class SessionService:
                 session.subject = request.subject
                 session.updated_at = utc_now()
             else:
-                topic_slug = request.topic_slug or get_default_topic_slug(request.grade)
+                seed_metadata: dict = {}
+                topic_slug = request.topic_slug
+                continuing_previous_class = False
+                advancing_to_next_chapter = False
+                if not topic_slug and request.start_new and latest_session:
+                    if latest_session.lesson_stage == "WRAP":
+                        next_topic = get_next_topic(request.grade, latest_session.topic_slug)
+                        if next_topic:
+                            topic_slug = next_topic["slug"]
+                            advancing_to_next_chapter = True
+                        else:
+                            topic_slug = latest_session.topic_slug or None
+                    else:
+                        topic_slug = latest_session.topic_slug or None
+                        continuing_previous_class = True
+                        for key in ("concept_id", "concept_title", "whiteboard", "homework"):
+                            if key in latest_session.metadata:
+                                seed_metadata[key] = latest_session.metadata[key]
+
+                if not topic_slug:
+                    chapters = list_chapters(request.grade)
+                    topic_slug = chapters[0]["slug"] if chapters else get_default_topic_slug(request.grade)
+
                 topic = get_topic(request.grade, topic_slug)
                 topic_title = topic["title"] if topic else None
+                if advancing_to_next_chapter:
+                    summary = f"Starting the next chapter in order: {topic_title or 'Math lesson'}."
+                elif continuing_previous_class:
+                    summary = f"Continuing {topic_title or 'math lesson'} from your last class."
+                else:
+                    summary = f"{topic_title or 'Math lesson'} is ready to begin."
                 session = TutorSessionRecord(
                     session_id=session_id or str(uuid.uuid4()),
                     student_id=request.student_id,
@@ -171,7 +209,8 @@ class SessionService:
                     topic_slug=topic_slug,
                     topic_title=topic_title,
                     title=self._build_title(request.grade, topic_title),
-                    summary=f"{topic_title or 'Math lesson'} is ready to begin.",
+                    summary=summary,
+                    metadata=seed_metadata,
                 )
 
             if session.session_id in profile.session_ids:
@@ -267,6 +306,9 @@ class SessionService:
                     "concept_id": snapshot.concept_id,
                     "concept_title": snapshot.concept_title,
                     "whiteboard": snapshot.whiteboard,
+                    "homework": snapshot.homework,
+                    "class_duration_minutes": snapshot.class_duration_minutes,
+                    "chapter_label": snapshot.chapter_label,
                 }
             )
             session.updated_at = utc_now()

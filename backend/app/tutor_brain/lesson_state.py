@@ -16,6 +16,9 @@ class LessonState(BaseModel):
     messages: list[str] = Field(default_factory=list)
     whiteboard: dict[str, Any] = Field(default_factory=dict)
     current_question_index: int = 0
+    homework: list[str] = Field(default_factory=list)
+    class_duration_minutes: int = 45
+    chapter_label: str = ""
 
     @property
     def question_index(self) -> int:

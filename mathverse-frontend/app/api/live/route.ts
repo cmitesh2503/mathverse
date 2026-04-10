@@ -32,11 +32,11 @@ export async function POST(req: Request) {
         headers: { "Content-Type": "application/json" },
       }
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("❌ /api/live ERROR:", err);
 
     return new Response(
-      JSON.stringify({ error: err.message }),
+      JSON.stringify({ error: err instanceof Error ? err.message : "Unknown error" }),
       { status: 500 }
     );
   }
