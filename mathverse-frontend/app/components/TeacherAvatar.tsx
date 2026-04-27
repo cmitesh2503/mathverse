@@ -1,12 +1,10 @@
 "use client";
 
 import { RefObject } from "react";
-import { getAvatarProviderConfig } from "../lib/avatar-provider";
+import { getAvatarProviderConfig, type AvatarProviderConfig } from "../lib/avatar-provider";
 
 type TeacherAvatarProps = {
   avatarIframeUrl?: string | null;
-  avatarLaunchUrl?: string | null;
-  avatarProviderLabel?: string | null;
   avatarSetupHint?: string | null;
   chapter: string;
   isSpeaking: boolean;
@@ -20,17 +18,27 @@ type TeacherAvatarProps = {
   videoStream: MediaStream | null;
 };
 
-const trimCopy = (value: string, maxLength: number) => {
+const SSR_SAFE_AVATAR_PROVIDER: AvatarProviderConfig = {
+  provider: "none",
+  mode: "none",
+  src: null,
+  iframeUrl: null,
+  label: "Avatar provider",
+  setupHint: "",
+};
+
+const trimCopy = (value: any, maxLength: number) => {
+  if (!value || typeof value !== "string") return "";
+
   if (value.length <= maxLength) {
     return value;
   }
+
   return `${value.slice(0, maxLength).trimEnd()}...`;
 };
 
 export default function TeacherAvatar({
   avatarIframeUrl,
-  avatarLaunchUrl,
-  avatarProviderLabel,
   avatarSetupHint,
   chapter,
   isSpeaking,
@@ -43,7 +51,7 @@ export default function TeacherAvatar({
   videoRef,
   videoStream,
 }: TeacherAvatarProps) {
-  const avatarProvider = getAvatarProviderConfig();
+  const avatarProvider = mounted ? getAvatarProviderConfig() : SSR_SAFE_AVATAR_PROVIDER;
   const effectiveIframeUrl = avatarIframeUrl ?? avatarProvider.src;
   const showIframe = avatarProvider.mode === "iframe" && Boolean(effectiveIframeUrl);
   const showVideoAvatar = avatarProvider.mode === "video" && Boolean(avatarProvider.src);
@@ -53,8 +61,8 @@ export default function TeacherAvatar({
       ? "Ready for your question"
       : "Preparing class";
   const isFocusStage = stageMode === "focus";
-  const boardChapter = trimCopy(chapter, 48);
-  const lessonNote = trimCopy(summary, 130);
+  const boardChapter = trimCopy(chapter ||"", 30);
+  const lessonNote = trimCopy(summary || "" , 120);
 
   return (
     <div
@@ -133,11 +141,6 @@ export default function TeacherAvatar({
               />
               {classroomMood}
             </div>
-            {mounted && (
-              <div className="rounded-full border border-slate-200 bg-white/85 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600">
-                {avatarProviderLabel || (avatarProviderLabel === null ? "Loading..." : avatarProvider.label)}
-              </div>
-            )}
           </div>
         </div>
 
@@ -291,8 +294,8 @@ export default function TeacherAvatar({
 
         {mounted && !showIframe && !showVideoAvatar && (avatarSetupHint || avatarProvider.setupHint) && (
           <div className="mt-4 rounded-2xl border border-dashed border-amber-300 bg-amber-50/80 px-4 py-3 text-sm text-slate-700">
-            <div className="font-semibold text-slate-900">Human avatar setup pending</div>
-            <div className="mt-1 leading-6">{/* avatarSetupHint || avatarProvider.setupHint */}</div>
+            <div className="font-semibold text-slate-900">Human avatar not connected</div>
+            <div className="mt-1 leading-6">{avatarSetupHint || avatarProvider.setupHint}</div>
           </div>
         )}
 
@@ -307,19 +310,9 @@ export default function TeacherAvatar({
           </div>
           <div className={`rounded-2xl bg-slate-900 px-4 py-3 text-slate-100 ${isFocusStage ? "text-[15px]" : "text-sm"}`}>
             <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-300">
-              Class Focus
+              Current Focus
             </div>
             <div className="mt-2 leading-6 text-slate-100">{lessonNote}</div>
-            {avatarLaunchUrl && (
-              <a
-                href={avatarLaunchUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-3 inline-flex rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-100 transition hover:bg-white/20"
-              >
-                Open Avatar Window
-              </a>
-            )}
           </div>
         </div>
       </div>

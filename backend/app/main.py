@@ -9,30 +9,30 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from .api.routes import avatar, session
-from .core.stream_manager import cancel_stream, end_stream, is_cancelled, start_stream
-
 load_dotenv()
 
+#sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from .api.routes import avatar, evaluation, session
+from .core.stream_manager import cancel_stream, end_stream, is_cancelled, start_stream
+from backend.app.services.firebase_service import get_homework
+from backend.app.tutor_brain.tutor_engine import init_cbse
+from backend.app.api.practice import router as practice_router
 
 app = FastAPI(title="MathVerse API")
-app.include_router(session.router, prefix="/session")
-
+from fastapi.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://172.26.128.1:3000",
-    ],
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_origins=["*"],  # or ["http://localhost:3000"]
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.include_router(session.router)
+app.include_router(practice_router,prefix="/practice")
+app.include_router(session.router, prefix="/session")
+#app.include_router(session.router)
 app.include_router(avatar.router)
+app.include_router(evaluation.router)
 
 
 async def send_streamed_text(
@@ -92,10 +92,16 @@ def _session_request_from_socket(websocket: WebSocket):
 
 
 def _serialize_lesson_state(snapshot):
+    if snapshot is None:
+        return {}
+
     if hasattr(snapshot, "model_dump"):
         return snapshot.model_dump(mode="json")
-    return snapshot
-    
+
+    if hasattr(snapshot, "__dict__"):
+        return snapshot.__dict__
+
+    return dict(snapshot) if isinstance(snapshot, dict) else {}
 
 
 
@@ -105,6 +111,7 @@ async def tutor_ws(websocket: WebSocket):
     await websocket.accept()
 
     from .services.session_service import session_service
+    from .services.ai_gateway import live_api_available
     from .tutor_brain.tutor_engine import init_cbse
     from .tutor_brain.runtime import tutor_engine
 
@@ -143,13 +150,16 @@ async def tutor_ws(websocket: WebSocket):
             live_connected = False
         return live_connected
 
+    with contextlib.suppress(Exception):
+        live_connected = await ensure_live_bridge()
+
     await websocket.send_json(
         {
             "type": "session_meta",
             "session": session_service.serialize_session(session_record),
             "archive": session_service.list_sessions(session_record.student_id, session_record.grade),
             "live_capabilities": {
-                "native_audio_ready": False,
+                "native_audio_ready": live_api_available(),
                 "native_audio_connected": live_connected,
                 "transport": "server-websocket",
             },
@@ -177,10 +187,10 @@ async def tutor_ws(websocket: WebSocket):
         }
     )
 
-    asyncio.create_task(asyncio.to_thread(init_cbse))
+    #asyncio.create_task(asyncio.to_thread(init_cbse))
 
     if not session_record.transcript:
-        intro = tutor_engine.process(session_id, "", session_record=session_record)
+        intro = tutor_engine.process(session_id, "ready", session_record=session_record)
         session_service.append_turn(session_id, "assistant", intro)
         intro_snapshot = tutor_engine.snapshot(session_id)
         session_service.update_lesson_snapshot(session_id, intro_snapshot)
@@ -194,6 +204,7 @@ async def tutor_ws(websocket: WebSocket):
     try:
         while True:
             raw_data = await websocket.receive_text()
+            print("📩 RAW:", raw_data)
             try:
                 payload = json.loads(raw_data)
             except json.JSONDecodeError:
@@ -269,6 +280,15 @@ async def tutor_ws(websocket: WebSocket):
     finally:
         if live_bridge is not None:
             await live_bridge.close()
+            
+@app.on_event("startup")
+async def startup_event():
+    print("🚀 Initializing RAG at startup...")
+    asyncio.create_task(asyncio.to_thread(init_cbse))
+            
+@app.get("/homework/{student_id}")
+def fetch_homework(student_id: str):
+    return get_homework(student_id)
 
 
 if __name__ == "__main__":

@@ -315,6 +315,7 @@ export default function Chat() {
   const [activeApiBase, setActiveApiBase] = useState<string>(ENV_API_BASE ?? "");
   const [activeWsBase, setActiveWsBase] = useState<string>(ENV_WS_BASE ?? "");
   const [resourceTab, setResourceTab] = useState<"notes" | "homework">("notes");
+  const [activeTab, setActiveTab] = useState("Homework");
 
   useEffect(() => {
     setMounted(true);
@@ -744,21 +745,37 @@ export default function Chat() {
 
     const socketBase =
       activeWsBase ||
-      (activeApiBase ? wsBaseFromApiBase(activeApiBase) : wsBaseFromApiBase(buildApiBaseCandidates()[0]));
+      (activeApiBase
+        ? wsBaseFromApiBase(activeApiBase)
+        : wsBaseFromApiBase(buildApiBaseCandidates()[0]));
 
     const socket = new WebSocket(
       `${socketBase}?student_id=${encodeURIComponent(studentId)}&grade=${grade}&session_id=${encodeURIComponent(sessionMeta.session_id)}`
     );
+
     ws.current = socket;
 
     socket.onopen = () => {
+      console.log("✅ WS OPENED");
+
       setWsStatus("Connected");
-      setTutorStatus("Ava is live and ready to teach.");
+      setTutorStatus("Ava is starting...");
+
+      // ✅ FIX: SEND ONLY AFTER OPEN
+      socket.send(
+        JSON.stringify({
+          message: "ready",
+          session_id: sessionMeta.session_id,
+          grade: grade,
+        })
+      );
+
+      console.log("🚀 READY SENT");
     };
 
     socket.onerror = () => {
       setWsStatus("Connection error");
-        setTutorStatus("The live lesson connection needs attention.");
+      setTutorStatus("The live lesson connection needs attention.");
     };
 
     socket.onclose = () => {
@@ -771,14 +788,19 @@ export default function Chat() {
         const data = JSON.parse(event.data);
 
         if (data.type === "session_meta") {
-          setSessionMeta((current) => ({ ...(current ?? {}), ...(data.session ?? {}) }));
+          setSessionMeta((current) => ({
+            ...(current ?? {}),
+            ...(data.session ?? {}),
+          }));
           setArchive(data.archive ?? []);
           setLiveReady(Boolean(data.live_capabilities?.native_audio_ready));
           setLiveConnected(Boolean(data.live_capabilities?.native_audio_connected));
         }
 
         if (data.type === "history") {
-          hydrateMessages((data.messages ?? []).map((item: SessionMessage) => ({ ...item })));
+          hydrateMessages(
+            (data.messages ?? []).map((item: SessionMessage) => ({ ...item }))
+          );
         }
 
         if (data.type === "state") {
@@ -817,7 +839,11 @@ export default function Chat() {
           return;
         }
 
-        if (liveSquelchRef.current && data.type !== "assistant_turn_start" && data.type !== "start") {
+        if (
+          liveSquelchRef.current &&
+          data.type !== "assistant_turn_start" &&
+          data.type !== "start"
+        ) {
           return;
         }
 
@@ -833,21 +859,22 @@ export default function Chat() {
         }
 
         if (data.type === "live_audio" && data.data) {
-          if (liveSquelchRef.current) {
-            return;
-          }
+          if (liveSquelchRef.current) return;
           void playLiveAudioChunk(data.data, data.sample_rate ?? 24000);
         }
 
         if (data.type === "assistant_turn_complete" || data.type === "done") {
           endStreaming();
           setTutorStatus("Ava is waiting for your next response.");
+
           if (data.state) {
             setLessonState(data.state);
           }
+
           if (data.archive) {
             setArchive(data.archive);
           }
+
           if (data.reason !== "interrupted") {
             handlePlaybackFallback();
           } else {
@@ -857,7 +884,7 @@ export default function Chat() {
           }
         }
       } catch {
-          setTutorStatus("A lesson event could not be parsed.");
+        setTutorStatus("A lesson event could not be parsed.");
       }
     };
 
@@ -1463,647 +1490,95 @@ export default function Chat() {
     mounted && avatarProvider.provider === "liveavatar" ? liveAvatarStatus?.setup_hint : undefined;
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f2e8_0%,#efe6d3_46%,#f8f5ef_100%)] text-slate-900">
-      {isFocusScreen ? (
-        <div className="mx-auto max-w-[1720px] p-4 md:p-6">
-          <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
-            {mounted && avatarProvider.provider === "liveavatar" && (
-              <button
-                onClick={() => void startHumanAvatar()}
-                disabled={
-                  isBootingHumanAvatar || !liveAvatarStatus?.configured || !sessionMeta?.session_id
-                }
-                className={`rounded-full px-4 py-2 text-xs font-semibold ${
-                  liveAvatarEmbedUrl ? "bg-sky-50 text-sky-800" : "bg-sky-100 text-sky-900"
-                } ${
-                  isBootingHumanAvatar || !liveAvatarStatus?.configured || !sessionMeta?.session_id
-                    ? "cursor-not-allowed opacity-40"
-                    : ""
-                }`}
-              >
-                {isBootingHumanAvatar
-                  ? "Starting Human Avatar..."
-                  : liveAvatarEmbedUrl
-                    ? "Restart Human Avatar"
-                    : "Start Human Avatar"}
-              </button>
-            )}
-            <button
-              onClick={() => setShowFullTranscript(true)}
-              className="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
-            >
-              Open Classroom
-            </button>
-            <button
-              onClick={startFreshClassroom}
-              className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-900 transition hover:bg-rose-100"
-            >
-              Fresh Classroom
-            </button>
-          </div>
+    <div className="h-screen w-full bg-white p-4 flex flex-col gap-4">
 
-          <div className="space-y-6">
-            <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
-              <TeacherAvatar
-                avatarIframeUrl={liveAvatarEmbedUrl}
-                avatarLaunchUrl={liveAvatarEmbedUrl}
-                avatarProviderLabel={avatarProviderLabel}
-                avatarSetupHint={avatarSetupHint}
-                isSpeaking={isSpeaking}
-                liveReady={liveConnected}
-                mounted={mounted}
-                name={sessionMeta?.tutor_name ?? "Ava"}
-                stageMode="focus"
-                status={tutorStatus}
-                chapter={lessonState?.topic_title || sessionMeta?.topic_title || "CBSE mathematics"}
-                summary={lessonState?.summary || sessionMeta?.summary || "Preparing the class."}
-                videoRef={videoRef}
-                videoStream={videoStream}
-              />
-
-              <div className="rounded-[1.75rem] border border-white/60 bg-white/80 p-4 shadow-[0_24px_70px_rgba(52,36,21,0.12)] backdrop-blur">
-                <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-amber-800">
-                  <span className="rounded-full bg-amber-50 px-3 py-2">{chapterLabel}</span>
-                  <span className="rounded-full bg-emerald-50 px-3 py-2 text-emerald-800">
-                    {classDurationMinutes}-Minute Class
-                  </span>
-                  <span className="rounded-full bg-sky-50 px-3 py-2 text-sky-800">
-                    {lessonState?.concept_title || "Guided chapter flow"}
-                  </span>
-                </div>
-                <div className="mt-3 text-sm leading-6 text-slate-600">
-                  Focus mode keeps the avatar, the core teaching controls, and the center whiteboard only.
-                </div>
-                <div className="mt-4 flex flex-wrap gap-3">
-                  <button
-                    onClick={() => quickPrompt("ready")}
-                    className="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900"
-                  >
-                    Start Lesson
-                  </button>
-                  <button
-                    onClick={() => quickPrompt("homework")}
-                    className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900"
-                  >
-                    Homework
-                  </button>
-                  <button
-                    onClick={() => setShowFullTranscript(true)}
-                    className="rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-900"
-                  >
-                    Open Classroom
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="mx-auto max-w-[1180px]">
-              <ClassWhiteboard
-                key={JSON.stringify(currentWhiteboard)}
-                isNarrating={isTeacherNarrating}
-                stageMode="focus"
-                whiteboard={currentWhiteboard}
-              />
-            </div>
-          </div>
-        </div>
-      ) : (
-      <div className="mx-auto max-w-7xl p-4 md:p-6">
-        <div className="mb-6 flex flex-col gap-4 rounded-[2rem] border border-white/60 bg-white/70 p-5 shadow-[0_30px_120px_rgba(79,55,27,0.12)] backdrop-blur xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-700">
-              MathVerse Classroom
-            </div>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-900">
-              Real-time CBSE Mathematics Tutor
-            </h1>
-            <p className="mt-2 max-w-3xl text-sm text-slate-600">
-              Ava keeps lesson memory, saves class notes, and lets students reopen past classes from the archive.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-slate-700">
-              Grade
-              <select
-                value={grade}
-                onChange={(event) => {
-                  const nextGrade = Number(event.target.value);
-                  setGrade(nextGrade);
-                  void bootstrapSession({ gradeOverride: nextGrade });
-                }}
-                className="ml-2 bg-transparent font-semibold outline-none"
-              >
-                {[9, 10].map((level) => (
-                  <option key={level} value={level}>
-                    Class {level}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <button
-              onClick={() => void bootstrapSession({ gradeOverride: grade, startNew: true })}
-              className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
-            >
-              Start New Class
-            </button>
-            <button
-              onClick={startFreshClassroom}
-              className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-900 transition hover:bg-rose-100"
-            >
-              Fresh Classroom
-            </button>
-          </div>
+      {/* TOP HEADER */}
+      <div className="border p-3 flex justify-between items-center">
+        <div>
+          <div className="font-semibold">Standard / Grade: {grade}</div>
+          <div>Student Name: {studentId || "Student"}</div>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <aside className="space-y-4">
-            <div className="rounded-[1.75rem] border border-white/60 bg-white/75 p-4 shadow-[0_24px_70px_rgba(52,36,21,0.12)] backdrop-blur">
-              <div className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-700">
-                Student Memory
-              </div>
-              <div className="mt-3 rounded-2xl bg-slate-900 px-4 py-3 text-sm text-slate-100">
-                <div className="font-semibold">{studentId || "..."}</div>
-                <div className="mt-1 text-xs text-slate-300">
-                  Lessons are saved and can be resumed later.
-                </div>
-              </div>
-              <div className="mt-4 space-y-2">
-                <div className="flex items-center justify-between rounded-2xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm">
-                  <span>Board</span>
-                  <span className="font-semibold">CBSE</span>
-                </div>
-                <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                  <span>Subject</span>
-                  <span className="font-semibold">Mathematics</span>
-                </div>
-                <div className="flex items-center justify-between rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm">
-                  <span>Live lesson</span>
-                  <span className="font-semibold">{wsStatus}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-[1.75rem] border border-white/60 bg-white/75 p-4 shadow-[0_24px_70px_rgba(52,36,21,0.12)] backdrop-blur">
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-700">
-                  Class Archive
-                </div>
-                <div className="text-xs text-slate-500">{archive.length} saved</div>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {archive.length === 0 && (
-                  <div className="rounded-2xl border border-dashed border-slate-200 px-3 py-4 text-sm text-slate-500">
-                    Your saved classes will show up here.
-                  </div>
-                )}
-
-                {archive.map((item) => (
-                  <button
-                    key={item.session_id}
-                    onClick={() => selectArchiveSession(item)}
-                    className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
-                      sessionMeta?.session_id === item.session_id
-                        ? "border-amber-300 bg-amber-50"
-                        : "border-slate-200 bg-slate-50 hover:border-amber-200 hover:bg-white"
-                    }`}
-                  >
-                    <div className="text-sm font-semibold text-slate-900">{item.title}</div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      {item.topic_title || "Math lesson"} - {formatWhen(item.updated_at)}
-                    </div>
-                    <div className="mt-2 text-xs text-slate-600">{item.summary}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </aside>
-
-          <main className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_360px]">
-            <section className="rounded-[2rem] border border-white/60 bg-white/75 p-4 shadow-[0_28px_100px_rgba(52,36,21,0.13)] backdrop-blur md:p-5">
-              <div className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-                  <TeacherAvatar
-                    avatarIframeUrl={liveAvatarEmbedUrl}
-                    avatarLaunchUrl={liveAvatarEmbedUrl}
-                    avatarProviderLabel={avatarProviderLabel}
-                    avatarSetupHint={avatarSetupHint}
-                    isSpeaking={isSpeaking}
-                    liveReady={liveConnected}
-                    mounted={mounted}
-                    name={sessionMeta?.tutor_name ?? "Ava"}
-                    stageMode="default"
-                    status={tutorStatus}
-                    chapter={
-                      lessonState?.topic_title || sessionMeta?.topic_title || "CBSE mathematics"
-                    }
-                    summary={lessonState?.summary || sessionMeta?.summary || "Preparing the class."}
-                    videoRef={videoRef}
-                    videoStream={videoStream}
-                  />
-
-                  <div className="space-y-4">
-                    <div className="rounded-[1.6rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#fbfaf7_100%)] p-4">
-                      <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-amber-800">
-                        <span className="rounded-full bg-amber-50 px-3 py-2">{chapterLabel}</span>
-                        <span className="rounded-full bg-emerald-50 px-3 py-2 text-emerald-800">
-                          {classDurationMinutes}-Minute Class
-                        </span>
-                        <span className="rounded-full bg-sky-50 px-3 py-2 text-sky-800">
-                          {lessonState?.concept_title || "Guided chapter flow"}
-                        </span>
-                      </div>
-                      <div className="mt-3 text-sm leading-6 text-slate-600">
-                        Ava is following NCERT chapter order, solving on the center board, and saving homework for later revision.
-                      </div>
-                    </div>
-
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <button
-                        onClick={() => quickPrompt("ready")}
-                        className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-left"
-                      >
-                        <div className="font-semibold">Start Lesson</div>
-                        <div className="mt-1 text-sm text-slate-600">Begin with the current chapter and topic.</div>
-                      </button>
-                      <button
-                        onClick={() => quickPrompt("practice")}
-                        className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-left"
-                      >
-                        <div className="font-semibold">Give Me Practice</div>
-                        <div className="mt-1 text-sm text-slate-600">Jump into guided problem solving.</div>
-                      </button>
-                      <button
-                        onClick={() => quickPrompt("homework")}
-                        className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-left"
-                      >
-                        <div className="font-semibold">Show Homework</div>
-                        <div className="mt-1 text-sm text-slate-600">See the chapter homework for this class.</div>
-                      </button>
-                      <button
-                        onClick={() =>
-                          quickPrompt(
-                            `Teach me ${sessionMeta?.topic_title || "the current chapter"} from the basics.`
-                          )
-                        }
-                        className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-left"
-                      >
-                        <div className="font-semibold">Teach From Basics</div>
-                        <div className="mt-1 text-sm text-slate-600">Rebuild the concept slowly.</div>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mx-auto max-w-[1050px]">
-                  <ClassWhiteboard
-                    key={JSON.stringify(currentWhiteboard)}
-                    isNarrating={isTeacherNarrating}
-                    stageMode="default"
-                    whiteboard={currentWhiteboard}
-                  />
-                </div>
-
-                  <div className="rounded-[1.6rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#fbfaf7_100%)] p-3">
-                    <div className="flex items-center justify-between border-b border-slate-200 px-2 pb-3">
-                      <div>
-                        <div className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-700">
-                          Classroom Feed
-                        </div>
-                        <div className="mt-1 text-sm text-slate-500">
-                          {showFullTranscript
-                            ? isBootstrapping
-                              ? "Loading session..."
-                              : sessionMeta?.title || "No session yet"
-                            : "Focused view with the latest teacher and student turns."}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                          {messages.length} turns
-                        </div>
-                        <button
-                          onClick={() => setShowFullTranscript((current) => !current)}
-                          className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800"
-                        >
-                          {showFullTranscript ? "Focus Screen" : "Open Classroom"}
-                        </button>
-                      </div>
-                    </div>
-
-                    {!showFullTranscript && latestTeacherMessage && (
-                      <div className="mt-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3">
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-700">
-                          Teacher Recap
-                        </div>
-                        <div className="mt-2 text-sm leading-6 text-slate-700">
-                          {getPreviewText(latestTeacherMessage.content, 260)}
-                        </div>
-                      </div>
-                    )}
-
-                    {!showFullTranscript && hiddenTurnCount > 0 && (
-                      <div className="mt-3 px-2 text-xs font-medium text-slate-500">
-                        Showing the latest 4 turns. Open full transcript any time.
-                      </div>
-                    )}
-
-                    <div
-                      className={`mt-3 space-y-4 px-1 ${
-                        showFullTranscript
-                          ? "h-[360px] overflow-y-auto"
-                          : "max-h-[160px] overflow-hidden"
-                      }`}
-                    >
-                      {messages.length === 0 && (
-                        <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">
-                          Ava will begin with a lesson introduction as soon as the live session opens.
-                        </div>
-                      )}
-
-                      {visibleTranscriptMessages.map((msg, index) => (
-                        <div
-                          key={`${msg.role}-${index}-${msg.timestamp ?? "now"}`}
-                          className={msg.role === "user" ? "flex justify-end" : "flex justify-start"}
-                        >
-                          <div
-                            className={`max-w-[88%] rounded-[1.4rem] px-4 py-3 shadow-sm ${
-                              msg.role === "user"
-                                ? "bg-slate-900 text-white"
-                                : "border border-amber-100 bg-amber-50 text-slate-800"
-                            }`}
-                          >
-                            <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] opacity-70">
-                              <span>{msg.role === "user" ? "Student" : sessionMeta?.tutor_name || "Tutor"}</span>
-                              {showFullTranscript && msg.transport && <span>{msg.transport}</span>}
-                            </div>
-                            {msg.role === "assistant" ? (
-                              showFullTranscript ? (
-                                <div className="prose prose-sm max-w-none prose-p:my-2 prose-li:my-1">
-                                  <ReactMarkdown>{msg.content}</ReactMarkdown>
-                                </div>
-                              ) : (
-                                <div className="text-sm leading-6 text-slate-700">
-                                  {getPreviewText(msg.content, 220)}
-                                </div>
-                              )
-                            ) : (
-                              <div className="whitespace-pre-wrap text-sm leading-6">
-                                {showFullTranscript ? msg.content : getPreviewText(msg.content, 160)}
-                              </div>
-                            )}
-                            {showFullTranscript && msg.timestamp && (
-                              <div className="mt-2 text-[11px] opacity-65">{formatWhen(msg.timestamp)}</div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="rounded-[1.6rem] border border-slate-200 bg-white p-3">
-                    <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
-                      <div className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
-                        Tutor voice enabled
-                      </div>
-                      <button
-                        onClick={() => {
-                          const next = !isHandsFreeMode;
-                          setIsHandsFreeMode(next);
-                          if (!next) {
-                            pauseStudentListening();
-                            setTutorStatus("Hands-free lesson mode is off.");
-                          } else {
-                            setTutorStatus("Hands-free lesson mode is on.");
-                          }
-                        }}
-                        className={`rounded-full px-3 py-2 text-xs font-semibold ${
-                          isHandsFreeMode
-                            ? "bg-emerald-50 text-emerald-700"
-                            : "bg-slate-100 text-slate-700"
-                        }`}
-                      >
-                        {isHandsFreeMode ? "Hands-free On" : "Hands-free Off"}
-                      </button>
-                      {speechRecognitionSupported ? (
-                        <button
-                          onClick={isListening ? stopListening : startListening}
-                          disabled={isBiDiStreaming}
-                          className={`rounded-full px-3 py-2 text-xs font-semibold text-white ${
-                            isListening ? "bg-rose-600" : "bg-amber-600"
-                          } ${isBiDiStreaming ? "cursor-not-allowed opacity-40" : ""}`}
-                        >
-                          {isListening ? "Stop Listening" : "Listen Now"}
-                        </button>
-                      ) : (
-                        <div className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-500">
-                          Browser speech input unavailable
-                        </div>
-                      )}
-                      <button
-                        onClick={isBiDiStreaming ? stopBiDiStreaming : () => void startBiDiStreaming()}
-                        disabled={!liveConnected || !liveAudioSupported}
-                        className={`rounded-full px-3 py-2 text-xs font-semibold ${
-                          isBiDiStreaming ? "bg-violet-50 text-violet-700" : "bg-violet-100 text-violet-800"
-                        } ${!liveConnected || !liveAudioSupported ? "cursor-not-allowed opacity-40" : ""}`}
-                      >
-                        {isBiDiStreaming ? "Stop Live Mic Beta" : "Live Mic Beta"}
-                      </button>
-                      {avatarProvider.provider === "liveavatar" && (
-                        <button
-                          onClick={() => void startHumanAvatar()}
-                          disabled={
-                            isBootingHumanAvatar ||
-                            !liveAvatarStatus?.configured ||
-                            !sessionMeta?.session_id
-                          }
-                          className={`rounded-full px-3 py-2 text-xs font-semibold ${
-                            liveAvatarEmbedUrl
-                              ? "bg-sky-50 text-sky-800"
-                              : "bg-sky-100 text-sky-900"
-                          } ${
-                            isBootingHumanAvatar || !liveAvatarStatus?.configured || !sessionMeta?.session_id
-                              ? "cursor-not-allowed opacity-40"
-                              : ""
-                          }`}
-                        >
-                          {isBootingHumanAvatar
-                            ? "Starting Human Avatar..."
-                            : liveAvatarEmbedUrl
-                              ? "Restart Human Avatar"
-                              : "Start Human Avatar"}
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="mt-3 flex gap-2">
-                      <input
-                        value={input}
-                        onChange={(event) => setInput(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            sendMessage();
-                          }
-                        }}
-                        placeholder="Ask a math doubt, request practice, or switch chapters..."
-                        className="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-amber-300 focus:bg-white"
-                      />
-                      <button
-                        onClick={() => sendMessage()}
-                        className="rounded-2xl bg-amber-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700"
-                      >
-                        Send
-                      </button>
-                    </div>
-                </div>
-              </div>
-            </section>
-
-            <aside className="space-y-4">
-              <div className="rounded-[1.75rem] border border-white/60 bg-white/80 p-4 shadow-[0_24px_70px_rgba(52,36,21,0.12)] backdrop-blur">
-                <div className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-700">
-                  Lesson Snapshot
-                </div>
-                <div className="mt-4 grid gap-3">
-                  <div className="rounded-2xl bg-slate-900 p-4 text-white">
-                    <div className="text-xs uppercase tracking-[0.2em] text-slate-300">
-                      Current Chapter
-                    </div>
-                    <div className="mt-2 text-xl font-semibold">
-                      {lessonState?.topic_title || sessionMeta?.topic_title || "Loading..."}
-                    </div>
-                    <div className="mt-2 text-sm text-slate-300">
-                      {lessonState?.summary || sessionMeta?.summary || "Ava is preparing the lesson."}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Chapter Flow</div>
-                      <div className="mt-2 font-semibold text-slate-900">
-                        {chapterLabel}
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Class Length</div>
-                      <div className="mt-2 font-semibold text-slate-900">
-                        {classDurationMinutes} minutes
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Lesson Stage</div>
-                      <div className="mt-2 font-semibold text-slate-900">
-                        {lessonState?.stage || sessionMeta?.lesson_stage || "INTRO"}
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Concept Focus</div>
-                      <div className="mt-2 font-semibold text-slate-900">
-                        {lessonState?.concept_title || "Guided lesson"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-[1.75rem] border border-white/60 bg-white/80 p-4 shadow-[0_24px_70px_rgba(52,36,21,0.12)] backdrop-blur">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-700">
-                    Lesson Resources
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setResourceTab("notes")}
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        resourceTab === "notes"
-                          ? "bg-amber-100 text-amber-900"
-                          : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      Notes
-                    </button>
-                    <button
-                      onClick={() => setResourceTab("homework")}
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        resourceTab === "homework"
-                          ? "bg-emerald-100 text-emerald-900"
-                          : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      Homework
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-4 space-y-3">
-                  {resourceTab === "notes" &&
-                    visibleNotes.map((note, index) => (
-                      <div
-                        key={`${note}-${index}`}
-                        className="rounded-2xl border border-amber-100 bg-amber-50 px-3 py-3 text-sm text-slate-700"
-                      >
-                        {note}
-                      </div>
-                    ))}
-
-                  {resourceTab === "homework" &&
-                    visibleHomework.map((item, index) => (
-                      <div
-                        key={`${item}-${index}`}
-                        className="rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-3 text-sm text-slate-700"
-                      >
-                        {item}
-                      </div>
-                    ))}
-                </div>
-              </div>
-
-              <div className="rounded-[1.75rem] border border-white/60 bg-white/80 p-4 shadow-[0_24px_70px_rgba(52,36,21,0.12)] backdrop-blur">
-                <div className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-700">
-                  Live Capabilities
-                </div>
-                <div className="mt-4 space-y-3 text-sm text-slate-600">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
-                    <span className="font-semibold text-slate-900">Persistent memory:</span> every session is saved with transcript and lesson notes.
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
-                    <span className="font-semibold text-slate-900">Tutor persona:</span> Ava stays in guided CBSE math-teacher mode.
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
-                    <span className="font-semibold text-slate-900">Native Gemini audio:</span>{" "}
-                    {liveConnected
-                      ? "bi-directional audio session is connected"
-                      : liveReady
-                        ? "SDK available, waiting for live session"
-                        : "backend will use text stream fallback"}
-                  </div>
-                  {mounted && avatarProvider.provider === "liveavatar" && (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
-                      <span className="font-semibold text-slate-900">Human avatar:</span>{" "}
-                      {liveAvatarEmbedUrl
-                        ? "LiveAvatar session started for the lesson"
-                        : liveAvatarStatus?.configured
-                          ? liveAvatarStatus.is_sandbox
-                            ? "LiveAvatar is configured in sandbox mode and ready to launch"
-                            : "LiveAvatar is configured and ready to launch"
-                          : liveAvatarStatus?.missing_fields?.length
-                            ? `missing ${liveAvatarStatus.missing_fields.join(", ")}`
-                            : "LiveAvatar backend is not configured yet"}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </aside>
-          </main>
+        {/* TABS */}
+        <div className="flex gap-4">
+          {["Homework", "Feed", "MindMap"].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`border px-4 py-2 ${
+                activeTab === tab ? "bg-black text-white" : ""
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
         </div>
       </div>
-      )}
+
+      {/* MAIN GRID */}
+      <div className="flex flex-1 gap-4">
+
+        {/* LEFT: LIVE HUMAN */}
+        <div className="w-[25%] border flex items-center justify-center">
+          <div className="text-center">
+            <div className="mb-2 font-semibold">Live Human</div>
+
+            <TeacherAvatar
+              name="Ava"
+              isSpeaking={isSpeaking}
+              videoRef={videoRef}
+              videoStream={null}
+              mounted
+            />
+          </div>
+        </div>
+
+        {/* CENTER: WHITEBOARD */}
+        <div className="w-[50%] border p-4 flex flex-col">
+
+          <div className="mb-2">
+            <div>Chapter No: {lessonState?.chapter_label || "-"}</div>
+            <div>Topic Name: {lessonState?.topic || "-"}</div>
+          </div>
+
+          <div className="flex-1 border flex items-center justify-center">
+            <ClassWhiteboard
+              boardSegments={lessonState?.board_segments || []}
+              isNarrating={isStreaming}
+              isFocusStage
+            />
+          </div>
+        </div>
+
+        {/* RIGHT: TAB CONTENT */}
+        <div className="w-[25%] border p-3">
+
+          {activeTab === "Homework" && (
+            <div>
+              <h3 className="font-semibold mb-2">Homework</h3>
+              <div>{lessonState?.homework || "No homework yet"}</div>
+            </div>
+          )}
+
+          {activeTab === "Feed" && (
+            <div>
+              <h3 className="font-semibold mb-2">Feed</h3>
+              <div className="text-sm whitespace-pre-wrap">
+                {messages.map((m, i) => (
+                  <div key={i}>{m.content}</div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "MindMap" && (
+            <div>
+              <h3 className="font-semibold mb-2">Mind Maps / Notes</h3>
+              <div>{lessonState?.notes || "No notes yet"}</div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
-}
+};

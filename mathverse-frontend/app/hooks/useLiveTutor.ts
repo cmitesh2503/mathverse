@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { WhiteboardPayload } from "../components/ClassWhiteboard";
+import type { WhiteboardPayload } from "../types/whiteboard";
 
 export function useLiveTutor(onWhiteboard: (data: WhiteboardPayload) => void) {
   const pcRef = useRef<RTCPeerConnection | null>(null);

@@ -5,7 +5,8 @@ import warnings
 from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any, Optional
-
+from backend.app.services.mistake_engine import analyze_attempt
+from backend.app.math.solver import solve_equation
 from .curriculum import (
     find_topic_by_message,
     get_chapter_position,
@@ -16,13 +17,53 @@ from .curriculum import (
     get_topic,
 )
 from .lesson_state import LessonState
-
+from backend.app.services.firebase_service import save_homework
+from sympy import symbols, solve
 
 retriever = None
 retriever_lock = Lock()
 CLASS_DURATION_MINUTES = 45
 
+import re
 
+def clean_expression(expr: str) -> str:
+    expr = expr.lower()
+
+    # ✅ REMOVE WORDS
+    expr = expr.replace("solve:", "").replace("solve", "")
+
+    # ✅ REMOVE ALL KNOWN BAD ENCODINGS
+    bad_chars = ["Â", "â", "Ã", "�"]
+    for ch in bad_chars:
+        expr = expr.replace(ch, "")
+
+    # ✅ NORMALIZE POWERS
+    expr = (
+        expr
+        .replace("x²", "x**2")
+        .replace("²", "**2")
+        .replace("^", "**")
+        .replace(" ", "")
+    )
+
+    # ✅ HANDLE =0 CORRECTLY
+    if "=0" in expr:
+        expr = expr.replace("=0", "")
+    elif "=" in expr:
+        expr = expr.split("=")[0]
+
+    # ✅ FIX MULTIPLICATION (5x → 5*x)
+    import re
+    expr = re.sub(r'(\d)(x)', r'\1*\2', expr)
+
+    return expr
+    
+def parse_input(ans: str):
+    try:
+         return sorted([float(x.strip()) for x in ans.split(",")])
+    except:
+        return None
+    
 def _embedding_class():
     try:
         from langchain_huggingface import HuggingFaceEmbeddings
@@ -73,15 +114,24 @@ class ClassroomState:
     topic_title: str | None = None
     concept_id: str | None = None
     concept_title: str = ""
+    current_concept_title: str | None = None
     summary: str = ""
     note_cards: list[str] = field(default_factory=list)
     whiteboard: dict[str, Any] = field(default_factory=dict)
+    public_state: dict[str, Any] = field(default_factory=dict)
     current_question_index: int = 0
     active_problem: dict[str, Any] | None = None
     attempts_on_problem: int = 0
     homework: list[str] = field(default_factory=list)
     class_duration_minutes: int = CLASS_DURATION_MINUTES
     chapter_label: str = ""
+
+    
+    concept_steps: list[str] = field(default_factory=list)
+    examples: list[str] = field(default_factory=list)
+    step_index: int = 0
+    waiting_for_student: bool = False
+
 
 
 class TutorEngine:
@@ -121,12 +171,27 @@ class TutorEngine:
             print("Hydrated classroom state")
 
     def process(self, session_id: str, message: str, session_record=None) -> str:
+        
         state = self._ensure_state(session_id, session_record)
         text = (message or "").strip()
+
         if not text:
             return self._build_intro(state)
 
         lowered = text.lower()
+
+        # 🔥 STEP FLOW PRIORITY
+        
+        if "start practice" in lowered or "test me" in lowered:
+            state.stage = "PRACTICE"
+            state.active_problem = self._current_problem(state)
+            state.attempts_on_problem = 0
+
+            return f"Let's test your understanding.\n\n{state.active_problem['prompt']}"
+        
+        if state.stage == "STEP_TEACH":
+            return self._next_teaching_step(state, text)
+
         topic_switch = find_topic_by_message(state.grade, text)
         if topic_switch and topic_switch["slug"] != state.topic_slug:
             self._set_topic(state, state.grade, topic_switch["slug"], reset=True)
@@ -144,16 +209,9 @@ class TutorEngine:
         if self._should_treat_as_answer(state, lowered):
             return self._handle_answer(state, text)
 
-        if state.stage == "PRACTICE" and state.active_problem and any(token in lowered for token in ["hint", "clue"]):
-            return self._give_hint(state)
-        if state.stage == "PRACTICE" and state.active_problem and any(token in lowered for token in ["solution", "steps", "solve it", "show answer"]):
-            return self._show_solution(state)
-        if any(token in lowered for token in ["practice", "quiz", "test me", "ask me a question"]):
-            return self._offer_practice(state)
-        if any(token in lowered for token in ["homework", "assignment", "classwork"]):
-            return self._give_homework(state)
-        if any(token in lowered for token in ["ready", "start", "begin", "continue", "next", "go on", "teach from basics"]):
+        if self._looks_like_progress_request(lowered):
             return self._advance(state)
+
         return self._answer_like_teacher(state, text)
 
     def snapshot(self, session_id) -> LessonState:
@@ -311,6 +369,60 @@ class TutorEngine:
     def _format_list(self, items: list[str]) -> str:
         return "\n".join(f"{index + 1}. {item}" for index, item in enumerate(items))
 
+    def _looks_like_progress_request(self, lowered: str) -> bool:
+        normalized = re.sub(r"[^a-z0-9\s]", " ", lowered.lower())
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        if not normalized:
+            return False
+
+        exact_requests = {
+            "ready",
+            "rady",
+            "redy",
+            "redi",
+            "start",
+            "stert",
+            "begin",
+            "bigin",
+            "continue",
+            "continew",
+            "next",
+            "nex",
+            "nekst",
+            "go on",
+            "lets start",
+            "let us start",
+            "start class",
+            "start lesson",
+            "start chapter",
+            "next topic",
+            "next concept",
+            "teach from basics",
+        }
+        if normalized in exact_requests:
+            return True
+
+        tokens = normalized.split()
+        return any(
+            token
+            in {
+                "ready",
+                "rady",
+                "redy",
+                "redi",
+                "start",
+                "stert",
+                "begin",
+                "bigin",
+                "continue",
+                "continew",
+                "next",
+                "nex",
+                "nekst",
+            }
+            for token in tokens
+        )
+
     def _concept_problem_sets(self, concept: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         textbook_examples = [
             problem
@@ -418,6 +530,7 @@ class TutorEngine:
 
         if state.stage == "INTRO":
             return self._teach_current_concept(state, transition=False)
+        
         if state.stage == "PRACTICE" and state.active_problem:
             return self._restate_problem(state)
 
@@ -439,18 +552,11 @@ class TutorEngine:
         return self._build_wrap_response(state)
 
     def _build_intro(self, state: ClassroomState) -> str:
-        topic = get_topic(state.grade, state.topic_slug or get_default_topic_slug(state.grade))
-        concept = get_concept(state.grade, state.topic_slug or get_default_topic_slug(state.grade), state.concept_id)
-        self._refresh_public_state(state, include_problem=False)
-        chapter = topic["title"] if topic else state.topic_title or "the current chapter"
-        first_concept = concept["title"] if concept else "the basics"
-        return (
-            f"Welcome back.\n\n"
-            f"Chapter: **{chapter}**\n"
-            f"Topic: **{first_concept}**\n\n"
-            f"We will begin with the main idea, solve the NCERT textbook examples, then solve exercise questions on the whiteboard, and keep the remaining work in the Homework tab.\n\n"
-            "Say **ready** when you want me to begin."
-        )
+        # Ensure we are in teaching mode
+        state.stage = "STEP_TEACH"
+
+        # Directly start teaching (no intro text blocking flow)
+        return self._teach_current_concept(state, transition=False)
 
     def _build_topic_switch_response(self, state: ClassroomState) -> str:
         return (
@@ -458,65 +564,48 @@ class TutorEngine:
             f"Chapter: **{state.topic_title}**\n"
             f"Topic: **{state.concept_title or 'First topic'}**\n\n"
             "We will take the topic in order, solve the textbook examples first, then exercise problems on the whiteboard, and save the remaining homework for later revision.\n\n"
-            "Say ready when you want me to begin."
+            "Try a question to check your understanding"
         )
 
     def _teach_current_concept(self, state: ClassroomState, transition: bool) -> str:
-        topic = get_topic(state.grade, state.topic_slug or get_default_topic_slug(state.grade))
-        concept = get_concept(state.grade, state.topic_slug or get_default_topic_slug(state.grade), state.concept_id)
+        topic = get_topic(state.grade, state.topic_slug)
+        concept = get_concept(state.grade, state.topic_slug, state.concept_id)
+        if concept:
+            state.current_concept_title = concept.get("title")
+
         if not topic or not concept:
-            state.summary = "The class is ready, but the chapter selection needs to be clarified."
-            return "Tell me the chapter name you want to study, and I will teach it from the basics."
-
-        textbook_examples, exercise_problems = self._concept_problem_sets(concept)
-
-        state.concept_id = concept["id"]
-        state.concept_title = concept["title"]
-        state.current_question_index = 0
-        state.active_problem = None
-        state.attempts_on_problem = 0
+            return "Tell me the chapter name."
+        
+        state.current_concept_title = concept["title"]
         state.stage = "TEACH"
-        self._refresh_public_state(state, include_problem=False)
 
-        board_work = concept.get("board_work", [])
-        importance_note = self._important_memory_note(topic, concept)
-        parts = []
-        if transition:
-            parts.append("Next topic.")
-        parts.append(f"Chapter: **{topic['title']}**")
-        parts.append(f"Topic: **{concept['title']}**")
-        parts.append(concept.get("explanation", topic.get("summary", "")))
-        if importance_note:
-            parts.append(importance_note)
-        if board_work:
-            parts.append(f"On the whiteboard, I am writing: {board_work[0]}")
-            if len(board_work) > 1:
-                parts.append(f"Then we note: {board_work[1]}")
-        if textbook_examples:
-            parts.append("Let us solve the NCERT textbook examples for this topic.")
-            self._append_problem_walkthrough(
-                state=state,
-                topic=topic,
-                concept=concept,
-                label="NCERT textbook example",
-                problems=textbook_examples,
-                parts=parts,
-            )
-        if exercise_problems:
-            parts.append("Now let us solve a few NCERT exercise questions on the whiteboard.")
-            self._append_problem_walkthrough(
-                state=state,
-                topic=topic,
-                concept=concept,
-                label="NCERT exercise problem",
-                problems=exercise_problems,
-                parts=parts,
-            )
+        # 🔥 RAG → structured teaching
+        rag_text = self._get_cbse_context(concept["title"])
 
-        if state.homework:
-            parts.append("I have saved the remaining questions in the Homework tab.")
-        parts.append("Say **next** when you are ready for the next topic.")
-        return "\n\n".join(part for part in parts if part)
+        if rag_text:
+            try:
+                from .lesson_planner import build_lesson_plan
+
+                plan = build_lesson_plan(rag_text)
+
+                state.concept_steps = plan["concept_steps"]
+                state.examples = plan["examples"]
+                state.homework = plan["homework"]
+
+                state.stage = "STEP_TEACH"
+                state.step_index = 0
+                state.waiting_for_student = False
+
+                return (
+                    f"Chapter: {topic['title']}\n"
+                    f"Topic: {concept['title']}\n\n"
+                    "We will learn step by step.\n\n"
+                    "Say 'ready' to start."
+                )
+            except Exception as e:
+                print("Planner failed:", e)
+
+        return concept.get("explanation", "")
 
     def _offer_practice(self, state: ClassroomState) -> str:
         if state.active_problem is None:
@@ -538,64 +627,233 @@ class TutorEngine:
             parts.append(f"Hint: {hint}")
         parts.append("Give only the answer first. If you want, you can also ask for a hint or a full board solution.")
         return "\n\n".join(parts)
+          
+    def _handle_answer(self, state, message):
 
-    def _handle_answer(self, state: ClassroomState, message: str) -> str:
         problem = state.active_problem
+
         if not problem:
-            return self._answer_like_teacher(state, message)
-        if self._answer_matches(problem, message):
-            return self._handle_correct_answer(state)
+            return {
+                "correct": False,
+                "mistake_type": "system_error",
+                "hint": None,
+                "explanation": "No active problem"
+            }
 
-        state.attempts_on_problem += 1
-        self._refresh_public_state(state, include_problem=True)
-        if state.attempts_on_problem == 1:
-            hint = problem.get("hint") or "Use the equation on the board and substitute carefully."
-            return f"Not quite.\n\nHint: {hint}\n\nTry once more."
-        return self._show_solution(state)
+        try:
+            expr = clean_expression(problem.get("prompt", ""))
+            #expr = fix_multiplication(expr)
+            
+            print("CLEANED EXPR:", expr)
 
-    def _handle_correct_answer(self, state: ClassroomState) -> str:
-        problem = state.active_problem
-        concept = get_concept(state.grade, state.topic_slug or get_default_topic_slug(state.grade), state.concept_id)
-        if not problem or not concept:
-            return "Good. That is correct."
+            from sympy import symbols, solve
+            x = symbols("x")
 
-        answer_text = self._format_expected_answer(problem)
-        practice_problems = concept.get("practice_problems", [])
-        if state.current_question_index + 1 < len(practice_problems):
-            state.current_question_index += 1
-            state.active_problem = practice_problems[state.current_question_index]
-            state.attempts_on_problem = 0
-            state.stage = "PRACTICE"
-            self._refresh_public_state(state, include_problem=True)
+            solutions = solve(expr, x)
+            expected = sorted([
+                float(s.evalf())
+                for s in solutions
+                if s.is_real
+            ])
+
+            parsed = parse_input(message)
+
+            if not parsed:
+                return {
+                    "correct": False,
+                    "mistake_type": "format_error",
+                    "hint": "Use comma like 2,3",
+                    "explanation": "Invalid format"
+                }
+
+            is_correct = sorted(parsed) == expected
+            # ✅ Track performance
+            state.correct_count = getattr(state, "correct_count", 0)
+            state.wrong_count = getattr(state, "wrong_count", 0)
+
+            if is_correct:
+                state.correct_count += 1
+            else:
+                state.wrong_count += 1
+
+            # ✅ Track performance
+            state.correct_count = getattr(state, "correct_count", 0)
+            state.wrong_count = getattr(state, "wrong_count", 0)
+
+            if is_correct:
+                state.correct_count += 1
+
+                return {
+                    "correct": True,
+                    "mistake_type": None,
+                    "hint": None,
+                    "explanation": "Correct! 🎉",
+                    "steps": self.generate_explanation(problem.get("prompt"), message)
+                }
+
+            else:
+                state.wrong_count += 1
+
+                return {
+                    "correct": False,
+                    "mistake_type": "concept_error",
+                    "hint": "Try factorization",
+                    "explanation": "Check your roots",
+                    "steps": self.generate_explanation(problem.get("prompt"), message)
+                }
+
+        except Exception as e:
+            print("❌ ERROR:", e)
+
+            return {
+                "correct": False,
+                "mistake_type": "system_error",
+                "hint": None,
+                "explanation": "Error evaluating"
+            }
+
+            # 🔍 Smart feedback
+            if len(set(parsed)) == 1:
+                return {
+                    "correct": False,
+                    "mistake_type": "concept_error",
+                    "hint": "Quadratic equations usually have two roots",
+                    "explanation": "Try factorization"
+                }
+
+                return {
+                        "correct": False,
+                        "mistake_type": "concept_error",
+                        "hint": "Try factorization",
+                        "explanation": "Re-evaluate your steps",
+                        "steps": self.generate_explanation(problem.get("prompt"), message)
+                }
+
+        except Exception as e:
+            print("❌ SOLVER ERROR:", e)
+            return {
+                "correct": False,
+                "mistake_type": "system_error",
+                "hint": None,
+                "explanation": "Error evaluating answer"
+            }
+    def generate_explanation(self, question, student_answer):
+
+        # 🔥 For now rule-based (later LLM plug-in)
+
+        if "x**2-5*x+6" in clean_expression(question):
             return (
-                f"Good. That is correct: {answer_text}.\n\n"
-                f"Now try the next NCERT question.\n\n{state.active_problem['prompt']}"
+                "To solve x² - 5x + 6 = 0:\n"
+                "Step 1: Find numbers that multiply to 6 and add to -5 → -2 and -3\n"
+                "Step 2: (x - 2)(x - 3) = 0\n"
+                "Step 3: x = 2 or x = 3"
             )
 
-        next_concept = get_next_concept(state.grade, state.topic_slug or get_default_topic_slug(state.grade), state.concept_id)
-        if next_concept:
-            state.concept_id = next_concept["id"]
-            state.concept_title = next_concept["title"]
-            state.current_question_index = 0
-            state.active_problem = None
-            state.attempts_on_problem = 0
-            state.stage = "TEACH"
-            self._refresh_public_state(state, include_problem=False)
-            return f"Good. That is correct: {answer_text}.\n\nYou understood this part, so let us move ahead.\n\n{self._teach_current_concept(state, transition=True)}"
+        if "x**2-4" in clean_expression(question):
+            return (
+                "x² - 4 = 0 is a difference of squares:\n"
+                "(x - 2)(x + 2) = 0\n"
+                "So x = 2 or x = -2"
+            )
 
-        return self._build_wrap_response(state, answer_text=answer_text)
+        return "Try factorization or quadratic formula."
+        
+        def _handle_correct_answer(self, state: ClassroomState) -> str:
+            problem = state.active_problem
+            concept = get_concept(state.grade, state.topic_slug or get_default_topic_slug(state.grade), state.concept_id)
+            if not problem or not concept:
+                return "Good. That is correct."
 
-    def _give_hint(self, state: ClassroomState) -> str:
-        if not state.active_problem:
-            return "Ask me to start a practice question first."
-        state.attempts_on_problem += 1
-        self._refresh_public_state(state, include_problem=True)
-        hint = state.active_problem.get("hint") or "Look at the board example and solve one step at a time."
-        return f"Important hint: {hint}\n\nNow try again: {state.active_problem['prompt']}"
+            answer_text = self._format_expected_answer(problem)
+            practice_problems = concept.get("practice_problems", [])
+            if state.current_question_index + 1 < len(practice_problems):
+                state.current_question_index += 1
+                state.active_problem = practice_problems[state.current_question_index]
+                state.attempts_on_problem = 0
+                state.stage = "PRACTICE"
+                self._refresh_public_state(state, include_problem=True)
+                return (
+                    f"Good. That is correct: {answer_text}.\n\n"
+                    f"Now try the next NCERT question.\n\n{state.active_problem['prompt']}"
+                )
+
+            next_concept = get_next_concept(state.grade, state.topic_slug or get_default_topic_slug(state.grade), state.concept_id)
+            if next_concept:
+                state.concept_id = next_concept["id"]
+                state.concept_title = next_concept["title"]
+                state.current_question_index = 0
+                state.active_problem = None
+                state.attempts_on_problem = 0
+                state.stage = "TEACH"
+                self._refresh_public_state(state, include_problem=False)
+                return f"Good. That is correct: {answer_text}.\n\nYou understood this part, so let us move ahead.\n\n{self._teach_current_concept(state, transition=True)}"
+
+            return self._build_wrap_response(state, answer_text=answer_text)
+
+        def _give_hint(self, state: ClassroomState) -> str:
+            if not state.active_problem:
+                return "Ask me to start a practice question first."
+            state.attempts_on_problem += 1
+            self._refresh_public_state(state, include_problem=True)
+            hint = state.active_problem.get("hint") or "Look at the board example and solve one step at a time."
+            return f"Important hint: {hint}\n\nNow try again: {state.active_problem['prompt']}"
+        
+    def _next_teaching_step(self, state: ClassroomState, user_input=None):
+
+        # WAIT
+        if state.waiting_for_student:
+            if user_input and user_input.lower() in ["ready", "done", "yes", "ok"]:
+                state.waiting_for_student = False
+            else:
+                # 🔥 DON'T BLOCK FLOW
+                state.waiting_for_student = False
+
+        # STEP
+        if state.step_index < len(state.concept_steps):
+            step = state.concept_steps[state.step_index]
+            state.step_index += 1
+            state.waiting_for_student = True
+
+            # WHITEBOARD WRITE
+            state.whiteboard["chalk_lines"] = [step]
+
+            return f"{step}\n\n(write this and say 'ready')"
+
+        # EXAMPLE
+        if state.examples:
+            ex = state.examples.pop(0)
+            state.waiting_for_student = True
+
+            state.whiteboard["chalk_lines"] = [ex]
+
+            return f"Example:\n\n{ex}"
+
+        # HOMEWORK
+        if state.homework:
+            state.stage = "HOMEWORK"
+            return "Homework:\n\n" + "\n".join(state.homework)
+
+        state.stage = "PRACTICE"
+
+        # 🔥 Set first problem
+        state.active_problem = self._current_problem(state)
+        state.attempts_on_problem = 0
+
+        return f"Now let's try a question:\n\n{state.active_problem['prompt']}"
+        
 
     def _give_homework(self, state: ClassroomState) -> str:
         if not state.homework:
             self._refresh_public_state(state, include_problem=state.active_problem is not None)
+
+        # ✅ Generate + save homework (NEW)
+        try:
+            session_id = "live-session"
+            student_id = "student-1"
+            self._generate_rag_homework(state, session_id, student_id)
+        except Exception as e:
+            print("Homework generation failed:", e)
+
         if not state.homework:
             return "I do not have homework ready yet. Let me finish this topic first."
 
@@ -689,6 +947,8 @@ class TutorEngine:
         return None
 
     def _should_treat_as_answer(self, state: ClassroomState, lowered: str) -> bool:
+        if state.active_problem is None:
+            return False
         if state.stage != "PRACTICE" or state.active_problem is None:
             return False
         if any(token in lowered for token in ["why", "how", "hint", "explain", "teach", "what", "solution", "steps"]):
@@ -700,13 +960,26 @@ class TutorEngine:
         numbers = re.findall(r"-?\d+(?:\.\d+)?", raw_message)
         if answer_type == "number":
             return float(numbers[0]) if numbers else None
+        
         if answer_type == "pair":
-            return [float(numbers[0]), float(numbers[1])] if len(numbers) >= 2 else None
+            try:
+                # 🔥 convert "2,3" → [2.0, 3.0]
+                parts = raw_message.replace(" ", "").split(",")
+
+                if len(parts) != 2:
+                    return None
+
+                return [float(parts[0]), float(parts[1])]
+
+            except:
+                return None
+
         if answer_type == "text":
             letters = re.sub(r"[^a-z]", "", raw_message.lower())
             return letters or None
+        
         return raw_message.strip().lower() or None
-
+    """
     def _answer_matches(self, problem: dict[str, Any], raw_message: str) -> bool:
         parsed = self._parse_answer(problem, raw_message)
         if parsed is None:
@@ -715,18 +988,56 @@ class TutorEngine:
         expected = problem.get("answer")
         if answer_type == "number":
             return abs(float(expected) - float(parsed)) < 1e-9
+        
         if answer_type == "pair":
-            expected_pair = [float(value) for value in expected]
-            parsed_pair = [float(value) for value in parsed]
-            return all(abs(a - b) < 1e-9 for a, b in zip(expected_pair, parsed_pair[:2]))
+            try:
+                # 🔥 convert "2,3" → [2.0, 3.0]
+                parts = raw_message.replace(" ", "").split(",")
+
+                if len(parts) != 2:
+                    return None
+
+                return [float(parts[0]), float(parts[1])]
+
+            except:
+                return None
+        
         if answer_type == "text":
             accepted = [str(expected).lower(), *[item.lower() for item in problem.get("accepted_answers", [])]]
             return str(parsed).lower() in accepted
         return str(parsed).strip().lower() == str(expected).strip().lower()
+            """
+            
+    def _answer_matches(self, problem, user_input):
 
+        try:
+            expr = problem.get("prompt", "")
+
+            cleaned = clean_expression(expr)
+            print("CLEANED EXPR:", cleaned)
+
+            x = symbols("x")
+
+            solutions = solve(cleaned, x)
+
+            expected = sorted([float(s) for s in solutions])
+            print("SOLVED EXPECTED:", expected)
+
+        except Exception as e:
+            print("SOLVER ERROR:", str(e))
+            return False
+
+        parsed = parse_input(user_input)
+        print("PARSED:", parsed)
+
+        if not parsed:
+            return False
+
+        return sorted(parsed) == expected
+    
     def _format_expected_answer(self, problem: dict[str, Any]) -> str:
         answer_type = problem.get("answer_type")
-        expected = problem.get("answer")
+        #expected = solve_equation(problem.get("prompt"))
         if answer_type == "pair" and isinstance(expected, list) and len(expected) >= 2:
             labels = problem.get("answer_labels")
             if (
@@ -750,6 +1061,11 @@ class TutorEngine:
     def _refresh_public_state(self, state: ClassroomState, include_problem: bool) -> None:
         topic = get_topic(state.grade, state.topic_slug or get_default_topic_slug(state.grade))
         concept = get_concept(state.grade, state.topic_slug or get_default_topic_slug(state.grade), state.concept_id)
+        state.public_state["topic_name"] = (
+            getattr(state, "current_concept_title", None)
+            or state.topic_title
+            or "Introduction"
+        )
         state.chapter_label = self._chapter_label(state.grade, state.topic_slug)
         state.class_duration_minutes = CLASS_DURATION_MINUTES
         state.topic_title = topic["title"] if topic else state.topic_title
@@ -846,3 +1162,60 @@ class TutorEngine:
             if 40 <= len(cleaned) <= 180:
                 return cleaned
         return flat[:160].strip()
+    
+    def _generate_rag_homework(self, state: ClassroomState, session_id: str, student_id: str):
+        """
+        Generate homework using CBSE RAG + store in Firebase
+        """
+        topic_name = state.topic_title or "Mathematics"
+
+        context = self._get_cbse_context(topic_name)
+
+        questions = []
+
+        if context:
+            chunks = context.split("\n\n")[:3]
+
+            for i, chunk in enumerate(chunks):
+                questions.append({
+                    "question": f"Q{i+1}. {chunk[:120]}",
+                    "type": "ncert",
+                    "difficulty": "medium"
+                })
+
+        # fallback (never empty)
+        if not questions:
+            questions = [
+                {"question": f"Practice problem 1 from {topic_name}"},
+                {"question": f"Practice problem 2 from {topic_name}"}
+            ]
+
+        homework_payload = {
+            "session_id": session_id,
+            "student_id": student_id,
+            "class": state.grade,
+            "chapter": state.chapter_label,
+            "topic": topic_name,
+            "title": f"{topic_name} Homework",
+            "questions": questions
+        }
+
+        try:
+            save_homework(homework_payload)
+        except Exception as e:
+            print("Firebase save failed:", e)
+
+        return homework_payload
+    
+    def get_difficulty(self, state):
+
+        # ✅ SAFE INIT
+        state.correct_count = getattr(state, "correct_count", 0)
+        state.wrong_count = getattr(state, "wrong_count", 0)
+
+        if state.correct_count >= 3:
+            return "medium"
+        elif state.wrong_count >= 2:
+            return "easy"
+        else:
+            return "easy"   # start safe
