@@ -18,6 +18,7 @@ from .core.stream_manager import cancel_stream, end_stream, is_cancelled, start_
 from backend.app.services.firebase_service import get_homework
 from backend.app.tutor_brain.tutor_engine import init_cbse
 from backend.app.api.practice import router as practice_router
+from backend.app.api.tutor import router as tutor_router
 
 app = FastAPI(title="MathVerse API")
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,7 +34,7 @@ app.include_router(session.router, prefix="/session")
 #app.include_router(session.router)
 app.include_router(avatar.router)
 app.include_router(evaluation.router)
-
+app.include_router(tutor_router, prefix="/api/tutor")
 
 async def send_streamed_text(
     websocket: WebSocket,

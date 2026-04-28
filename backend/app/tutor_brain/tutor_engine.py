@@ -641,21 +641,21 @@ class TutorEngine:
             }
 
         try:
+            # ---------------------------
+            # 1. SOLVE
+            # ---------------------------
             expr = clean_expression(problem.get("prompt", ""))
-            #expr = fix_multiplication(expr)
-            
-            print("CLEANED EXPR:", expr)
-
-            from sympy import symbols, solve
             x = symbols("x")
 
             solutions = solve(expr, x)
             expected = sorted([
                 float(s.evalf())
-                for s in solutions
-                if s.is_real
+                for s in solutions if s.is_real
             ])
 
+            # ---------------------------
+            # 2. PARSE
+            # ---------------------------
             parsed = parse_input(message)
 
             if not parsed:
@@ -666,8 +666,14 @@ class TutorEngine:
                     "explanation": "Invalid format"
                 }
 
+            # ---------------------------
+            # 3. CHECK
+            # ---------------------------
             is_correct = sorted(parsed) == expected
-            # ✅ Track performance
+
+            # ---------------------------
+            # 4. TRACK
+            # ---------------------------
             state.correct_count = getattr(state, "correct_count", 0)
             state.wrong_count = getattr(state, "wrong_count", 0)
 
@@ -676,31 +682,36 @@ class TutorEngine:
             else:
                 state.wrong_count += 1
 
-            # ✅ Track performance
-            state.correct_count = getattr(state, "correct_count", 0)
-            state.wrong_count = getattr(state, "wrong_count", 0)
+            # ---------------------------
+            # 5. MISTAKE TYPE
+            # ---------------------------
+            mistake_type = None
+            if not is_correct:
+                if len(parsed) != len(expected):
+                    mistake_type = "missing_root"
+                elif sorted([abs(x) for x in parsed]) == sorted([abs(x) for x in expected]):
+                    mistake_type = "sign_error"
+                else:
+                    mistake_type = "calculation_error"
 
-            if is_correct:
-                state.correct_count += 1
+            # ---------------------------
+            # 🔥 6. RAG + GEMINI
+            # ---------------------------
+            context = self._get_cbse_context(problem.get("prompt", ""))
 
-                return {
-                    "correct": True,
-                    "mistake_type": None,
-                    "hint": None,
-                    "explanation": "Correct! 🎉",
-                    "steps": self.generate_explanation(problem.get("prompt"), message)
-                }
+            from .lesson_planner import build_lesson_plan
+            plan = build_lesson_plan(context, mistake_type)
 
-            else:
-                state.wrong_count += 1
-
-                return {
-                    "correct": False,
-                    "mistake_type": "concept_error",
-                    "hint": "Try factorization",
-                    "explanation": "Check your roots",
-                    "steps": self.generate_explanation(problem.get("prompt"), message)
-                }
+            # ---------------------------
+            # 7. RESPONSE
+            # ---------------------------
+            return {
+                "correct": is_correct,
+                "mistake_type": mistake_type,
+                "hint": None if is_correct else (plan["examples"][0] if plan["examples"] else "Try step-by-step"),
+                "explanation": "Correct! 🎉" if is_correct else plan.get("mistake_explanation", ""),
+                "steps": plan.get("concept_steps", [])
+            }
 
         except Exception as e:
             print("❌ ERROR:", e)
@@ -709,56 +720,12 @@ class TutorEngine:
                 "correct": False,
                 "mistake_type": "system_error",
                 "hint": None,
-                "explanation": "Error evaluating"
-            }
-
-            # 🔍 Smart feedback
-            if len(set(parsed)) == 1:
-                return {
-                    "correct": False,
-                    "mistake_type": "concept_error",
-                    "hint": "Quadratic equations usually have two roots",
-                    "explanation": "Try factorization"
-                }
-
-                return {
-                        "correct": False,
-                        "mistake_type": "concept_error",
-                        "hint": "Try factorization",
-                        "explanation": "Re-evaluate your steps",
-                        "steps": self.generate_explanation(problem.get("prompt"), message)
-                }
-
-        except Exception as e:
-            print("❌ SOLVER ERROR:", e)
-            return {
-                "correct": False,
-                "mistake_type": "system_error",
-                "hint": None,
                 "explanation": "Error evaluating answer"
             }
-    def generate_explanation(self, question, student_answer):
-
-        # 🔥 For now rule-based (later LLM plug-in)
-
-        if "x**2-5*x+6" in clean_expression(question):
-            return (
-                "To solve x² - 5x + 6 = 0:\n"
-                "Step 1: Find numbers that multiply to 6 and add to -5 → -2 and -3\n"
-                "Step 2: (x - 2)(x - 3) = 0\n"
-                "Step 3: x = 2 or x = 3"
-            )
-
-        if "x**2-4" in clean_expression(question):
-            return (
-                "x² - 4 = 0 is a difference of squares:\n"
-                "(x - 2)(x + 2) = 0\n"
-                "So x = 2 or x = -2"
-            )
-
-        return "Try factorization or quadratic formula."
+            
+    
         
-        def _handle_correct_answer(self, state: ClassroomState) -> str:
+    def _handle_correct_answer(self, state: ClassroomState) -> str:
             problem = state.active_problem
             concept = get_concept(state.grade, state.topic_slug or get_default_topic_slug(state.grade), state.concept_id)
             if not problem or not concept:
@@ -790,14 +757,17 @@ class TutorEngine:
 
             return self._build_wrap_response(state, answer_text=answer_text)
 
-        def _give_hint(self, state: ClassroomState) -> str:
-            if not state.active_problem:
-                return "Ask me to start a practice question first."
-            state.attempts_on_problem += 1
-            self._refresh_public_state(state, include_problem=True)
-            hint = state.active_problem.get("hint") or "Look at the board example and solve one step at a time."
-            return f"Important hint: {hint}\n\nNow try again: {state.active_problem['prompt']}"
-        
+    def _give_hint(self, state: ClassroomState) -> str:
+        if not state.active_problem:
+            return "Ask me to start a practice question first."
+
+        state.attempts_on_problem += 1
+        self._refresh_public_state(state, include_problem=True)
+
+        hint = state.active_problem.get("hint") or "Think step-by-step"
+
+        return f"Hint: {hint}\n\nTry again: {state.active_problem['prompt']}"
+
     def _next_teaching_step(self, state: ClassroomState, user_input=None):
 
         # WAIT
@@ -979,77 +949,23 @@ class TutorEngine:
             return letters or None
         
         return raw_message.strip().lower() or None
-    """
-    def _answer_matches(self, problem: dict[str, Any], raw_message: str) -> bool:
-        parsed = self._parse_answer(problem, raw_message)
-        if parsed is None:
-            return False
-        answer_type = problem.get("answer_type")
-        expected = problem.get("answer")
-        if answer_type == "number":
-            return abs(float(expected) - float(parsed)) < 1e-9
-        
-        if answer_type == "pair":
-            try:
-                # 🔥 convert "2,3" → [2.0, 3.0]
-                parts = raw_message.replace(" ", "").split(",")
-
-                if len(parts) != 2:
-                    return None
-
-                return [float(parts[0]), float(parts[1])]
-
-            except:
-                return None
-        
-        if answer_type == "text":
-            accepted = [str(expected).lower(), *[item.lower() for item in problem.get("accepted_answers", [])]]
-            return str(parsed).lower() in accepted
-        return str(parsed).strip().lower() == str(expected).strip().lower()
-            """
-            
-    def _answer_matches(self, problem, user_input):
-
-        try:
-            expr = problem.get("prompt", "")
-
-            cleaned = clean_expression(expr)
-            print("CLEANED EXPR:", cleaned)
-
-            x = symbols("x")
-
-            solutions = solve(cleaned, x)
-
-            expected = sorted([float(s) for s in solutions])
-            print("SOLVED EXPECTED:", expected)
-
-        except Exception as e:
-            print("SOLVER ERROR:", str(e))
-            return False
-
-        parsed = parse_input(user_input)
-        print("PARSED:", parsed)
-
-        if not parsed:
-            return False
-
-        return sorted(parsed) == expected
+    
     
     def _format_expected_answer(self, problem: dict[str, Any]) -> str:
-        answer_type = problem.get("answer_type")
-        #expected = solve_equation(problem.get("prompt"))
-        if answer_type == "pair" and isinstance(expected, list) and len(expected) >= 2:
-            labels = problem.get("answer_labels")
-            if (
-                isinstance(labels, list)
-                and len(labels) >= 2
-                and all(isinstance(label, str) and label.strip() for label in labels[:2])
-            ):
-                first_label, second_label = labels[:2]
-            else:
-                first_label, second_label = ("x", "y")
-            return f"{first_label} = {expected[0]}, {second_label} = {expected[1]}"
-        return str(expected)
+        try:
+            expr = clean_expression(problem.get("prompt", ""))
+            x = symbols("x")
+            solutions = solve(expr, x)
+
+            expected = sorted([
+                float(s.evalf())
+                for s in solutions if s.is_real
+            ])
+
+            return ", ".join(str(x) for x in expected)
+
+        except Exception:
+            return "Solution not available"
 
     def _current_problem(self, state: ClassroomState) -> dict[str, Any] | None:
         concept = get_concept(state.grade, state.topic_slug or get_default_topic_slug(state.grade), state.concept_id)
@@ -1219,3 +1135,42 @@ class TutorEngine:
             return "easy"
         else:
             return "easy"   # start safe
+        
+    def handle_doubt(self, state, question):
+
+        context = self._get_cbse_context(question)
+
+        from .lesson_planner import build_lesson_plan
+        plan = build_lesson_plan(context)
+
+        return {
+            "correct": None,
+            "explanation": plan.get("concept_steps", [])
+        }
+
+
+def handle_learn(self, state, topic):
+
+    context = self._get_cbse_context(topic)
+
+    from .lesson_planner import build_lesson_plan
+    plan = build_lesson_plan(context)
+
+    return {
+        "correct": None,
+        "explanation": plan.get("concept_steps", [])
+    }
+
+
+def handle_homework(self, state, text):
+
+    context = self._get_cbse_context(text)
+
+    from .lesson_planner import build_lesson_plan
+    plan = build_lesson_plan(context)
+
+    return {
+        "correct": False,
+        "explanation": plan.get("concept_steps", []),
+        "hint": "Review your steps"
+    }
