@@ -19,12 +19,15 @@ from .curriculum import (
 from .lesson_state import LessonState
 from backend.app.services.firebase_service import save_homework
 from sympy import symbols, solve
+import asyncio
+from .lesson_planner import build_lesson_plan
+from backend.app.cache.cache_manager import get_cache, set_cache
+import random
 
 retriever = None
 retriever_lock = Lock()
 CLASS_DURATION_MINUTES = 45
 
-import re
 
 def clean_expression(expr: str) -> str:
     expr = expr.lower()
@@ -53,7 +56,7 @@ def clean_expression(expr: str) -> str:
         expr = expr.split("=")[0]
 
     # ✅ FIX MULTIPLICATION (5x → 5*x)
-    import re
+    
     expr = re.sub(r'(\d)(x)', r'\1*\2', expr)
 
     return expr
@@ -131,6 +134,15 @@ class ClassroomState:
     examples: list[str] = field(default_factory=list)
     step_index: int = 0
     waiting_for_student: bool = False
+    
+    def get_weak_area(state):
+        stats = getattr(state, "stats", {})
+        mistakes = stats.get("by_mistake", {})
+
+        if not mistakes:
+            return None
+
+        return max(mistakes, key=mistakes.get)
 
 
 
@@ -170,15 +182,21 @@ class TutorEngine:
             state.active_problem = self._current_problem(state) if state.stage == "PRACTICE" else None
             print("Hydrated classroom state")
 
-    def process(self, session_id: str, message: str, session_record=None) -> str:
-        
+    def process(self, session_id: str, message, session_record=None) -> str:
+
         state = self._ensure_state(session_id, session_record)
+
+        # ✅ HANDLE DICT INPUT HERE (MAIN FIX)
+        if isinstance(message, dict):
+            answer = message.get("answer")
+            question = message.get("question")
+
+            if question:
+                state.active_problem = {"prompt": question}
+
+            message = answer
+
         text = (message or "").strip()
-
-        if not text:
-            return self._build_intro(state)
-
-        lowered = text.lower()
 
         # 🔥 STEP FLOW PRIORITY
         
@@ -584,13 +602,12 @@ class TutorEngine:
 
         if rag_text:
             try:
-                from .lesson_planner import build_lesson_plan
-
-                plan = build_lesson_plan(rag_text)
+                                
+                plan = asyncio.run(build_lesson_plan(rag_text))
 
                 state.concept_steps = plan["concept_steps"]
                 state.examples = plan["examples"]
-                state.homework = plan["homework"]
+                state.homework = ["Practice 2 questions from this concept"]
 
                 state.stage = "STEP_TEACH"
                 state.step_index = 0
@@ -630,7 +647,29 @@ class TutorEngine:
           
     def _handle_answer(self, state, message):
 
-        problem = state.active_problem
+        # -----------------------------
+        # ✅ HANDLE INPUT (STRING + DICT)
+        # -----------------------------
+        if isinstance(message, dict):
+            answer = message.get("answer")
+            question = message.get("question")
+
+            if question:
+                state.active_problem = {
+                    "prompt": question
+                }
+
+            message = answer
+
+        if not message:
+            return {
+                "correct": False,
+                "mistake_type": "format_error",
+                "hint": "Please provide an answer like 2,3",
+                "explanation": "Answer is missing"
+            }
+
+        problem = getattr(state, "active_problem", None)
 
         if not problem:
             return {
@@ -641,21 +680,22 @@ class TutorEngine:
             }
 
         try:
-            # ---------------------------
-            # 1. SOLVE
-            # ---------------------------
+            # -----------------------------
+            # 🧮 SOLVE USING SYMPY
+            # -----------------------------
             expr = clean_expression(problem.get("prompt", ""))
+
+            from sympy import symbols, solve
             x = symbols("x")
 
             solutions = solve(expr, x)
+
             expected = sorted([
                 float(s.evalf())
-                for s in solutions if s.is_real
+                for s in solutions
+                if s.is_real
             ])
 
-            # ---------------------------
-            # 2. PARSE
-            # ---------------------------
             parsed = parse_input(message)
 
             if not parsed:
@@ -666,52 +706,142 @@ class TutorEngine:
                     "explanation": "Invalid format"
                 }
 
-            # ---------------------------
-            # 3. CHECK
-            # ---------------------------
             is_correct = sorted(parsed) == expected
 
-            # ---------------------------
-            # 4. TRACK
-            # ---------------------------
+            # -----------------------------
+            # 📊 PERFORMANCE TRACKING
+            # -----------------------------
             state.correct_count = getattr(state, "correct_count", 0)
             state.wrong_count = getattr(state, "wrong_count", 0)
+            
+            # 📊 TRACK PERFORMANCE
+            state.stats["total"] += 1
 
+            topic = "quadratic"
+
+            if topic not in state.stats["by_topic"]:
+                state.stats["by_topic"][topic] = {"correct": 0, "wrong": 0}
+
+            # -----------------------------
+            # ⚡ FAST PATH (NO AI CALL)
+            # -----------------------------
             if is_correct:
                 state.correct_count += 1
+
+                # NEW
+                state.stats["correct"] += 1
+                state.stats["by_topic"][topic]["correct"] += 1
+                next_problem = self._generate_adaptive_problem(state)
+                
+                # 🧠 Initialize question history (safe)
+                state.last_questions = getattr(state, "last_questions", [])
+
+                prompt = next_problem.get("prompt")
+
+                # 🚫 Avoid repetition
+                if prompt in state.last_questions:
+                    next_problem = self._generate_adaptive_problem(state)
+                    prompt = next_problem.get("prompt")
+
+                # 📝 Save history (keep last 5)
+                state.last_questions.append(prompt)
+                state.last_questions = state.last_questions[-5:]
+                state.active_problem = next_problem
+            # -----------------------------
+            # ❌ WRONG ANSWER
+            # -----------------------------
+            state.wrong_count += 1
+            # NEW
+            state.stats["wrong"] += 1
+            state.stats["by_topic"][topic]["wrong"] += 1
+            state.stats["by_mistake"][mistake_type] = \
+                state.stats["by_mistake"].get(mistake_type, 0) + 1
+
+            # -----------------------------
+            # 🧠 MISTAKE TYPE
+            # -----------------------------
+            if len(parsed) < len(expected):
+                mistake_type = "missing_root"
+            elif set(parsed) != set(expected):
+                mistake_type = "sign_error"
             else:
-                state.wrong_count += 1
+                mistake_type = "concept_error"
+                
+            weak_area = get_weak_area(state)
 
-            # ---------------------------
-            # 5. MISTAKE TYPE
-            # ---------------------------
-            mistake_type = None
-            if not is_correct:
-                if len(parsed) != len(expected):
-                    mistake_type = "missing_root"
-                elif sorted([abs(x) for x in parsed]) == sorted([abs(x) for x in expected]):
-                    mistake_type = "sign_error"
-                else:
-                    mistake_type = "calculation_error"
+            adaptive_hint = None
 
-            # ---------------------------
-            # 🔥 6. RAG + GEMINI
-            # ---------------------------
-            context = self._get_cbse_context(problem.get("prompt", ""))
+            if weak_area == "sign_error":
+                adaptive_hint = "You often make sign mistakes. Carefully handle '-b'."
+            elif weak_area == "missing_root":
+                adaptive_hint = "You tend to miss roots. Always check ±."
+            elif weak_area == "concept_error":
+                adaptive_hint = "Focus on understanding concept before solving."
 
-            from .lesson_planner import build_lesson_plan
-            plan = build_lesson_plan(context, mistake_type)
+            # -----------------------------
+            # 💰 CACHE CHECK
+            # -----------------------------
+            
 
-            # ---------------------------
-            # 7. RESPONSE
-            # ---------------------------
-            return {
-                "correct": is_correct,
+            cache_key = f"{problem.get('prompt','').strip()}|{str(message).strip()}"
+
+            cached = get_cache(cache_key)
+            if cached:
+                return cached
+
+            # -----------------------------
+            # 🤖 CALL LESSON PLANNER (SYNC SAFE)
+            # -----------------------------
+            import asyncio
+            
+
+            try:
+                plan = asyncio.run(
+                    build_lesson_plan(
+                        problem.get("prompt", ""),
+                        mistake_type
+                    )
+                )
+            except RuntimeError:
+                # fallback if loop already running
+                loop = asyncio.get_event_loop()
+                plan = loop.run_until_complete(
+                    build_lesson_plan(
+                        problem.get("prompt", ""),
+                        mistake_type
+                    )
+                )
+
+            # -----------------------------
+            # 🧠 STUDENT MEMORY
+            # -----------------------------
+            state.mistakes = getattr(state, "mistakes", [])
+            state.mistakes.append(mistake_type)
+            
+            # 🎯 Generate next adaptive problem
+            next_problem = self._generate_adaptive_problem(state)
+
+            # store it
+            state.active_problem = next_problem
+
+            # -----------------------------
+            # 📦 FINAL RESPONSE
+            # -----------------------------
+            result = {
+                "correct": False,
                 "mistake_type": mistake_type,
-                "hint": None if is_correct else (plan["examples"][0] if plan["examples"] else "Try step-by-step"),
-                "explanation": "Correct! 🎉" if is_correct else plan.get("mistake_explanation", ""),
-                "steps": plan.get("concept_steps", [])
+                "hint": plan.get("mistake_explanation"),
+                "explanation": plan.get("mistake_explanation"),
+                "steps": plan.get("concept_steps", []),
+                "shortcut": plan.get("shortcut"),
+                "adaptive_hint": adaptive_hint,   # 👈 ADD THIS
+                "next_question": f"Try this similar question:\n\n{next_problem.get('prompt')}"
             }
+
+            # 💰 SAVE CACHE
+            set_cache(cache_key, result)
+
+            return result
 
         except Exception as e:
             print("❌ ERROR:", e)
@@ -720,7 +850,7 @@ class TutorEngine:
                 "correct": False,
                 "mistake_type": "system_error",
                 "hint": None,
-                "explanation": "Error evaluating answer"
+                "explanation": "Error evaluating"
             }
             
     
@@ -973,6 +1103,65 @@ class TutorEngine:
             return None
         index = min(state.current_question_index, len(concept["practice_problems"]) - 1)
         return concept["practice_problems"][index]
+    
+    
+
+    def _generate_adaptive_problem(self, state):
+        level = getattr(state, "level", "easy")
+        weak = get_weak_area(state)
+
+        def make_roots_problem(r1, r2):
+            # build quadratic from roots
+            # (x - r1)(x - r2) = x^2 - (r1+r2)x + r1*r2
+            b = -(r1 + r2)
+            c = r1 * r2
+            return f"x^2 {b:+}x {c:+} = 0"
+
+        # -------------------------
+        # 🎯 Weakness targeting
+        # -------------------------
+        if weak == "missing_root":
+            a = random.randint(2, 10)
+            return {
+                "prompt": f"x^2 - {a*a} = 0",
+                "answer_type": "pair"
+            }
+
+        if weak == "sign_error":
+            r1 = random.randint(1, 5)
+            r2 = -random.randint(1, 5)
+            return {
+                "prompt": make_roots_problem(r1, r2),
+                "answer_type": "pair"
+            }
+
+        # -------------------------
+        # 🎯 Difficulty control
+        # -------------------------
+        if level == "easy":
+            a = random.randint(2, 6)
+            return {
+                "prompt": f"x^2 - {a*a} = 0",
+                "answer_type": "pair"
+            }
+
+        elif level == "medium":
+            r1 = random.randint(1, 5)
+            r2 = random.randint(1, 5)
+            return {
+                "prompt": make_roots_problem(r1, r2),
+                "answer_type": "pair"
+            }
+
+        else:  # hard
+            a = random.randint(1, 3)
+            b = random.randint(-7, 7)
+            c = random.randint(-6, 6)
+
+            return {
+                "prompt": f"{a}x^2 {b:+}x {c:+} = 0",
+                "answer_type": "pair"
+            }
 
     def _refresh_public_state(self, state: ClassroomState, include_problem: bool) -> None:
         topic = get_topic(state.grade, state.topic_slug or get_default_topic_slug(state.grade))
@@ -1128,6 +1317,15 @@ class TutorEngine:
         # ✅ SAFE INIT
         state.correct_count = getattr(state, "correct_count", 0)
         state.wrong_count = getattr(state, "wrong_count", 0)
+        
+        # 🧠 NEW (adaptive stats)
+        state.stats = getattr(state, "stats", {
+            "total": 0,
+            "correct": 0,
+            "wrong": 0,
+            "by_mistake": {},
+            "by_topic": {}
+        })
 
         if state.correct_count >= 3:
             return "medium"
@@ -1140,8 +1338,8 @@ class TutorEngine:
 
         context = self._get_cbse_context(question)
 
-        from .lesson_planner import build_lesson_plan
-        plan = build_lesson_plan(context)
+        
+        plan = asyncio.run(build_lesson_plan(context))
 
         return {
             "correct": None,
@@ -1149,28 +1347,28 @@ class TutorEngine:
         }
 
 
-def handle_learn(self, state, topic):
+    def handle_learn(self, state, topic):
 
-    context = self._get_cbse_context(topic)
+        context = self._get_cbse_context(topic)
 
-    from .lesson_planner import build_lesson_plan
-    plan = build_lesson_plan(context)
+        
+        plan = asyncio.run(build_lesson_plan(context))
 
-    return {
-        "correct": None,
-        "explanation": plan.get("concept_steps", [])
-    }
+        return {
+            "correct": None,
+            "explanation": plan.get("concept_steps", [])
+        }
 
 
-def handle_homework(self, state, text):
+    def handle_homework(self, state, text):
 
-    context = self._get_cbse_context(text)
+        context = self._get_cbse_context(text)
 
-    from .lesson_planner import build_lesson_plan
-    plan = build_lesson_plan(context)
+        
+        plan = asyncio.run(build_lesson_plan(context))
 
-    return {
-        "correct": False,
-        "explanation": plan.get("concept_steps", []),
-        "hint": "Review your steps"
-    }
+        return {
+            "correct": False,
+            "explanation": plan.get("concept_steps", []),
+            "hint": "Review your steps"
+        }

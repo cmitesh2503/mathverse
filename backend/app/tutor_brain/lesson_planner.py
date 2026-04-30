@@ -6,7 +6,7 @@ import vertexai
 from dotenv import load_dotenv
 import json
 import re
-
+import asyncio
 import requests
 
 vertexai.init(
@@ -15,22 +15,31 @@ vertexai.init(
 )
 
 model = GenerativeModel("gemini-2.5-pro")
-
+#model = GenerativeModel("gemini-1.5-flash")
 
 def call_gemini(prompt: str):
     try:
         response = model.generate_content(prompt)
         return response.text
+
     except Exception as e:
         print("❌ VERTEX ERROR:", e)
         return None
+    
 
-        data = response.json()
 
-        return data["candidates"][0]["content"]["parts"][0]["text"]
+async def call_gemini_async(prompt: str):
+    loop = asyncio.get_running_loop()
+
+    try:
+        response = await loop.run_in_executor(
+            None,
+            lambda: model.generate_content(prompt)
+        )
+        return response.text
 
     except Exception as e:
-        print("❌ REQUEST ERROR:", e)
+        print("❌ VERTEX ERROR:", e)
         return None
 
 
@@ -49,7 +58,7 @@ def clean_rag_text(text: str) -> str:
 # ---------------------------
 # 🧠 MAIN FUNCTION
 # ---------------------------
-def build_lesson_plan(rag_text: str, mistake_type: str = None):
+async def build_lesson_plan(rag_text: str, mistake_type: str = None):
 
     rag_text = clean_rag_text(rag_text)
 
@@ -72,32 +81,42 @@ def build_lesson_plan(rag_text: str, mistake_type: str = None):
     # ---------------------------
     # 🔥 GEMINI PROMPT
     # ---------------------------
-    prompt = f"""
-You are a CBSE + JEE math tutor.
+    prompt = prompt = f"""
+    You are an expert JEE math tutor.
 
-Content:
-{rag_text}
+    Question context:
+    {rag_text}
 
-Student mistake:
-{mistake_instruction}
+    Student mistake:
+    {mistake_instruction}
 
-Task:
-1. Explain solution step-by-step (max 3 steps)
-2. Keep it simple and clean
-3. Give 1 short example
-4. Explain mistake clearly
+    Your job:
+    1. Explain ONLY based on the mistake
+    2. Keep explanation short (max 3 steps)
+    3. Teach like a JEE teacher (clear + sharp)
 
-Return ONLY JSON:
+    Special rules:
+    - If missing_root → emphasize there are TWO roots
+    - If sign_error → highlight sign handling clearly
+    - If calculation_error → show exact correction
+    - Avoid generic explanation
 
-{{
-  "concept_steps": ["Step 1...", "Step 2...", "Step 3..."],
-  "examples": ["Example..."],
-  "mistake_explanation": "Explain what student did wrong"
-}}
-"""
+    Also include:
+    - 1 shortcut trick (JEE style)
+    - 1 quick mental check
+
+    Return ONLY JSON:
+
+    {{
+    "concept_steps": ["Step 1...", "Step 2...", "Step 3..."],
+    "mistake_explanation": "Explain what student did wrong",
+    "shortcut": "Quick trick",
+    "mental_check": "Quick way to verify answer"
+    }}
+    """
 
     try:
-        text = call_gemini(prompt)
+        text = await call_gemini_async(prompt)
 
         if not text:
             raise ValueError("No response from Gemini")
@@ -114,8 +133,9 @@ Return ONLY JSON:
 
             return {
                 "concept_steps": data.get("concept_steps", []),
-                "examples": data.get("examples", []),
-                "mistake_explanation": data.get("mistake_explanation", "")
+                "mistake_explanation": data.get("mistake_explanation", ""),
+                "shortcut": data.get("shortcut", ""),
+                "mental_check": data.get("mental_check", "")
             }
 
         raise ValueError("Invalid JSON")
@@ -129,9 +149,10 @@ Return ONLY JSON:
         return {
             "concept_steps": [
                 "Step 1: Rewrite equation",
-                "Step 2: Solve step-by-step",
-                "Step 3: Verify answer"
+                "Step 2: Solve carefully",
+                "Step 3: Verify both roots"
             ],
-            "examples": ["Try solving a similar equation"],
-            "mistake_explanation": "Review your steps carefully"
+            "mistake_explanation": "Check your steps carefully",
+            "shortcut": "Use factorization when possible",
+            "mental_check": "Multiply roots to verify"
         }
