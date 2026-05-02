@@ -47,7 +47,7 @@ export function Whiteboard({ steps, whiteboard, delayMs = 950, visibleStepCount 
     return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [boardSteps, delayMs, visibleStepCount]);
 
-  const renderedCount = visibleStepCount ?? visibleCount;
+  const renderedCount = steps.length ? steps.length : visibleStepCount ?? visibleCount;
   const modeLabel = whiteboard?.mode ? whiteboard.mode.replace(/_/g, " ") : "Live writing";
 
   return (

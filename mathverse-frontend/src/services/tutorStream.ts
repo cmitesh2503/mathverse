@@ -1,14 +1,9 @@
-import { sendAnswer, type ClassResponse, type ExamMode } from "./api";
+import { sendAnswer, type ClassResponse, type ExamMode, type TutorPayload } from "./api";
 
 type StartClassPayload = {
   session_id: string;
   mode?: "class";
-  input?: {
-    grade?: number;
-    subject?: string;
-    action?: "start" | "next" | "repeat" | "homework" | "skip_homework" | "finish" | "end" | "end_day";
-    answer?: string;
-  };
+  input?: TutorPayload["input"] & { grade?: number; subject?: string };
   context?: {
     exam?: ExamMode;
     student_id?: string;

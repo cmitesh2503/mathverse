@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ClassResponse, ExamMode } from "../services/api";
+import type { ClassResponse, ExamMode, TutorPayload } from "../services/api";
 import { startClassStream } from "../services/tutorStream";
 import { playVoiceStream, type VoiceController } from "../services/voice";
 
@@ -51,12 +51,7 @@ export function useTutorStream({ sessionId, examMode, onResponse }: Args) {
 
   const start = useCallback(
     async (
-      input: {
-        grade?: number;
-        subject?: string;
-        action?: "start" | "next" | "repeat" | "homework" | "skip_homework" | "finish" | "end" | "end_day";
-        answer?: string;
-      } = { grade: 9, subject: "math" },
+      input: TutorPayload["input"] & { grade?: number; subject?: string } = { grade: 9, subject: "math" },
     ) => {
       stop();
       setLoading(true);

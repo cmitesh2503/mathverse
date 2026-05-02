@@ -109,9 +109,11 @@ export default function Classroom({ onNavigate }: Props) {
       ? "Show Board Example"
       : response?.next_action === "question"
         ? "Ask Mini Check"
-        : response?.next_action === "homework" || response?.type === "homework"
-          ? "Open Homework"
-          : "Next";
+        : response?.next_action === "next_exercise"
+          ? "Next Exercise"
+          : response?.next_action === "homework" || response?.type === "homework"
+            ? "Open Homework"
+            : "Next";
 
   async function submitClassAnswer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -208,6 +210,16 @@ export default function Classroom({ onNavigate }: Props) {
             >
               Repeat
             </button>
+            {examMode === "cbse" && (
+              <button
+                type="button"
+                onClick={() => void start({ action: "solve_all_pdf_exercises", scope: "all_chapters" })}
+                disabled={loading}
+                className="rounded-xl border border-blue-300 bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-50 disabled:text-slate-300"
+              >
+                Solve PDF Exercises
+              </button>
+            )}
             <button
               type="button"
               onClick={() => void start({ action: "homework" })}
