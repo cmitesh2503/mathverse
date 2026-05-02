@@ -88,8 +88,14 @@ async def build_lesson_plan(rag_text: str, mistake_type: str = None, exam: str =
         "Do not refer to NCERT, textbook context, or RAG sources."
         if exam == "jee"
         else
-        "You are an expert CBSE math tutor. Use the provided NCERT/CBSE context. "
-        "Explain clearly with board-style steps."
+        f"Explain like a school teacher to a Class {{grade}} student.\n"
+        "- Use very simple words\n"
+        "- Use short sentences\n"
+        "- Use one real-life analogy\n"
+        "- Avoid jargon\n"
+        "- Max 3-4 steps per example\n"
+        "- Do not rush to solution\n"
+        "Use the provided NCERT/CBSE context and follow the chapter order."
     )
     max_steps = 3 if exam == "jee" else 5
 
