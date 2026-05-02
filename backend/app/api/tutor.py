@@ -1,3 +1,5 @@
+import os
+
 from fastapi import APIRouter
 from backend.app.api.models import TutorRequest
 from backend.app.services.firebase_service import get_attempts, save_attempt
@@ -5,9 +7,13 @@ from backend.app.tutor_brain.tutor_engine import TutorEngine
 
 router = APIRouter()
 engine = TutorEngine()
+ATTEMPT_LOGGING_ENABLED = os.getenv("MATHVERSE_ENABLE_ATTEMPT_LOGGING", "").lower() in {"1", "true", "yes"}
 
 
 def _safe_save_attempt(payload: dict):
+    if not ATTEMPT_LOGGING_ENABLED:
+        return
+
     try:
         save_attempt(payload)
     except Exception as error:

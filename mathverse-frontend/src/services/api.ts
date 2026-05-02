@@ -176,14 +176,24 @@ export type AttemptRecord = {
   pattern?: string | null;
 };
 
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8001",
+  baseURL: API_BASE_URL,
   timeout: 15000,
 });
 
 export async function sendAnswer<T = TutorResponse>(payload: TutorPayload): Promise<T> {
-  const { data } = await api.post<T>("/api/tutor/ask", payload);
-  return data;
+  try {
+    const { data } = await api.post<T>("/api/tutor/ask", payload);
+    return data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const detail = error.response?.data?.detail || error.response?.data?.error;
+      throw new Error(detail || `Could not reach MathVerse API at ${API_BASE_URL}`);
+    }
+    throw error;
+  }
 }
 
 export async function getAttemptHistory(studentId: string): Promise<AttemptRecord[]> {
