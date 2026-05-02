@@ -284,8 +284,14 @@ async def tutor_ws(websocket: WebSocket):
             
 @app.on_event("startup")
 async def startup_event():
-    print("🚀 Initializing RAG at startup...")
-    asyncio.create_task(asyncio.to_thread(init_cbse))
+    try:
+        loaded = await asyncio.to_thread(init_cbse)
+        if not loaded:
+            print("RAG startup initialization did not load an index.")
+            return
+        print("RAG startup initialization complete.")
+    except Exception as error:
+        print(f"RAG startup initialization failed: {error}")
             
 @app.get("/homework/{student_id}")
 def fetch_homework(student_id: str):

@@ -58,9 +58,10 @@ def clean_rag_text(text: str) -> str:
 # ---------------------------
 # 🧠 MAIN FUNCTION
 # ---------------------------
-async def build_lesson_plan(rag_text: str, mistake_type: str = None):
+async def build_lesson_plan(rag_text: str, mistake_type: str = None, exam: str = "cbse"):
 
     rag_text = clean_rag_text(rag_text)
+    exam = (exam or "cbse").lower()
 
     # ---------------------------
     # 🔥 Mistake-aware instruction
@@ -81,8 +82,19 @@ async def build_lesson_plan(rag_text: str, mistake_type: str = None):
     # ---------------------------
     # 🔥 GEMINI PROMPT
     # ---------------------------
-    prompt = prompt = f"""
-    You are an expert JEE math tutor.
+    tutor_style = (
+        "You are an expert JEE math tutor. Keep it short, fast, and exam-oriented. "
+        "Use direct solving steps, one shortcut trick, and one quick mental check. "
+        "Do not refer to NCERT, textbook context, or RAG sources."
+        if exam == "jee"
+        else
+        "You are an expert CBSE math tutor. Use the provided NCERT/CBSE context. "
+        "Explain clearly with board-style steps."
+    )
+    max_steps = 3 if exam == "jee" else 5
+
+    prompt = f"""
+    {tutor_style}
 
     Question context:
     {rag_text}
@@ -92,8 +104,8 @@ async def build_lesson_plan(rag_text: str, mistake_type: str = None):
 
     Your job:
     1. Explain ONLY based on the mistake
-    2. Keep explanation short (max 3 steps)
-    3. Teach like a JEE teacher (clear + sharp)
+    2. Keep explanation within max {max_steps} steps
+    3. Match the requested exam style
 
     Special rules:
     - If missing_root → emphasize there are TWO roots
@@ -102,7 +114,7 @@ async def build_lesson_plan(rag_text: str, mistake_type: str = None):
     - Avoid generic explanation
 
     Also include:
-    - 1 shortcut trick (JEE style)
+    - 1 shortcut trick
     - 1 quick mental check
 
     Return ONLY JSON:
@@ -111,7 +123,8 @@ async def build_lesson_plan(rag_text: str, mistake_type: str = None):
     "concept_steps": ["Step 1...", "Step 2...", "Step 3..."],
     "mistake_explanation": "Explain what student did wrong",
     "shortcut": "Quick trick",
-    "mental_check": "Quick way to verify answer"
+    "mental_check": "Quick way to verify answer",
+    "speed_hint": "Fast exam-solving hint"
     }}
     """
 
@@ -135,7 +148,8 @@ async def build_lesson_plan(rag_text: str, mistake_type: str = None):
                 "concept_steps": data.get("concept_steps", []),
                 "mistake_explanation": data.get("mistake_explanation", ""),
                 "shortcut": data.get("shortcut", ""),
-                "mental_check": data.get("mental_check", "")
+                "mental_check": data.get("mental_check", ""),
+                "speed_hint": data.get("speed_hint", "")
             }
 
         raise ValueError("Invalid JSON")
@@ -154,5 +168,6 @@ async def build_lesson_plan(rag_text: str, mistake_type: str = None):
             ],
             "mistake_explanation": "Check your steps carefully",
             "shortcut": "Use factorization when possible",
-            "mental_check": "Multiply roots to verify"
+            "mental_check": "Multiply roots to verify",
+            "speed_hint": "Use the fastest valid method, then verify by substitution."
         }
