@@ -5,8 +5,8 @@ import warnings
 from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any, Optional
-from backend.app.services.mistake_engine import analyze_attempt
-from backend.app.math.solver import solve_equation
+from app.services.mistake_engine import analyze_attempt
+from app.math.solver import solve_equation
 from .curriculum import (
     find_topic_by_message,
     get_chapter_position,
@@ -19,17 +19,17 @@ from .curriculum import (
     get_topic_concepts,
 )
 from .lesson_state import LessonState
-from backend.app.services.firebase_service import save_homework
-from backend.app.services.cbse_exercises import (
+from app.services.firebase_service import save_homework
+from app.services.cbse_exercises import (
     build_exercise_solution,
     get_pdf_chapter_number,
     load_all_pdf_exercises,
     load_chapter_pdf_exercises,
 )
-from backend.app.services.rag_service import get_retriever
+from app.services.rag_service import get_retriever
 from sympy import symbols, solve
 import asyncio
-from backend.app.cache.cache_manager import get_cache, set_cache
+from app.cache.cache_manager import get_cache, set_cache
 import random
 
 retriever = None

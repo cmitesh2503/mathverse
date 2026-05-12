@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
-import re
 from contextlib import AsyncExitStack
 from typing import Awaitable, Callable
 
@@ -16,7 +15,17 @@ from ..core.config import (
 from ..services.ai_gateway import get_live_client, live_api_available
 from ..services.retrieval_service import retrieve_context
 from ..services.session_service import session_service
-from ..tutor_brain.runtime import tutor_engine
+
+try:
+    from app.agents.diagnostic_agent import DiagnosticAgent
+    from app.agents.orchestrator import Orchestrator
+    from app.agents.teacher_agent import TutorAgent
+    from app.models.session import StudentSession
+except ModuleNotFoundError:
+    from ..agents.diagnostic_agent import DiagnosticAgent
+    from ..agents.orchestrator import Orchestrator
+    from ..agents.teacher_agent import TutorAgent
+    from ..models.session import StudentSession
 
 try:
     from google.genai import types as live_types
@@ -45,6 +54,15 @@ class LiveTutorBridge:
         self._input_transcript = ""
         self._pending_transport: str | None = None
         self._closed = False
+        self._class_opening_triggered = False
+        self.orchestrator = Orchestrator()
+        self.tutor_agent = TutorAgent()
+        self.diagnostic_agent = DiagnosticAgent()
+        self.student_session = StudentSession(
+            session_id=session_id,
+            active_phase="teaching",
+        )
+        self.orchestrator.sessions[session_id] = self.student_session
 
     @property
     def available(self) -> bool:
@@ -72,6 +90,14 @@ class LiveTutorBridge:
                 "mode": "native-audio",
             }
         )
+        
+        # Trigger the class opening routine on first connection
+        if self.student_session.is_first_interaction and not self._class_opening_triggered:
+            self._class_opening_triggered = True
+            # Small delay to ensure receiver task is ready
+            await asyncio.sleep(0.5)
+            await self.send_text_turn("Start the class")
+        
         return True
 
     async def close(self) -> None:
@@ -86,36 +112,18 @@ class LiveTutorBridge:
         await self._exit_stack.aclose()
 
     async def send_text_turn(self, message: str) -> None:
-        if not self._live_session or not live_types:
-            raise RuntimeError("Gemini Live session is not ready")
-
-        guidance = self._plan_turn(message)
-        spoken_guidance = self._spokenize_guidance(guidance)
         self._reset_pending_turn(transport="text")
-        self._assistant_fallback = guidance
-
-        live_prompt = (
-            f"Student message:\n{message}\n\n"
-            "Internal lesson steering for Ava. Adapt this naturally; do not read it literally:\n"
-            f"{spoken_guidance}\n\n"
-            "Reply directly to the student in a warm, natural math-tutor voice. "
-            "Keep it short, slow, and interactive. "
-            "Speak about twenty percent slower than a normal conversation. "
-            "Use natural pauses and only one or two ideas before you stop. "
-            "Do not read headings, bullets, markdown, or labels aloud. "
-            "Introduce the chapter and topic smoothly, then explain the idea conversationally. "
-            "Sound like a human tutor in a live lesson, not a narrator reading notes. "
-            "Do not mention this internal steering."
+        agent_turn = await self._process_agent_turn(
+            message,
+            transport="text",
+            append_user=True,
+            append_assistant=True,
         )
+        await self._emit_agent_turn(agent_turn)
 
-        async with self._send_lock:
-            await self._live_session.send_client_content(
-                turns=live_types.Content(
-                    role="user",
-                    parts=[live_types.Part(text=live_prompt)],
-                ),
-                turn_complete=True,
-            )
+    def current_state(self) -> dict:
+        self._sync_student_session()
+        return self._build_agent_state([])
 
     async def send_audio_chunk(self, audio_bytes: bytes) -> None:
         if not self._live_session or not live_types:
@@ -160,41 +168,12 @@ class LiveTutorBridge:
             )
 
         system_prompt = (
-            "You are Ava, a real-time CBSE mathematics tutor.\n"
-            "Act like a live online teacher, not a generic chatbot.\n"
-            "Teach only from CBSE NCERT curriculum grounding provided below for the student grade.\n"
-            "Keep every explanation grounded in explicit chapter concepts, equations, and examples. Avoid vague answers.\n"
-            "Sound warm, patient, and conversational, like a tutor on a live call.\n"
-            "Use everyday spoken English that feels natural for an Indian maths tutor.\n"
-            "Speak slowly, about forty percent slower than a normal conversation.\n"
-            "Pause after each sentence, and pause after writing each equation.\n"
-            "Use gentle pauses between ideas - take your time to explain clearly.\n"
-            "Keep each turn short unless the student asks for a full explanation.\n"
-            "If you detect the student talking, stop speaking immediately and listen; do not talk over them.\n"
-            "If you are interrupted, say 'Okay, go ahead' and stay quiet until they finish, then briefly confirm their point before continuing.\n"
-            "Usually explain one step, then pause and ask one small check-in question.\n"
-            "Never sound like you are reading from slides, notes, markdown, or UI text.\n"
-            "Each class is a 45-minute session: pace it as intro, concept teaching, guided practice, recap, and homework.\n"
-            "Follow the NCERT chapter order for the grade. Start from Chapter 1 unless the saved session memory already places the student later.\n"
-            "Within a chapter, teach the book topics one by one in order.\n"
-            "While speaking, imagine that you are writing on the whiteboard at the same time.\n"
-            "The whiteboard should show only key definitions, short steps, formulas, and figures or graphs when needed.\n"
-            "Do not try to put every spoken sentence onto the whiteboard.\n"
-            "Start with the chapter name, then the topic name, and then explain the idea naturally.\n"
-            "If a definition, theorem, rule, or formula is important, clearly tell the student that it is worth remembering for CBSE questions.\n"
-            "After the concept explanation, solve the NCERT textbook worked examples first.\n"
-            "After that, solve a few NCERT exercise questions step by step on the board before moving ahead.\n"
-            "When solving, clearly mention the theorem, rule, formula, or method being used whenever it matters.\n"
-            "Do not stay on the same concept once the explanation and solved questions are finished.\n"
-            "Use only two or three short spoken sentences at a time when possible.\n"
-            "Do not sound ceremonial, corporate, or overly formal.\n"
-            "When the student is confused, slow down and use one worked example.\n"
-            "Refer naturally to the whiteboard, equations, graphs, and examples.\n"
-            "Do not drift into non-maths small talk.\n"
-            "Explain problems step by step on the whiteboard and allow time for the student to write.\n"
-            "Use NCERT textbook examples and NCERT exercise questions only.\n"
-            "At the end of the class, give 2 or 3 homework questions before you stop.\n"
-            "Avoid meta phrases such as classroom-style teaching, guided classroom, or similar labels.\n\n"
+            f"{self.tutor_agent.SYSTEM_PROMPT}\n\n"
+            "LIVE AUDIO RULES:\n"
+            "Reply directly to the student in a natural live tutoring voice.\n"
+            "Keep each turn short, slow, and interactive.\n"
+            "If the student interrupts, stop speaking and listen.\n"
+            "Do not mention internal routing, diagnostics, or hidden nudges.\n\n"
             f"Current chapter focus: {topic_title}\n"
             f"Current classroom memory:\n{memory_context}\n\n"
             f"Curriculum grounding:\n{curriculum_grounding}"
@@ -213,12 +192,8 @@ class LiveTutorBridge:
                     )
                 ),
             ),
-            input_audio_transcription=live_types.AudioTranscriptionConfig(
-                language_codes=[GEMINI_LIVE_INPUT_LANGUAGE, "hi-IN"]
-            ),
-            output_audio_transcription=live_types.AudioTranscriptionConfig(
-                language_codes=[GEMINI_LIVE_OUTPUT_LANGUAGE]
-            ),
+            input_audio_transcription=live_types.AudioTranscriptionConfig(),
+            output_audio_transcription=live_types.AudioTranscriptionConfig(),
             realtime_input_config=live_types.RealtimeInputConfig(
                 activity_handling=live_types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
                 turn_coverage=live_types.TurnCoverage.TURN_INCLUDES_ONLY_ACTIVITY,
@@ -237,43 +212,134 @@ class LiveTutorBridge:
             ),
         )
 
-    def _spokenize_guidance(self, guidance: str) -> str:
-        lines: list[str] = []
-        for raw_line in guidance.splitlines():
-            line = raw_line.strip()
-            if not line:
-                continue
+    async def _process_agent_turn(
+        self,
+        message: str,
+        *,
+        transport: str,
+        append_user: bool,
+        append_assistant: bool,
+    ) -> dict:
+        self._sync_student_session()
+        route = await self.orchestrator.route_message(self.session_id, message)
+        nudge = None
+        diagnostic_result = None
 
-            line = line.replace("**", "")
-            line = re.sub(r"^#{1,6}\s*", "", line)
-            line = re.sub(r"^[-*]\s*", "", line)
-            line = re.sub(r"^\d+\.\s*", "", line)
-            line = re.sub(r"\s+", " ", line)
-            if line:
-                lines.append(line)
+        if route == "diagnostic_agent":
+            diagnostic_result = await self.diagnostic_agent.evaluate_answer(
+                self.student_session,
+                message,
+                correct_answer="42",
+            )
+            nudge = diagnostic_result.get("hidden_nudge")
 
-        spoken = ". ".join(lines)
-        spoken = spoken.replace("Today's class", "Today's lesson")
-        return spoken[:1800]
-
-    def _plan_turn(self, message: str) -> str:
-        session = session_service.append_turn(
-            self.session_id,
-            "user",
+        tutor_payload = await self.tutor_agent.process_message(
+            self.student_session,
             message,
-            transport="text",
+            diagnostic_nudge=nudge,
         )
-        refreshed_session = session_service.get_session(self.session_id)
-        guidance = tutor_engine.process(
+        spoken_response = tutor_payload.get("spoken_response", "")
+        whiteboard_actions = tutor_payload.get("whiteboard_actions", [])
+        state = self._build_agent_state(whiteboard_actions)
+
+        if append_user:
+            session_service.append_turn(
+                self.session_id,
+                "user",
+                message,
+                transport=transport,
+            )
+
+        if append_assistant and spoken_response:
+            session_service.append_turn(
+                self.session_id,
+                "assistant",
+                spoken_response,
+                transport=transport,
+            )
+
+        session_service.update_session_metadata(
             self.session_id,
-            message,
-            session_record=refreshed_session or session,
+            {
+                "student_session": self.student_session.model_dump(mode="json"),
+                "last_agent_route": route,
+                "last_diagnostic": diagnostic_result,
+                "whiteboard_actions": whiteboard_actions,
+                "whiteboard": state["whiteboard"],
+            },
         )
-        session_service.update_lesson_snapshot(
-            self.session_id,
-            tutor_engine.snapshot(self.session_id),
+
+        return {
+            "route": route,
+            "spoken_response": spoken_response,
+            "whiteboard_actions": whiteboard_actions,
+            "diagnostic": diagnostic_result,
+            "state": state,
+            "archive": self._session_archive(),
+        }
+
+    async def _emit_agent_turn(self, agent_turn: dict) -> None:
+        await self._ensure_assistant_started()
+        await self.emit_event(
+            {
+                "type": "assistant_text",
+                "content": agent_turn["spoken_response"],
+            }
         )
-        return guidance
+        await self.emit_event(
+            {
+                "type": "whiteboard_actions",
+                "actions": agent_turn["whiteboard_actions"],
+            }
+        )
+        await self.emit_event(
+            {
+                "type": "assistant_turn_complete",
+                "spoken_response": agent_turn["spoken_response"],
+                "whiteboard_actions": agent_turn["whiteboard_actions"],
+                "state": agent_turn["state"],
+                "archive": agent_turn["archive"],
+            }
+        )
+        self._pending_transport = None
+        self._assistant_started = False
+        self._assistant_transcript = ""
+        self._assistant_fallback = ""
+        self._input_transcript = ""
+
+    def _sync_student_session(self) -> None:
+        session = self.orchestrator.get_or_create_session(self.session_id)
+        self.student_session = session
+        session_record = session_service.get_session(self.session_id)
+        if session_record and session_record.topic_title:
+            self.student_session.current_topic = session_record.topic_title
+
+    def _build_agent_state(self, whiteboard_actions: list[dict]) -> dict:
+        return {
+            "stage": self.student_session.active_phase,
+            "topic_title": self.student_session.current_topic,
+            "difficulty_level": self.student_session.difficulty_level,
+            "mistake_history": self.student_session.mistake_history,
+            "current_problem": self.student_session.current_problem,
+            "whiteboard_actions": whiteboard_actions,
+            "whiteboard": {
+                "title": self.student_session.current_topic or "Live JEE tutoring",
+                "subtitle": "Arvind Sir's smart blackboard",
+                "chalk_lines": [
+                    action["action"].replace("_", " ")
+                    for action in whiteboard_actions
+                    if "action" in action
+                ],
+                "actions": whiteboard_actions,
+            },
+        }
+
+    def _session_archive(self) -> list[dict]:
+        session_record = session_service.get_session(self.session_id)
+        return session_service.list_sessions(
+            session_record.student_id if session_record else "local-student",
+            session_record.grade if session_record else None,
+        )
 
     def _reset_pending_turn(self, transport: str) -> None:
         self._pending_transport = transport
@@ -363,6 +429,8 @@ class LiveTutorBridge:
         await self.emit_event({"type": "assistant_turn_start"})
 
     async def _finalize_turn(self) -> None:
+        agent_turn = None
+
         if not self._assistant_transcript and self._assistant_fallback:
             await self._ensure_assistant_started()
             self._assistant_transcript = self._assistant_fallback
@@ -371,21 +439,11 @@ class LiveTutorBridge:
             )
 
         if self._pending_transport == "audio" and self._input_transcript.strip():
-            session_service.append_turn(
-                self.session_id,
-                "user",
+            agent_turn = await self._process_agent_turn(
                 self._input_transcript.strip(),
                 transport="bidi",
-            )
-            refreshed_session = session_service.get_session(self.session_id)
-            tutor_engine.process(
-                self.session_id,
-                self._input_transcript.strip(),
-                session_record=refreshed_session,
-            )
-            session_service.update_lesson_snapshot(
-                self.session_id,
-                tutor_engine.snapshot(self.session_id),
+                append_user=True,
+                append_assistant=False,
             )
             await self.emit_event(
                 {
@@ -394,6 +452,22 @@ class LiveTutorBridge:
                     "transport": "bidi",
                 }
             )
+            await self.emit_event(
+                {
+                    "type": "whiteboard_actions",
+                    "actions": agent_turn["whiteboard_actions"],
+                }
+            )
+
+            if not self._assistant_transcript.strip():
+                await self._ensure_assistant_started()
+                self._assistant_transcript = agent_turn["spoken_response"]
+                await self.emit_event(
+                    {
+                        "type": "assistant_text",
+                        "content": self._assistant_transcript,
+                    }
+                )
 
         if self._assistant_transcript.strip():
             session_service.append_turn(
@@ -403,17 +477,14 @@ class LiveTutorBridge:
                 transport="bidi" if self._pending_transport == "audio" else "text",
             )
 
-        snapshot = tutor_engine.snapshot(self.session_id)
-        session_service.update_lesson_snapshot(self.session_id, snapshot)
-        session = session_service.get_session(self.session_id)
+        state = agent_turn["state"] if agent_turn else self._build_agent_state([])
         await self.emit_event(
             {
                 "type": "assistant_turn_complete",
-                "state": snapshot.model_dump(mode="json"),
-                "archive": session_service.list_sessions(
-                    session.student_id if session else "local-student",
-                    session.grade if session else None,
-                ),
+                "spoken_response": self._assistant_transcript.strip(),
+                "whiteboard_actions": agent_turn["whiteboard_actions"] if agent_turn else [],
+                "state": state,
+                "archive": self._session_archive(),
             }
         )
         self._pending_transport = None

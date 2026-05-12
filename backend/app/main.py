@@ -15,10 +15,9 @@ load_dotenv()
 
 from .api.routes import avatar, evaluation, session
 from .core.stream_manager import cancel_stream, end_stream, is_cancelled, start_stream
-from backend.app.services.firebase_service import get_homework
-from backend.app.tutor_brain.tutor_engine import init_cbse
-from backend.app.api.practice import router as practice_router
-from backend.app.api.tutor import router as tutor_router
+from .services.firebase_service import get_homework
+from .api.practice import router as practice_router
+from .api.tutor import router as tutor_router
 
 app = FastAPI(title="MathVerse API")
 from fastapi.middleware.cors import CORSMiddleware
@@ -113,36 +112,24 @@ async def tutor_ws(websocket: WebSocket):
 
     from .services.session_service import session_service
     from .services.ai_gateway import live_api_available
-    from .tutor_brain.tutor_engine import init_cbse
-    from .tutor_brain.runtime import tutor_engine
+    from .services.live_tutor_service import LiveTutorBridge
 
     print("Tutor WebSocket connected")
 
     start_request = _session_request_from_socket(websocket)
     session_record = session_service.create_or_resume_session(start_request)
     session_id = session_record.session_id
-    tutor_engine.hydrate_session(session_id, session_record)
-    live_bridge = None
+    live_bridge = LiveTutorBridge(session_id, websocket.send_json)
     live_connected = False
 
     async def ensure_live_bridge() -> bool:
-        nonlocal live_bridge
         nonlocal live_connected
 
         if live_connected:
             return True
 
-        if live_bridge is None:
-            from .services.ai_gateway import live_api_available
-
-            if not live_api_available():
-                return False
-
-            from .services.live_tutor_service import LiveTutorBridge
-
-            live_bridge = LiveTutorBridge(session_id, websocket.send_json)
-            if not live_bridge.available:
-                return False
+        if not live_api_available() or not live_bridge.available:
+            return False
 
         try:
             live_connected = await live_bridge.connect()
@@ -184,23 +171,14 @@ async def tutor_ws(websocket: WebSocket):
     await websocket.send_json(
         {
             "type": "state",
-            "state": _serialize_lesson_state(tutor_engine.snapshot(session_id)),
+            "state": live_bridge.current_state(),
         }
     )
 
     #asyncio.create_task(asyncio.to_thread(init_cbse))
 
     if not session_record.transcript:
-        intro = tutor_engine.process(session_id, "ready", session_record=session_record)
-        session_service.append_turn(session_id, "assistant", intro)
-        intro_snapshot = tutor_engine.snapshot(session_id)
-        session_service.update_lesson_snapshot(session_id, intro_snapshot)
-        await send_streamed_text(
-            websocket,
-            session_id,
-            intro,
-            state=_serialize_lesson_state(intro_snapshot),
-        )
+        await live_bridge.send_text_turn("ready")
 
     try:
         while True:
@@ -256,42 +234,17 @@ async def tutor_ws(websocket: WebSocket):
                 continue
 
             cancel_stream(session_id)
-            session_service.append_turn(session_id, "user", message, "text")
-            session_record = session_service.get_session(session_id)
-            response = tutor_engine.process(session_id, message, session_record=session_record)
-            session_service.append_turn(session_id, "assistant", response)
-            snapshot = tutor_engine.snapshot(session_id)
-            session_service.update_lesson_snapshot(session_id, snapshot)
-
-            archive = session_service.list_sessions(
-                session_record.student_id if session_record else start_request.student_id,
-                start_request.grade,
-            )
-            await send_streamed_text(
-                websocket,
-                session_id,
-                response,
-                state=_serialize_lesson_state(snapshot),
-                archive=archive,
-            )
+            await live_bridge.send_text_turn(message)
 
     except WebSocketDisconnect:
         print("Tutor WebSocket disconnected")
         end_stream(session_id)
     finally:
-        if live_bridge is not None:
-            await live_bridge.close()
+        await live_bridge.close()
             
 @app.on_event("startup")
 async def startup_event():
-    try:
-        loaded = await asyncio.to_thread(init_cbse)
-        if not loaded:
-            print("RAG startup initialization did not load an index.")
-            return
-        print("RAG startup initialization complete.")
-    except Exception as error:
-        print(f"RAG startup initialization failed: {error}")
+    print("MathVerse multi-agent backend ready.")
             
 @app.get("/homework/{student_id}")
 def fetch_homework(student_id: str):

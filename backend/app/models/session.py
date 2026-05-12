@@ -1,13 +1,41 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from enum import Enum
+from uuid import uuid4
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class SessionPhase(str, Enum):
+    TEACHING = "teaching"
+    PRACTICE = "practice"
+    TESTING = "testing"
+
+
+class StudentSession(BaseModel):
+    model_config = ConfigDict(validate_assignment=True)
+
+    session_id: str = Field(default_factory=lambda: str(uuid4()))
+    current_topic: str | None = None
+    difficulty_level: str = "moderate"
+    active_phase: SessionPhase = SessionPhase.TEACHING
+    mistake_history: list[str] = Field(default_factory=list)
+    current_problem: dict[str, Any] = Field(default_factory=dict)
+    chapter_name: str = "Quadratic Equations"
+    agenda: list[str] = Field(
+        default_factory=lambda: [
+            "1. Introduction to Roots",
+            "2. The Discriminant",
+            "3. Word Problems",
+        ]
+    )
+    is_first_interaction: bool = True
 
 
 class TranscriptTurn(BaseModel):

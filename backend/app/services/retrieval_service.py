@@ -1,11 +1,16 @@
 import json
+from pathlib import Path
+
 import google.generativeai as genai
+
 from ..core.config import GEMINI_API_KEY
 
 genai.configure(api_key=GEMINI_API_KEY)
 
+CHUNKS_PATH = Path(__file__).resolve().parents[1] / "data" / "ncert_chunks.json"
+
 def load_chunks():
-    with open("backend/app/data/ncert_chunks.json", "r") as f:
+    with CHUNKS_PATH.open(encoding="utf-8") as f:
         return json.load(f)
 
 def retrieve_context(topic: str, grade: int = None, n_results: int = 5) -> str:

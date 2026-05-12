@@ -8,8 +8,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from backend.app.cache.cache_manager import get_cache, set_cache
-from backend.app.core.config import GEMINI_API_KEY, GEMINI_TEXT_MODEL
+from app.cache.cache_manager import get_cache, set_cache
+from app.core.config import GEMINI_API_KEY, GEMINI_TEXT_MODEL
 
 try:
     from google import genai as google_genai

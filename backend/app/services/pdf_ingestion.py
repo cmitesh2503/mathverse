@@ -1,8 +1,11 @@
-import os
+from pathlib import Path
+
 from PyPDF2 import PdfReader
 
-PDF_DIR = "backend/app/data/pdfs/std_10"
-OUTPUT_FILE = "backend/data/processed_content.txt"
+APP_DIR = Path(__file__).resolve().parents[1]
+BACKEND_DIR = APP_DIR.parent
+PDF_DIR = APP_DIR / "data" / "pdfs" / "std_10"
+OUTPUT_FILE = BACKEND_DIR / "data" / "processed_content.txt"
 
 
 def extract_text_from_pdf(file_path):
@@ -18,16 +21,15 @@ def extract_text_from_pdf(file_path):
 def run_ingestion():
     all_text = ""
 
-    for file in os.listdir(PDF_DIR):
-        if file.endswith(".pdf"):
-            path = os.path.join(PDF_DIR, file)
-            print(f"Processing {file}...")
+    for path in PDF_DIR.glob("*.pdf"):
+        print(f"Processing {path.name}...")
 
-            text = extract_text_from_pdf(path)
-            all_text += f"\n\n===== {file} =====\n\n"
-            all_text += text
+        text = extract_text_from_pdf(path)
+        all_text += f"\n\n===== {path.name} =====\n\n"
+        all_text += text
 
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+    OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with OUTPUT_FILE.open("w", encoding="utf-8") as f:
         f.write(all_text)
 
     print("✅ Ingestion complete!")

@@ -3,8 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 import random
 
-from backend.app.tutor_brain.tutor_engine import TutorEngine
-from backend.app.data.question_loader import QUESTIONS
+from ..data.question_loader import QUESTIONS
 
 
 # ✅ Request model (FIXES 422)
@@ -15,7 +14,16 @@ class PracticeRequest(BaseModel):
 
 router = APIRouter()
 
-engine = TutorEngine()
+_engine = None
+
+
+def _get_engine():
+    global _engine
+    if _engine is None:
+        from ..tutor_brain.tutor_engine import TutorEngine
+
+        _engine = TutorEngine()
+    return _engine
 
 # ✅ Track last question
 last_question_id = None
@@ -52,6 +60,7 @@ def submit_answer(req: PracticeRequest):
     print("REQ:", req)
 
     try:
+        engine = _get_engine()
         state = engine._ensure_state(req.session_id)
 
         # ✅ Safety check
@@ -78,6 +87,7 @@ def next_question(req: PracticeRequest):
     print("🔥 API HIT /next")
 
     try:
+        engine = _get_engine()
         state = engine._ensure_state(req.session_id)
 
         # ✅ NOW SAFE
@@ -103,6 +113,7 @@ def next_question(req: PracticeRequest):
 @router.post("/explain")
 def explain_answer(req: PracticeRequest):
 
+    engine = _get_engine()
     state = engine._ensure_state(req.session_id)
     problem = state.active_problem
 

@@ -1,13 +1,31 @@
 import os
+from typing import Any
 
 from fastapi import APIRouter
-from backend.app.api.models import TutorRequest
-from backend.app.services.firebase_service import get_attempts, save_attempt
-from backend.app.tutor_brain.tutor_engine import TutorEngine
+
+from ..agents.diagnostic_agent import DiagnosticAgent
+from ..agents.orchestrator import Orchestrator
+from ..agents.teacher_agent import TutorAgent
+from ..models.session import StudentSession
+from ..services.firebase_service import get_attempts, save_attempt
+from .models import TutorRequest
 
 router = APIRouter()
-engine = TutorEngine()
 ATTEMPT_LOGGING_ENABLED = os.getenv("MATHVERSE_ENABLE_ATTEMPT_LOGGING", "").lower() in {"1", "true", "yes"}
+
+orchestrator = Orchestrator()
+tutor_agent = TutorAgent()
+diagnostic_agent = DiagnosticAgent()
+_legacy_engine = None
+
+
+def _get_legacy_engine():
+    global _legacy_engine
+    if _legacy_engine is None:
+        from ..tutor_brain.tutor_engine import TutorEngine
+
+        _legacy_engine = TutorEngine()
+    return _legacy_engine
 
 
 def _safe_save_attempt(payload: dict):
@@ -42,27 +60,108 @@ def _attempt_from_response(req: TutorRequest, state, response, question=None, an
     }
 
 
+def _steps_from_actions(whiteboard_actions: list[dict]) -> list[str]:
+    return [
+        action.get("content") or action.get("action", "").replace("_", " ")
+        for action in whiteboard_actions
+        if isinstance(action, dict)
+    ]
+
+
+async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any]) -> dict:
+    session: StudentSession = orchestrator.get_or_create_session(req.session_id)
+    session.current_topic = (
+        input_data.get("topic")
+        or input_data.get("chapter")
+        or input_data.get("question")
+        or session.current_topic
+        or "JEE Mathematics"
+    )
+    session.active_phase = "practice" if input_data.get("answer") else "teaching"
+
+    if input_data.get("question"):
+        session.current_problem = {"prompt": input_data["question"]}
+
+    user_message = (
+        f"My final answer is {input_data['answer']}"
+        if input_data.get("answer")
+        else input_data.get("question")
+        or input_data.get("topic")
+        or input_data.get("action")
+        or "ready"
+    )
+
+    route = await orchestrator.route_message(session.session_id, user_message)
+    diagnostic_result = None
+    nudge = None
+
+    if route == "diagnostic_agent":
+        diagnostic_result = await diagnostic_agent.evaluate_answer(
+            session,
+            input_data.get("answer") or user_message,
+            correct_answer="42",
+        )
+        nudge = diagnostic_result.get("hidden_nudge")
+
+    tutor_payload = await tutor_agent.process_message(
+        session,
+        user_message,
+        diagnostic_nudge=nudge,
+    )
+    spoken_response = tutor_payload.get("spoken_response", "")
+    whiteboard_actions = tutor_payload.get("whiteboard_actions", [])
+    steps = _steps_from_actions(whiteboard_actions)
+
+    return {
+        "type": "teach" if route != "diagnostic_agent" else "evaluation",
+        "chapter": session.current_topic,
+        "topic": session.current_topic,
+        "concept": session.current_topic,
+        "explanation": spoken_response,
+        "voice_text": spoken_response,
+        "spoken_response": spoken_response,
+        "steps": steps,
+        "whiteboard_actions": whiteboard_actions,
+        "whiteboard": {
+            "title": session.current_topic or "Smart Blackboard",
+            "subtitle": "Arvind Sir's smart blackboard",
+            "chalk_lines": steps,
+            "actions": whiteboard_actions,
+        },
+        "correct": diagnostic_result.get("is_correct") if diagnostic_result else None,
+        "mistake_type": diagnostic_result.get("error_category") if diagnostic_result else None,
+        "diagnostic": diagnostic_result,
+        "next_action": "next",
+        "avatar_voice": {
+            "style": "energetic",
+            "pace": "short-punchy",
+            "sync_to_whiteboard": True,
+        },
+        "avatar_stream": {
+            "voice_chunks": [spoken_response] if spoken_response else [],
+            "steps": steps,
+            "pace": "short-punchy",
+        },
+    }
+
+
 @router.post("/ask")
-def tutor_api(req: TutorRequest):
-
-    print("🔥 /tutor/ask HIT")
+async def tutor_api(req: TutorRequest):
+    print("POST /tutor/ask")
     print("REQ:", req)
-
-    state = engine._ensure_state(req.session_id)
-
-    # ✅ NEW: extract exam safely
-    exam = req.get_exam()
-    state.exam = exam
 
     mode = req.mode
     input_data = req.input
 
+    if mode == "class":
+        return await _handle_multi_agent_class(req, input_data)
+
+    engine = _get_legacy_engine()
+    state = engine._ensure_state(req.session_id)
+    state.exam = req.get_exam()
+
     question = input_data.get("question")
     answer = input_data.get("answer")
-
-    # ---------------------------
-    # MODE ROUTING
-    # ---------------------------
 
     response = None
 
@@ -75,9 +174,6 @@ def tutor_api(req: TutorRequest):
 
     elif mode == "learn":
         response = engine.handle_learn(state, input_data)
-
-    elif mode == "class":
-        response = engine.run_class(state, input_data)
 
     elif mode == "ocr":
         response = engine.handle_doubt(state, question)
