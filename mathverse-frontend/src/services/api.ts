@@ -12,6 +12,16 @@ export type WhiteboardState = {
   problem?: string;
   solution_steps?: string[];
   answer?: string;
+  actions?: WhiteboardAction[];
+};
+
+export type WhiteboardAction = {
+  action: string;
+  content?: string;
+  label?: string;
+  expression?: string;
+  points?: Array<[number, number]>;
+  metadata?: Record<string, unknown>;
 };
 
 export type TutorPayload = {
@@ -110,6 +120,7 @@ export type ClassResponse = {
   shortcut?: string | null;
   speed_hint?: string | null;
   whiteboard?: WhiteboardState;
+  whiteboard_actions?: WhiteboardAction[];
   homework?: HomeworkQuestion[] | null;
   session_notes?: string[];
   note_cards?: string[];
@@ -141,6 +152,7 @@ export type ClassResponse = {
     shortcut?: string | null;
     speed_hint?: string | null;
     whiteboard?: WhiteboardState;
+    whiteboard_actions?: WhiteboardAction[];
     homework?: HomeworkQuestion[] | null;
     session_notes?: string[];
     note_cards?: string[];

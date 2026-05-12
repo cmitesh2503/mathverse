@@ -1,11 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { WhiteboardState } from "../services/api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { WhiteboardAction, WhiteboardState } from "../services/api";
+
+type VisualNode = {
+  id: string;
+  kind: "problem" | "step" | "equation" | "text" | "shape" | "graph" | "answer";
+  label: string;
+  content: string;
+};
 
 type Props = {
   steps: string[];
   whiteboard?: WhiteboardState | null;
+  whiteboardActions?: WhiteboardAction[];
   delayMs?: number;
   visibleStepCount?: number;
 };
@@ -18,8 +26,145 @@ export function addStep(steps: string[], step: string) {
   return step && !steps.includes(step) ? [...steps, step] : steps;
 }
 
-export function Whiteboard({ steps, whiteboard, delayMs = 950, visibleStepCount }: Props) {
+function stripMathDelimiters(value: string) {
+  return value
+    .replace(/^\$\$?|\$\$?$/g, "")
+    .replace(/^\\\(|\\\)$/g, "")
+    .replace(/^\\\[|\\\]$/g, "");
+}
+
+function toSuperscript(value: string) {
+  const map: Record<string, string> = {
+    "0": "⁰",
+    "1": "¹",
+    "2": "²",
+    "3": "³",
+    "4": "⁴",
+    "5": "⁵",
+    "6": "⁶",
+    "7": "⁷",
+    "8": "⁸",
+    "9": "⁹",
+    "+": "⁺",
+    "-": "⁻",
+    n: "ⁿ",
+  };
+  return value
+    .split("")
+    .map((char) => map[char] || char)
+    .join("");
+}
+
+function formatLatex(value: string) {
+  return stripMathDelimiters(value)
+    .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, "($1)/($2)")
+    .replace(/\\sqrt\{([^{}]+)\}/g, "√($1)")
+    .replace(/\\left|\\right/g, "")
+    .replace(/\\cdot/g, "·")
+    .replace(/\\times/g, "×")
+    .replace(/\\div/g, "÷")
+    .replace(/\\pm/g, "±")
+    .replace(/\\theta/g, "θ")
+    .replace(/\\alpha/g, "α")
+    .replace(/\\beta/g, "β")
+    .replace(/\\pi/g, "π")
+    .replace(/\^\{([^{}]+)\}/g, (_, power: string) => toSuperscript(power))
+    .replace(/\^([0-9n+-])/g, (_, power: string) => toSuperscript(power))
+    .replace(/_\{([^{}]+)\}/g, "[$1]")
+    .replace(/_([A-Za-z0-9])/g, "[$1]")
+    .replace(/[{}]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isMathLike(value: string) {
+  return /[=^_\\]|x²|√|π|θ|α|β/.test(value);
+}
+
+function MathText({ children, forceMath = false }: { children: string; forceMath?: boolean }) {
+  const source = children || "";
+  const parts = source.split(/(\$\$?[\s\S]+?\$\$?|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\])/g).filter(Boolean);
+
+  if (!parts.length) return null;
+
+  return (
+    <>
+      {parts.map((part, index) => {
+        const math = forceMath || /^\$\$?|^\\\(|^\\\[/.test(part) || isMathLike(part);
+        return (
+          <span
+            key={`${part}-${index}`}
+            className={
+              math
+                ? "font-serif text-[1.05em] font-semibold italic tracking-normal text-slate-50"
+                : "tracking-normal text-slate-100"
+            }
+          >
+            {math ? formatLatex(part) : part}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+function actionToNode(action: WhiteboardAction, index: number): VisualNode {
+  const content = action.content || action.expression || action.label || "";
+  const label = action.action.replace(/_/g, " ");
+
+  if (action.action === "draw_text") {
+    return {
+      id: `action-${index}-${action.action}-${content}`,
+      kind: isMathLike(content) ? "equation" : "text",
+      label: "Tutor note",
+      content: content || "New board note",
+    };
+  }
+
+  if (action.action === "write_equation") {
+    return {
+      id: `action-${index}-${action.action}-${content}`,
+      kind: "equation",
+      label: "Equation",
+      content: content || "Equation added",
+    };
+  }
+
+  if (["draw_coordinate_axes", "plot_curve"].includes(action.action)) {
+    return {
+      id: `action-${index}-${action.action}-${content}`,
+      kind: "graph",
+      label,
+      content: content || "Graph element added",
+    };
+  }
+
+  return {
+    id: `action-${index}-${action.action}-${content}`,
+    kind: "shape",
+    label,
+    content: content || label,
+  };
+}
+
+function nodeTone(kind: VisualNode["kind"]) {
+  if (kind === "problem") return "border-amber-200/40 bg-amber-200/10";
+  if (kind === "equation") return "border-cyan-200/40 bg-cyan-200/10";
+  if (kind === "answer") return "border-emerald-200/40 bg-emerald-200/10";
+  if (kind === "shape" || kind === "graph") return "border-violet-200/40 bg-violet-200/10";
+  return "border-slate-100/25 bg-slate-100/10";
+}
+
+export function Whiteboard({ steps, whiteboard, whiteboardActions = [], delayMs = 950, visibleStepCount }: Props) {
   const [visibleCount, setVisibleCount] = useState(0);
+  const [actionNodes, setActionNodes] = useState<VisualNode[]>([]);
+  const seenActionsRef = useRef<Set<string>>(new Set());
+
+  const incomingActions = useMemo(
+    () => [...(whiteboard?.actions || []), ...whiteboardActions],
+    [whiteboard?.actions, whiteboardActions],
+  );
+
   const boardSteps = useMemo(
     () =>
       steps.length
@@ -31,6 +176,29 @@ export function Whiteboard({ steps, whiteboard, delayMs = 950, visibleStepCount 
           ],
     [steps, whiteboard],
   );
+
+  const boardSignature = `${whiteboard?.title || ""}|${whiteboard?.problem || ""}|${boardSteps.join("|")}`;
+
+  useEffect(() => {
+    seenActionsRef.current = new Set();
+    setActionNodes([]);
+  }, [boardSignature]);
+
+  useEffect(() => {
+    if (!incomingActions.length) return;
+
+    const nextNodes: VisualNode[] = [];
+    incomingActions.forEach((action, index) => {
+      const signature = `${index}:${JSON.stringify(action)}`;
+      if (seenActionsRef.current.has(signature)) return;
+      seenActionsRef.current.add(signature);
+      nextNodes.push(actionToNode(action, index));
+    });
+
+    if (nextNodes.length) {
+      setActionNodes((current) => [...current, ...nextNodes]);
+    }
+  }, [incomingActions]);
 
   useEffect(() => {
     if (visibleStepCount !== undefined) return;
@@ -48,44 +216,89 @@ export function Whiteboard({ steps, whiteboard, delayMs = 950, visibleStepCount 
   }, [boardSteps, delayMs, visibleStepCount]);
 
   const renderedCount = steps.length ? steps.length : visibleStepCount ?? visibleCount;
-  const modeLabel = whiteboard?.mode ? whiteboard.mode.replace(/_/g, " ") : "Live writing";
+  const modeLabel = whiteboard?.mode ? whiteboard.mode.replace(/_/g, " ") : "Live board";
+
+  const baseNodes = useMemo<VisualNode[]>(() => {
+    const nodes: VisualNode[] = [];
+    if (whiteboard?.problem) {
+      nodes.push({
+        id: "problem",
+        kind: "problem",
+        label: "Problem",
+        content: whiteboard.problem,
+      });
+    }
+
+    boardSteps.slice(0, renderedCount).forEach((step, index) => {
+      nodes.push({
+        id: `step-${index}-${step}`,
+        kind: isMathLike(step) ? "equation" : "step",
+        label: `Step ${index + 1}`,
+        content: step,
+      });
+    });
+
+    if (whiteboard?.answer && renderedCount >= boardSteps.length) {
+      nodes.push({
+        id: "answer",
+        kind: "answer",
+        label: "Answer check",
+        content: whiteboard.answer,
+      });
+    }
+
+    return nodes;
+  }, [boardSteps, renderedCount, whiteboard?.answer, whiteboard?.problem]);
+
+  const visualNodes = [...baseNodes, ...actionNodes];
 
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-lg ring-1 ring-slate-200">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-950">{whiteboard?.title || "Whiteboard"}</h2>
-          {whiteboard?.subtitle && <p className="mt-1 text-sm text-slate-500">{whiteboard.subtitle}</p>}
+    <section className="flex h-full min-h-[540px] flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-950 shadow-2xl">
+      <div className="flex items-center justify-between border-b border-slate-700 bg-slate-900 px-5 py-4">
+        <div className="min-w-0">
+          <h2 className="truncate text-lg font-semibold tracking-normal text-slate-50">{whiteboard?.title || "Smart Blackboard"}</h2>
+          {whiteboard?.subtitle && <p className="mt-1 truncate text-sm tracking-normal text-slate-400">{whiteboard.subtitle}</p>}
         </div>
-        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold capitalize text-slate-600">{modeLabel}</span>
+        <span className="shrink-0 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold capitalize tracking-normal text-emerald-200">
+          {modeLabel}
+        </span>
       </div>
 
-      <div className="mt-5 min-h-72 space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-        {whiteboard?.problem && (
-          <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 font-mono text-base font-semibold leading-7 text-blue-950">
-            {whiteboard.problem}
-          </div>
-        )}
-
-        {boardSteps.length ? (
-          boardSteps.slice(0, renderedCount).map((step, index) => (
-            <div
-              key={`${step}-${index}`}
-              className="animate-[fadeIn_0.35s_ease-out] rounded-xl bg-white px-4 py-3 font-mono text-lg font-semibold leading-8 text-slate-950 opacity-100 shadow-sm transition duration-500"
-            >
-              Step {index + 1}: {step}
+      <div
+        className="relative flex-1 overflow-auto bg-slate-900 p-5"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(148, 163, 184, 0.09) 1px, transparent 1px), linear-gradient(90deg, rgba(148, 163, 184, 0.09) 1px, transparent 1px)",
+          backgroundSize: "32px 32px",
+        }}
+      >
+        <div className="min-h-[760px] min-w-[760px] pb-24 pr-20">
+          {visualNodes.length ? (
+            <div className="relative space-y-5">
+              {visualNodes.map((node, index) => (
+                <div key={node.id} className="relative flex items-start gap-4">
+                  <div className="relative z-10 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-slate-300/40 bg-slate-950 text-xs font-semibold text-slate-100">
+                    {index + 1}
+                  </div>
+                  {index < visualNodes.length - 1 && <div className="absolute left-4 top-8 h-[calc(100%+1.25rem)] w-px bg-slate-400/30" />}
+                  <div className={`max-w-3xl rounded-lg border px-5 py-4 shadow-lg backdrop-blur-sm ${nodeTone(node.kind)}`}>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{node.label}</p>
+                    <p className="mt-2 text-lg leading-8 tracking-normal text-slate-50">
+                      <MathText forceMath={node.kind === "equation" || node.kind === "answer"}>{node.content}</MathText>
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))
-        ) : (
-          <div className="rounded-xl bg-white px-4 py-3 text-sm font-medium text-slate-500 shadow-sm">Waiting for steps...</div>
-        )}
-
-        {whiteboard?.answer && renderedCount >= boardSteps.length && (
-          <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 font-mono text-base font-semibold text-emerald-950">
-            Answer: {whiteboard.answer}
-          </div>
-        )}
+          ) : (
+            <div className="grid h-full min-h-96 place-items-center">
+              <div className="rounded-lg border border-dashed border-slate-500/60 bg-slate-950/70 px-6 py-5 text-sm font-medium tracking-normal text-slate-300">
+                Waiting for Arvind Sir to write on the board...
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
