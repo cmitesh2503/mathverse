@@ -16,6 +16,7 @@ type Props = {
   whiteboardActions?: WhiteboardAction[];
   delayMs?: number;
   visibleStepCount?: number;
+  onScoreUpdate?: (update: { score: number; correct: number; wrong: number }) => void;
 };
 
 export function renderStepWithVoice(step: string, delay: number, onRender: () => void) {
@@ -108,29 +109,43 @@ function MathText({ children, forceMath = false }: { children: string; forceMath
   );
 }
 
-function actionToNode(action: WhiteboardAction, index: number): VisualNode {
-  const content = action.content || action.expression || action.label || "";
+function actionToNode(action: WhiteboardAction, index: number): VisualNode | null {
+  const actionName = (action.action || "").toLowerCase();
+  const content =
+    action.content ||
+    action.expression ||
+    action.label ||
+    (action as WhiteboardAction & { text?: string; value?: string; message?: string }).text ||
+    (action as WhiteboardAction & { text?: string; value?: string; message?: string }).value ||
+    (action as WhiteboardAction & { text?: string; value?: string; message?: string }).message ||
+    "";
   const label = action.action.replace(/_/g, " ");
 
-  if (action.action === "draw_text") {
+  if (["clear", "clear_board", "erase", "reset_board"].includes(actionName)) {
+    return null;
+  }
+
+  if (["draw_text", "write", "write_text", "add_text", "text"].includes(actionName)) {
+    if (!content) return null;
     return {
       id: `action-${index}-${action.action}-${content}`,
       kind: isMathLike(content) ? "equation" : "text",
       label: "Tutor note",
-      content: content || "New board note",
+      content,
     };
   }
 
-  if (action.action === "write_equation") {
+  if (actionName === "write_equation") {
+    if (!content) return null;
     return {
       id: `action-${index}-${action.action}-${content}`,
       kind: "equation",
       label: "Equation",
-      content: content || "Equation added",
+      content,
     };
   }
 
-  if (["draw_coordinate_axes", "plot_curve"].includes(action.action)) {
+  if (["draw_coordinate_axes", "plot_curve"].includes(actionName)) {
     return {
       id: `action-${index}-${action.action}-${content}`,
       kind: "graph",
@@ -139,11 +154,27 @@ function actionToNode(action: WhiteboardAction, index: number): VisualNode {
     };
   }
 
+  if (!content) return null;
+
   return {
     id: `action-${index}-${action.action}-${content}`,
     kind: "shape",
     label,
-    content: content || label,
+    content,
+  };
+}
+
+function scoreFromAction(action: WhiteboardAction) {
+  if (action.action !== "update_score") return null;
+  const toNumber = (value: unknown) => {
+    const parsed = Number(value ?? 0);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  return {
+    score: toNumber(action.score),
+    correct: toNumber(action.correct),
+    wrong: toNumber(action.wrong),
   };
 }
 
@@ -155,7 +186,7 @@ function nodeTone(kind: VisualNode["kind"]) {
   return "border-slate-100/25 bg-slate-100/10";
 }
 
-export function Whiteboard({ steps, whiteboard, whiteboardActions = [], delayMs = 950, visibleStepCount }: Props) {
+export function Whiteboard({ steps, whiteboard, whiteboardActions = [], delayMs = 950, visibleStepCount, onScoreUpdate }: Props) {
   const [visibleCount, setVisibleCount] = useState(0);
   const [actionNodes, setActionNodes] = useState<VisualNode[]>([]);
   const seenActionsRef = useRef<Set<string>>(new Set());
@@ -192,13 +223,21 @@ export function Whiteboard({ steps, whiteboard, whiteboardActions = [], delayMs 
       const signature = `${index}:${JSON.stringify(action)}`;
       if (seenActionsRef.current.has(signature)) return;
       seenActionsRef.current.add(signature);
-      nextNodes.push(actionToNode(action, index));
+      const scoreUpdate = scoreFromAction(action);
+      if (scoreUpdate) {
+        onScoreUpdate?.(scoreUpdate);
+        return;
+      }
+      const node = actionToNode(action, index);
+      if (node) {
+        nextNodes.push(node);
+      }
     });
 
     if (nextNodes.length) {
       setActionNodes((current) => [...current, ...nextNodes]);
     }
-  }, [incomingActions]);
+  }, [incomingActions, onScoreUpdate]);
 
   useEffect(() => {
     if (visibleStepCount !== undefined) return;

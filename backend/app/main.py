@@ -35,6 +35,18 @@ app.include_router(avatar.router)
 app.include_router(evaluation.router)
 app.include_router(tutor_router, prefix="/api/tutor")
 
+
+@app.get("/")
+def root():
+    return {
+        "status": "ok",
+        "service": "MathVerse API",
+        "docs": "/docs",
+        "session_start": "/session/start",
+        "tutor_ask": "/api/tutor/ask",
+        "tutor_ws": "/ws/tutor",
+    }
+
 async def send_streamed_text(
     websocket: WebSocket,
     session_id: str,
@@ -121,6 +133,8 @@ async def tutor_ws(websocket: WebSocket):
     session_id = session_record.session_id
     live_bridge = LiveTutorBridge(session_id, websocket.send_json)
     live_connected = False
+    initial_mode = (websocket.query_params.get("mode") or "").lower()
+    initial_exam = (websocket.query_params.get("exam") or "").lower()
 
     async def ensure_live_bridge() -> bool:
         nonlocal live_connected
@@ -177,7 +191,7 @@ async def tutor_ws(websocket: WebSocket):
 
     #asyncio.create_task(asyncio.to_thread(init_cbse))
 
-    if not session_record.transcript:
+    if not (initial_mode == "exam" and initial_exam == "jee") and not session_record.transcript:
         await live_bridge.send_text_turn("ready")
 
     try:
@@ -203,9 +217,36 @@ async def tutor_ws(websocket: WebSocket):
                     }
                 )
                 continue
+            if payload.get("type") == "live_input_video" and payload.get("data"):
+                if await ensure_live_bridge():
+                    await live_bridge.send_video_frame(
+                        base64.b64decode(payload["data"]),
+                        mime_type=str(payload.get("mime_type") or "image/jpeg"),
+                    )
+                continue
             if payload.get("type") == "audio_stream_end":
                 if await ensure_live_bridge():
                     await live_bridge.end_audio_stream()
+                continue
+            if payload.get("type") == "recorded_audio_buffer" and payload.get("data"):
+                if await ensure_live_bridge():
+                    await live_bridge.send_encoded_audio(
+                        base64.b64decode(payload["data"]),
+                        mime_type=str(payload.get("mime_type") or "audio/webm"),
+                    )
+                    await live_bridge.end_audio_stream()
+                else:
+                    await websocket.send_json(
+                        {
+                            "type": "live_warning",
+                            "content": "Native Gemini audio is not connected right now.",
+                        }
+                    )
+                continue
+            if payload.get("type") == "control" and str(payload.get("action", "")).lower() == "stop_listening":
+                if await ensure_live_bridge():
+                    await live_bridge.end_audio_stream()
+                await websocket.send_json({"type": "listening_stopped"})
                 continue
             if payload.get("type") == "interrupt":
                 cancel_stream(session_id)
@@ -225,16 +266,30 @@ async def tutor_ws(websocket: WebSocket):
                 continue
             if payload.get("message"):
                 message = payload["message"]
+            elif payload.get("action"):
+                message = json.dumps({"action": str(payload.get("action"))})
+            mode = payload.get("mode") or initial_mode or None
+            context = payload.get("context") if isinstance(payload.get("context"), dict) else None
+            if context is None:
+                context = {}
+                if initial_exam:
+                    context["exam"] = initial_exam
+                grade_param = websocket.query_params.get("grade")
+                if grade_param is not None:
+                    with contextlib.suppress(ValueError):
+                        context["grade"] = int(grade_param)
+                if not context:
+                    context = None
 
             if not message:
                 continue
 
             if live_connected:
-                await live_bridge.send_text_turn(message)
+                await live_bridge.send_text_turn(message, mode=mode, context=context)
                 continue
 
             cancel_stream(session_id)
-            await live_bridge.send_text_turn(message)
+            await live_bridge.send_text_turn(message, mode=mode, context=context)
 
     except WebSocketDisconnect:
         print("Tutor WebSocket disconnected")
@@ -254,4 +309,5 @@ def fetch_homework(student_id: str):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="localhost", port=8000, reload=True)
+    reload_enabled = os.getenv("MATHVERSE_RELOAD", "false").lower() in {"1", "true", "yes"}
+    uvicorn.run(app, host="localhost", port=8000, reload=reload_enabled)

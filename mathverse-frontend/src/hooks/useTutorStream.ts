@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClassResponse, ExamMode, TutorPayload } from "../services/api";
-import { startClassStream } from "../services/tutorStream";
+import { startClassStream, type TutorStreamData } from "../services/tutorStream";
 import { playVoiceStream, type VoiceController } from "../services/voice";
 
 type Args = {
@@ -20,11 +20,44 @@ export function useTutorStream({ sessionId, examMode, onResponse }: Args) {
   const [paused, setPaused] = useState(false);
   const voiceRef = useRef<VoiceController | null>(null);
   const autoTimerRef = useRef<number | null>(null);
+  const lastGradeRef = useRef<number | undefined>(undefined);
+  const lastSubjectRef = useRef<string | undefined>(undefined);
+  const prefetchedStreamRef = useRef<TutorStreamData | null>(null);
+  const prefetchInFlightRef = useRef<Promise<void> | null>(null);
+  const silentRetryRef = useRef(0);
 
   const stop = useCallback(() => {
     voiceRef.current?.stop();
     if (autoTimerRef.current) window.clearTimeout(autoTimerRef.current);
   }, []);
+
+  const prefetchNextContinue = useCallback((grade?: number, subject?: string) => {
+    if (prefetchedStreamRef.current || prefetchInFlightRef.current) {
+      return;
+    }
+    const requestedGrade = typeof grade === "number" ? grade : undefined;
+    prefetchInFlightRef.current = (async () => {
+      try {
+        const stream = await startClassStream({
+          session_id: sessionId,
+          input: {
+            action: "continue",
+            grade: requestedGrade,
+            subject: subject || "math",
+          },
+          context: {
+            exam: requestedGrade ? "jee" : examMode,
+            grade: requestedGrade,
+          },
+        });
+        prefetchedStreamRef.current = stream;
+      } catch {
+        // Silent prefetch failure: main flow can still request on-demand.
+      } finally {
+        prefetchInFlightRef.current = null;
+      }
+    })();
+  }, [examMode, sessionId]);
 
   const prime = useCallback(
     (nextResponse: ClassResponse) => {
@@ -51,20 +84,40 @@ export function useTutorStream({ sessionId, examMode, onResponse }: Args) {
 
   const start = useCallback(
     async (
-      input: TutorPayload["input"] & { grade?: number; subject?: string } = { grade: 9, subject: "math" },
+      input: TutorPayload["input"] & { grade?: number; subject?: string } = { action: "start", grade: 11, subject: "math" },
+      options?: { silent?: boolean },
     ) => {
       stop();
-      setLoading(true);
+      if (!options?.silent) {
+        setLoading(true);
+      }
       setError(null);
-      setVisibleSteps([]);
       setPaused(false);
+      lastGradeRef.current = typeof input.grade === "number" ? input.grade : lastGradeRef.current;
+      lastSubjectRef.current = typeof input.subject === "string" ? input.subject : lastSubjectRef.current;
+      const isAutoContinueTurn = options?.silent && String(input.action || "").toLowerCase() === "continue";
+      if (!isAutoContinueTurn) {
+        prefetchedStreamRef.current = null;
+      }
 
       try {
-        const stream = await startClassStream({
-          session_id: sessionId,
-          input,
-          context: { exam: examMode },
-        });
+        const requestedGrade = typeof input.grade === "number" ? input.grade : undefined;
+        const requestedExamMode = requestedGrade ? "jee" : examMode;
+        const stream =
+          isAutoContinueTurn && prefetchedStreamRef.current
+            ? prefetchedStreamRef.current
+            : await startClassStream({
+                session_id: sessionId,
+                input,
+                context: {
+                  exam: requestedExamMode,
+                  grade: requestedGrade,
+                },
+              });
+        if (isAutoContinueTurn) {
+          prefetchedStreamRef.current = null;
+        }
+        silentRetryRef.current = 0;
 
         setResponse(stream.response);
         onResponse?.(stream.response);
@@ -72,32 +125,58 @@ export function useTutorStream({ sessionId, examMode, onResponse }: Args) {
         voiceRef.current = playVoiceStream(stream.voice_chunks.join(". "), {
           chunks: stream.voice_chunks,
           onStart: () => setIsSpeaking(true),
-          onChunkStart: (index) => {
-            const nextStep = stream.steps[index];
-            if (nextStep) {
-              window.setTimeout(() => {
-                setVisibleSteps((current) => (current.includes(nextStep) ? current : [...current, nextStep]));
-              }, 1200);
-            }
-          },
+          onChunkStart: () => undefined,
           onEnd: () => {
             setVisibleSteps(stream.steps);
             setIsSpeaking(false);
-            if (stream.response.type === "teach" && stream.response.next_action === "board_example") {
+            const autoAdvanceEligible =
+              stream.response.type === "teach" &&
+              stream.response.next_action !== "question" &&
+              stream.response.next_action !== "homework" &&
+              stream.response.next_action !== "finish";
+
+            if (autoAdvanceEligible) {
+              prefetchNextContinue(lastGradeRef.current, lastSubjectRef.current);
               autoTimerRef.current = window.setTimeout(
-                () => void start({ action: "next" }),
-                Math.max(1600, stream.response.pause_ms || 900),
+                () =>
+                  void start({
+                    action: "continue",
+                    grade: lastGradeRef.current,
+                    subject: lastSubjectRef.current || "math",
+                  }, { silent: true }),
+                Math.max(1800, stream.response.pause_ms || 1500),
               );
             }
           },
         });
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unable to start class stream");
+        if (options?.silent) {
+          if (silentRetryRef.current < 2) {
+            const retryAttempt = silentRetryRef.current + 1;
+            silentRetryRef.current = retryAttempt;
+            autoTimerRef.current = window.setTimeout(
+              () =>
+                void start(
+                  {
+                    action: "continue",
+                    grade: lastGradeRef.current,
+                    subject: lastSubjectRef.current || "math",
+                  },
+                  { silent: true },
+                ),
+              900 * retryAttempt,
+            );
+          }
+        } else {
+          setError(err instanceof Error ? err.message : "Unable to start class stream");
+        }
       } finally {
-        setLoading(false);
+        if (!options?.silent) {
+          setLoading(false);
+        }
       }
     },
-    [examMode, onResponse, sessionId, stop],
+    [examMode, onResponse, prefetchNextContinue, sessionId, stop],
   );
 
   const pauseOrResume = useCallback(() => {

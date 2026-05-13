@@ -22,20 +22,41 @@ class StudentSession(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
     session_id: str = Field(default_factory=lambda: str(uuid4()))
+    grade: int = 11
+    exam: Literal["cbse", "jee"] = "cbse"
     current_topic: str | None = None
+    current_topic_index: int = 0
+    current_chapter_index: int = 0
     difficulty_level: str = "moderate"
     active_phase: SessionPhase = SessionPhase.TEACHING
     mistake_history: list[str] = Field(default_factory=list)
     current_problem: dict[str, Any] = Field(default_factory=dict)
-    chapter_name: str = "Quadratic Equations"
+    chapter_name: str = "Sets"
     agenda: list[str] = Field(
         default_factory=lambda: [
-            "1. Introduction to Roots",
-            "2. The Discriminant",
-            "3. Word Problems",
+            "Set notation and representations",
+            "Types of sets and subset relations",
+            "Operations on sets",
+            "Venn diagram applications",
         ]
     )
+    class_started_at: datetime | None = None
+    class_duration_minutes: int = 45
+    next_system_note: str | None = None
     is_first_interaction: bool = True
+    mock_test_score: int = 0
+    correct_attempts: int = 0
+    wrong_attempts: int = 0
+    questions_asked: int = 0
+    warnings_issued: int = 0
+    exam_status: Literal["pending", "running", "terminated"] = "pending"
+    mock_test_chapters: list[str] = Field(
+        default_factory=lambda: [
+            "Integrals",
+            "Application of Integrals",
+            "Differential Equations",
+        ]
+    )
 
 
 class TranscriptTurn(BaseModel):

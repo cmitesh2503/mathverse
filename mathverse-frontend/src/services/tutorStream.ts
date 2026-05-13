@@ -7,6 +7,7 @@ type StartClassPayload = {
   context?: {
     exam?: ExamMode;
     student_id?: string;
+    grade?: number;
   };
 };
 
@@ -52,12 +53,20 @@ function formatForAvatar(response: ClassResponse): TutorStreamData {
 }
 
 export async function startClassStream(payload: StartClassPayload): Promise<TutorStreamData> {
-  const response = await sendAnswer<ClassResponse>({
+  const response = await sendAnswer<ClassResponse | { error?: string; detail?: string }>({
     session_id: payload.session_id,
     mode: "class",
-    input: payload.input || { grade: 9, subject: "math" },
+    input: payload.input || { action: "start", grade: 11, subject: "math" },
     context: payload.context,
   });
 
-  return formatForAvatar(response);
+  if ("error" in response && response.error) {
+    throw new Error(response.error);
+  }
+
+  if ("detail" in response && response.detail) {
+    throw new Error(response.detail);
+  }
+
+  return formatForAvatar(response as ClassResponse);
 }

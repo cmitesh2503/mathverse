@@ -1,28 +1,38 @@
 from pathlib import Path
 
 from PyPDF2 import PdfReader
+from pdf2image import convert_from_path
+import pytesseract
 
 APP_DIR = Path(__file__).resolve().parents[1]
 BACKEND_DIR = APP_DIR.parent
-PDF_DIR = APP_DIR / "data" / "pdfs" / "std_10"
+PDF_ROOT_DIR = APP_DIR / "data" / "pdfs"
 OUTPUT_FILE = BACKEND_DIR / "data" / "processed_content.txt"
+MIN_EXTRACTED_TEXT_LEN = 50
 
 
 def extract_text_from_pdf(file_path):
     reader = PdfReader(file_path)
-    text = ""
+    page_texts = []
 
     for page in reader.pages:
-        text += page.extract_text() or ""
+        page_text = (page.extract_text() or "").strip()
+        if len(page_text) < MIN_EXTRACTED_TEXT_LEN:
+            ocr_images = convert_from_path(str(file_path), first_page=len(page_texts) + 1, last_page=len(page_texts) + 1)
+            ocr_text = ""
+            for image in ocr_images:
+                ocr_text += pytesseract.image_to_string(image)
+            page_text = ocr_text.strip() or page_text
+        page_texts.append(page_text)
 
-    return text
+    return "\n".join(page_texts)
 
 
 def run_ingestion():
     all_text = ""
 
-    for path in PDF_DIR.glob("*.pdf"):
-        print(f"Processing {path.name}...")
+    for path in PDF_ROOT_DIR.rglob("*.pdf"):
+        print(f"Processing {path.relative_to(PDF_ROOT_DIR)}...")
 
         text = extract_text_from_pdf(path)
         all_text += f"\n\n===== {path.name} =====\n\n"

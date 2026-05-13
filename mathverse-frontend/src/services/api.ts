@@ -20,6 +20,11 @@ export type WhiteboardAction = {
   content?: string;
   label?: string;
   expression?: string;
+  reason?: string;
+  warnings?: number;
+  score?: number;
+  correct?: number;
+  wrong?: number;
   points?: Array<[number, number]>;
   metadata?: Record<string, unknown>;
 };
@@ -40,6 +45,7 @@ export type TutorPayload = {
   context?: {
     exam?: ExamMode;
     student_id?: string;
+    grade?: number;
   };
 };
 
@@ -126,6 +132,9 @@ export type ClassResponse = {
   note_cards?: string[];
   pace?: "slow" | "normal" | string;
   pause_ms?: number;
+  session_time_left_seconds?: number | null;
+  session_duration_seconds?: number | null;
+  session_expired?: boolean;
   avatar_voice?: {
     style?: string;
     pace?: string;
@@ -193,20 +202,38 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 15000,
+  timeout: 30000,
 });
 
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function shouldRetryRequest(error: unknown) {
+  if (!axios.isAxiosError(error)) return false;
+  if (error.response) return false;
+  const code = error.code || "";
+  return code === "ECONNABORTED" || code === "ERR_NETWORK" || code === "ETIMEDOUT";
+}
+
 export async function sendAnswer<T = TutorResponse>(payload: TutorPayload): Promise<T> {
-  try {
-    const { data } = await api.post<T>("/api/tutor/ask", payload);
-    return data;
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      const detail = error.response?.data?.detail || error.response?.data?.error;
-      throw new Error(detail || `Could not reach MathVerse API at ${API_BASE_URL}`);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const { data } = await api.post<T>("/api/tutor/ask", payload);
+      return data;
+    } catch (error) {
+      if (attempt === 0 && shouldRetryRequest(error)) {
+        await sleep(700);
+        continue;
+      }
+      if (axios.isAxiosError(error)) {
+        const detail = error.response?.data?.detail || error.response?.data?.error;
+        throw new Error(detail || `Could not reach MathVerse API at ${API_BASE_URL}`);
+      }
+      throw error;
     }
-    throw error;
   }
+  throw new Error(`Could not reach MathVerse API at ${API_BASE_URL}`);
 }
 
 export async function getAttemptHistory(studentId: string): Promise<AttemptRecord[]> {

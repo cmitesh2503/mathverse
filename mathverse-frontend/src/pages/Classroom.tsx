@@ -60,9 +60,13 @@ function AlertIcon({ className = "h-5 w-5" }: IconProps) {
   );
 }
 
-function tutorWsUrl(sessionId: string) {
+const SILENCE_TIMEOUT_MS = 15000;
+const SILENCE_RMS_THRESHOLD = 0.004;
+const CLASS_SESSION_DURATION_SECONDS = 45 * 60;
+
+function tutorWsUrl(sessionId: string, grade: 11 | 12) {
   const base = API_BASE_URL.replace(/^http/, "ws").replace(/\/$/, "");
-  return `${base}/ws/tutor?session_id=${encodeURIComponent(sessionId)}&grade=10&subject=Mathematics`;
+  return `${base}/ws/tutor?session_id=${encodeURIComponent(sessionId)}&grade=${grade}&subject=Mathematics&mode=class&exam=jee`;
 }
 
 function downsampleBuffer(buffer: Float32Array, sourceRate: number, targetRate: number) {
@@ -129,14 +133,23 @@ export default function Classroom({ onNavigate }: Props) {
   const recordTutorSession = useTutorStore((state) => state.recordTutorSession);
   const recordResponse = useTutorStore((state) => state.recordResponse);
   const [answer, setAnswer] = useState("");
+  const [selectedGrade, setSelectedGrade] = useState<11 | 12>(11);
+  const [classStarted, setClassStarted] = useState(false);
   const [micActive, setMicActive] = useState(false);
+  const [nextCoolingDown, setNextCoolingDown] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
+  const [timeoutMessage, setTimeoutMessage] = useState<string | null>(null);
   const consumedPendingRef = useRef(false);
   const micStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const analyserCheckIntervalRef = useRef<number | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const tutorSocketRef = useRef<WebSocket | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaChunksRef = useRef<Blob[]>([]);
+  const isMicStoppingRef = useRef(false);
+  const lastAudioActivityRef = useRef<number | null>(null);
 
   const onResponse = useCallback(
     (data: ClassResponse) => {
@@ -185,6 +198,7 @@ export default function Classroom({ onNavigate }: Props) {
 
   useEffect(() => {
     if (!classAllowed) return;
+    if (!classStarted) return;
     if (pendingClassResponse) {
       consumedPendingRef.current = true;
       prime(pendingClassResponse);
@@ -193,14 +207,8 @@ export default function Classroom({ onNavigate }: Props) {
       return;
     }
     if (consumedPendingRef.current) return;
-    void start({ grade: 10, subject: "math" });
-  }, [classAllowed, onResponse, pendingClassResponse, prime, setPendingClassResponse, start]);
-
-  useEffect(() => {
-    return () => {
-      stopMicrophone();
-    };
-  }, []);
+    void start({ action: "start", grade: selectedGrade, subject: "math" });
+  }, [classAllowed, classStarted, onResponse, pendingClassResponse, prime, selectedGrade, setPendingClassResponse, start]);
 
   const concept = response?.concept || response?.content?.concept || "JEE Mathematics";
   const chapter = response?.chapter || response?.content?.chapter || "Live Class";
@@ -214,8 +222,26 @@ export default function Classroom({ onNavigate }: Props) {
   const notes = response?.session_notes || response?.content?.session_notes || response?.note_cards || response?.content?.note_cards || [];
   const homework = response?.homework || response?.content?.homework || response?.content?.questions || [];
   const isQuestion = response?.type === "question";
+  const sessionExpired = Boolean(response?.session_expired);
+  const sessionTimeLeftSeconds = Math.max(
+    0,
+    Number(response?.session_time_left_seconds ?? CLASS_SESSION_DURATION_SECONDS),
+  );
+  const sessionDurationSeconds = Math.max(
+    1,
+    Number(response?.session_duration_seconds ?? CLASS_SESSION_DURATION_SECONDS),
+  );
+  const formatClock = (totalSeconds: number) => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  };
 
-  const status = loading
+  const status = !classStarted
+    ? "Select grade and start your class."
+    : sessionExpired
+    ? "Today's 45-minute session is complete."
+    : loading
     ? "Preparing the next step..."
     : micActive
       ? "Listening... speak now."
@@ -223,10 +249,11 @@ export default function Classroom({ onNavigate }: Props) {
       ? "Arvind Sir is explaining..."
       : paused
         ? "Raised hand. Tutor paused."
-        : "Arvind Sir is listening.";
+        : "Class is auto-flowing. Use Push to Talk anytime.";
 
-  const nextLabel =
-    response?.next_action === "board_example"
+  const nextLabel = sessionExpired
+    ? "Start New 45-min Session"
+    : response?.next_action === "board_example"
       ? "Show Board Example"
       : response?.next_action === "question"
         ? "Ask Mini Check"
@@ -234,47 +261,187 @@ export default function Classroom({ onNavigate }: Props) {
           ? "Next Exercise"
           : response?.next_action === "homework" || response?.type === "homework"
             ? "Open Homework"
-            : "Next Step";
+            : "Skip Ahead";
 
   async function submitClassAnswer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!answer.trim() || loading) return;
-    await start({ action: "next", answer });
+    await start({ action: "next", answer, grade: selectedGrade, subject: "math" });
     setAnswer("");
   }
 
-  function goNext() {
+  async function goNext() {
+    if (sessionExpired) {
+      await start({ action: "start", grade: selectedGrade, subject: "math" });
+      return;
+    }
     if (response?.type === "homework") {
       onNavigate("homework");
       return;
     }
-    void start({ action: "next" });
+    if (loading || nextCoolingDown) return;
+
+    setNextCoolingDown(true);
+    window.setTimeout(() => setNextCoolingDown(false), 2000);
+
+    try {
+      await start({ action: "next", grade: selectedGrade, subject: "math" });
+    } catch (error) {
+      console.error("Failed to advance class topic.", error);
+    }
   }
 
-  function stopMicrophone() {
-    processorRef.current?.disconnect();
-    sourceRef.current?.disconnect();
-    void audioContextRef.current?.close();
-    micStreamRef.current?.getTracks().forEach((track) => track.stop());
-
-    if (tutorSocketRef.current?.readyState === WebSocket.OPEN) {
-      tutorSocketRef.current.send(JSON.stringify({ type: "audio_stream_end" }));
-      tutorSocketRef.current.close();
+  const sendSocketPayload = useCallback((payload: Record<string, unknown>) => {
+    const socket = tutorSocketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return false;
     }
 
-    processorRef.current = null;
-    sourceRef.current = null;
-    audioContextRef.current = null;
-    micStreamRef.current = null;
+    try {
+      socket.send(JSON.stringify(payload));
+      return true;
+    } catch (error) {
+      console.error("Failed to send payload over tutor socket.", error);
+      setMicError("Connection dropped while sending audio.");
+      return false;
+    }
+  }, []);
+
+  const sendStopListeningSignal = useCallback(() => {
+    sendSocketPayload({ type: "control", action: "stop_listening" });
+    sendSocketPayload({ type: "audio_stream_end" });
+  }, [sendSocketPayload]);
+
+  const closeTutorSocket = useCallback(() => {
+    if (tutorSocketRef.current?.readyState === WebSocket.OPEN || tutorSocketRef.current?.readyState === WebSocket.CONNECTING) {
+      tutorSocketRef.current.close();
+    }
     tutorSocketRef.current = null;
-    setMicActive(false);
-  }
+  }, []);
+
+  const stopMicrophone = useCallback(
+    async ({ keepSocket = true }: { keepSocket?: boolean } = {}) => {
+      if (isMicStoppingRef.current) return;
+      isMicStoppingRef.current = true;
+
+      try {
+        // Clear silence detection interval
+        if (analyserCheckIntervalRef.current) {
+          window.clearInterval(analyserCheckIntervalRef.current);
+          analyserCheckIntervalRef.current = null;
+        }
+
+        // Disconnect audio nodes
+        sourceRef.current?.disconnect();
+        analyserRef.current = null;
+        
+        // Close audio context
+        if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+          try {
+            await audioContextRef.current.close();
+          } catch (e) {
+            console.debug("Audio context close error (expected):", e);
+          }
+        }
+
+        // Stop media recorder
+        const recorder = mediaRecorderRef.current;
+        if (recorder && recorder.state !== "inactive") {
+          await new Promise<void>((resolve) => {
+            const cleanup = () => resolve();
+            recorder.onstop = cleanup;
+            recorder.onerror = cleanup;
+            try {
+              recorder.stop();
+            } catch {
+              cleanup();
+            }
+          });
+        }
+
+        // Flush recorded audio to socket
+        const bufferedBlob =
+          mediaChunksRef.current.length > 0 ? new Blob(mediaChunksRef.current, { type: mediaRecorderRef.current?.mimeType || "audio/webm" }) : null;
+        if (bufferedBlob && bufferedBlob.size > 0) {
+          try {
+            const buffer = await bufferedBlob.arrayBuffer();
+            sendSocketPayload({
+              type: "recorded_audio_buffer",
+              data: arrayBufferToBase64(buffer),
+              mime_type: bufferedBlob.type || "audio/webm",
+            });
+          } catch (error) {
+            console.error("Failed to flush recorded audio buffer.", error);
+          }
+        }
+
+        // Stop all media tracks
+        micStreamRef.current?.getTracks().forEach((track) => {
+          try {
+            track.stop();
+          } catch (e) {
+            console.debug("Track stop error:", e);
+          }
+        });
+
+        // Send explicit stop listening signals
+        sendStopListeningSignal();
+        
+        if (!keepSocket) {
+          closeTutorSocket();
+        }
+      } catch (error) {
+        console.error("Failed to stop microphone cleanly.", error);
+      } finally {
+        // CRITICAL: Reset all state references
+        sourceRef.current = null;
+        analyserRef.current = null;
+        audioContextRef.current = null;
+        mediaRecorderRef.current = null;
+        mediaChunksRef.current = [];
+        micStreamRef.current = null;
+        lastAudioActivityRef.current = null;
+        analyserCheckIntervalRef.current = null;
+        
+        // CRITICAL: Force UI state reset
+        setMicActive(false);
+        isMicStoppingRef.current = false;
+      }
+    },
+    [closeTutorSocket, sendSocketPayload, sendStopListeningSignal],
+  );
 
   function openTutorSocket() {
+    if (tutorSocketRef.current?.readyState === WebSocket.OPEN) {
+      return Promise.resolve(tutorSocketRef.current);
+    }
+
+    if (tutorSocketRef.current?.readyState === WebSocket.CONNECTING) {
+      return new Promise<WebSocket>((resolve, reject) => {
+        const socket = tutorSocketRef.current;
+        if (!socket) {
+          reject(new Error("Could not open tutor audio WebSocket."));
+          return;
+        }
+        socket.addEventListener("open", () => resolve(socket), { once: true });
+        socket.addEventListener("error", () => reject(new Error("Could not open tutor audio WebSocket.")), { once: true });
+      });
+    }
+
     return new Promise<WebSocket>((resolve, reject) => {
-      const socket = new WebSocket(tutorWsUrl(sessionId));
+      const socket = new WebSocket(tutorWsUrl(sessionId, selectedGrade));
+      tutorSocketRef.current = socket;
+
       socket.onopen = () => resolve(socket);
+
       socket.onerror = () => reject(new Error("Could not open tutor audio WebSocket."));
+
+      socket.onclose = () => {
+        if (tutorSocketRef.current === socket) {
+          tutorSocketRef.current = null;
+        }
+      };
+
       socket.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data);
@@ -290,57 +457,148 @@ export default function Classroom({ onNavigate }: Props) {
 
   async function startMicrophone() {
     try {
+      if (micActive) return;
       setMicError(null);
+      
+      // Get user media
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const socket = await openTutorSocket();
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      
+      // Create audio context
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       const audioContext = new AudioContextClass();
+      
+      // Create analyser (NOT deprecated like ScriptProcessor)
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.8;
+      
+      // Connect source to analyser
       const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-
-      processor.onaudioprocess = (event) => {
-        if (socket.readyState !== WebSocket.OPEN) return;
-
-        const input = event.inputBuffer.getChannelData(0);
-        const downsampled = downsampleBuffer(input, audioContext.sampleRate, 16000);
-        const pcm = floatTo16BitPcm(downsampled);
-        socket.send(
-          JSON.stringify({
-            type: "live_input_audio",
-            data: arrayBufferToBase64(pcm),
-          }),
-        );
+      source.connect(analyser);
+      
+      // Start media recorder for final audio capture
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaChunksRef.current = [];
+      
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          mediaChunksRef.current.push(event.data);
+        }
       };
+      
+      mediaRecorder.onerror = (error) => {
+        console.error("MediaRecorder error:", error);
+        setMicError("Microphone recording failed. Please retry.");
+        void stopMicrophone();
+      };
+      
+      mediaRecorder.start(250); // Timeslice every 250ms
 
-      source.connect(processor);
-      processor.connect(audioContext.destination);
+      // Set up silence detection using AnalyserNode (not deprecated)
+      lastAudioActivityRef.current = Date.now();
+      setTimeoutMessage(null);
+      
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      
+      const checkAudioActivity = () => {
+        if (!analyser) return;
+        
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        const average = sum / dataArray.length;
+        
+        // If there's audio activity above threshold, update timestamp
+        if (average > SILENCE_RMS_THRESHOLD * 1000) {
+          lastAudioActivityRef.current = Date.now();
+        }
+      };
+      
+      // Run silence check every 100ms
+      analyserCheckIntervalRef.current = window.setInterval(checkAudioActivity, 100);
 
+      // Store references
       micStreamRef.current = stream;
       tutorSocketRef.current = socket;
       audioContextRef.current = audioContext;
       sourceRef.current = source;
-      processorRef.current = processor;
+      analyserRef.current = analyser;
+      mediaRecorderRef.current = mediaRecorder;
+      
+      // Update UI
       setMicActive(true);
     } catch (error) {
       console.error("Microphone access denied or unavailable.", error);
       setMicError("Microphone access denied or unavailable.");
-      stopMicrophone();
-      alert("Microphone access denied or unavailable.");
+      setMicActive(false);
+      await stopMicrophone({ keepSocket: false });
     }
-  }
-
-  function pushToTalk() {
-    if (micActive) {
-      stopMicrophone();
-      return;
-    }
-
-    void startMicrophone();
   }
 
   function askForHelp() {
-    void start({ action: "help" });
+    if (sessionExpired) return;
+    void start({ action: "help", grade: selectedGrade, subject: "math" });
   }
+
+  function handleMicPress() {
+    if (sessionExpired) return;
+    if (!classStarted || loading || micActive) return;
+    void startMicrophone().catch((error) => {
+      console.error("Unable to start microphone capture.", error);
+      setMicError("Unable to start microphone capture.");
+      setMicActive(false);
+      void stopMicrophone({ keepSocket: false });
+    });
+  }
+
+  function handleMicRelease() {
+    // CRITICAL: Always reset UI immediately on release
+    setMicActive(false);
+    
+    if (!micActive) return;
+    
+    // Stop recording in background
+    void stopMicrophone().catch((error) => {
+      console.error("Unable to stop microphone capture.", error);
+      setMicError("Unable to stop microphone capture.");
+      // Force reset even on error
+      setMicActive(false);
+    });
+  }
+
+  function beginClassroom() {
+    consumedPendingRef.current = false;
+    setTimeoutMessage(null);
+    setClassStarted(true);
+  }
+
+  useEffect(() => {
+    if (!micActive) return;
+    const timer = window.setInterval(() => {
+      const lastAudioTs = lastAudioActivityRef.current;
+      if (!lastAudioTs) return;
+      if (Date.now() - lastAudioTs < SILENCE_TIMEOUT_MS) return;
+      setTimeoutMessage("Microphone auto-stopped after 15 seconds of silence.");
+      void stopMicrophone();
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [micActive, stopMicrophone]);
+
+  useEffect(() => {
+    return () => {
+      // Cleanup on unmount: stop everything
+      setMicActive(false);
+      if (analyserCheckIntervalRef.current) {
+        window.clearInterval(analyserCheckIntervalRef.current);
+      }
+      void stopMicrophone({ keepSocket: false });
+      closeTutorSocket();
+    };
+  }, [closeTutorSocket, stopMicrophone]);
 
   return (
     <main className="min-h-[calc(100vh-4rem)] bg-slate-950 pb-28 text-slate-50">
@@ -351,6 +609,39 @@ export default function Classroom({ onNavigate }: Props) {
             description="Free includes basic CBSE practice. Upgrade the active plan to unlock guided whiteboard classes, synced avatar voice, and saved class notes."
             recommendedPlan={examMode === "jee" ? "jee_pro" : "cbse_pro"}
           />
+        </div>
+      ) : !classStarted ? (
+        <div className="mx-auto flex min-h-[calc(100vh-12rem)] w-full max-w-xl items-center px-4 py-8 sm:px-6">
+          <div className="w-full rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Class Setup</p>
+            <h2 className="mt-2 text-2xl font-semibold text-white">Choose Your JEE Grade</h2>
+            <p className="mt-2 text-sm text-slate-300">Select grade before Arvind Sir starts the session and chapter agenda.</p>
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              {[11, 12].map((grade) => (
+                <button
+                  key={grade}
+                  type="button"
+                  onClick={() => setSelectedGrade(grade as 11 | 12)}
+                  className={`rounded-lg border px-4 py-3 text-sm font-semibold transition ${
+                    selectedGrade === grade
+                      ? "border-cyan-300 bg-cyan-400 text-slate-950"
+                      : "border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700"
+                  }`}
+                >
+                  Grade {grade}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={beginClassroom}
+              className="mt-5 w-full rounded-lg bg-cyan-400 px-4 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-300"
+            >
+              Start Class
+            </button>
+          </div>
         </div>
       ) : (
         <div className="grid min-h-[calc(100vh-10rem)] gap-4 px-4 py-4 lg:grid-cols-[minmax(280px,30%)_minmax(0,70%)]">
@@ -388,10 +679,14 @@ export default function Classroom({ onNavigate }: Props) {
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Current Focus</p>
                 <h2 className="mt-2 text-base font-semibold tracking-normal text-white">{chapter}</h2>
                 <p className="mt-1 text-sm leading-6 tracking-normal text-slate-300">{concept}</p>
+                <p className={`mt-2 text-xs font-semibold tracking-[0.12em] ${sessionExpired ? "text-rose-300" : "text-cyan-200"}`}>
+                  Session Time Left: {formatClock(sessionTimeLeftSeconds)} / {formatClock(sessionDurationSeconds)}
+                </p>
               </div>
 
               {error && <div className="rounded-lg border border-rose-400/40 bg-rose-950/60 p-4 text-sm text-rose-100">{error}</div>}
               {micError && <div className="rounded-lg border border-amber-400/40 bg-amber-950/60 p-4 text-sm text-amber-100">{micError}</div>}
+              {timeoutMessage && <div className="rounded-lg border border-amber-400/40 bg-amber-950/60 p-4 text-sm text-amber-100">{timeoutMessage}</div>}
 
               {isQuestion && (
                 <form onSubmit={submitClassAnswer} className="rounded-lg border border-slate-700 bg-slate-950 p-4">
@@ -457,16 +752,16 @@ export default function Classroom({ onNavigate }: Props) {
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
-                  onClick={goNext}
-                  disabled={loading || isQuestion}
+                  onClick={() => void goNext()}
+                  disabled={loading || isQuestion || nextCoolingDown}
                   className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
                 >
-                  {nextLabel}
+                  {nextCoolingDown ? "Loading..." : nextLabel}
                 </button>
                 <button
                   type="button"
-                  onClick={() => void start({ action: "homework" })}
-                  disabled={loading}
+                  onClick={() => void start({ action: "homework", grade: selectedGrade, subject: "math" })}
+                  disabled={loading || sessionExpired}
                   className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
                 >
                   Homework
@@ -481,13 +776,23 @@ export default function Classroom({ onNavigate }: Props) {
         </div>
       )}
 
-      {classAllowed && (
+      {classAllowed && classStarted && (
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-700 bg-slate-950/95 px-4 py-3 shadow-2xl backdrop-blur">
           <div className="mx-auto grid max-w-4xl grid-cols-3 gap-3">
             <button
               type="button"
-              onClick={pushToTalk}
-              disabled={loading}
+              onMouseDown={handleMicPress}
+              onMouseUp={handleMicRelease}
+              onMouseLeave={handleMicRelease}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                handleMicPress();
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                handleMicRelease();
+              }}
+              disabled={loading || sessionExpired}
               className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-md px-2 py-3 text-xs font-bold tracking-normal transition disabled:bg-slate-700 disabled:text-slate-400 sm:flex-row sm:gap-2 sm:px-4 sm:text-sm ${
                 micActive
                   ? "animate-pulse bg-rose-500 text-white hover:bg-rose-400"
@@ -500,7 +805,7 @@ export default function Classroom({ onNavigate }: Props) {
             <button
               type="button"
               onClick={pauseOrResume}
-              disabled={loading}
+              disabled={loading || sessionExpired}
               className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-md border border-slate-600 bg-slate-800 px-2 py-3 text-xs font-semibold tracking-normal text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500 sm:flex-row sm:gap-2 sm:px-4 sm:text-sm"
             >
               <HandIcon />
@@ -509,7 +814,7 @@ export default function Classroom({ onNavigate }: Props) {
             <button
               type="button"
               onClick={askForHelp}
-              disabled={loading}
+              disabled={loading || sessionExpired}
               className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-md bg-rose-500 px-2 py-3 text-xs font-bold tracking-normal text-white transition hover:bg-rose-400 disabled:bg-slate-700 disabled:text-slate-400 sm:flex-row sm:gap-2 sm:px-4 sm:text-sm"
             >
               <AlertIcon />

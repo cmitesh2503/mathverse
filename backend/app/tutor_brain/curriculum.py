@@ -1219,3 +1219,96 @@ def build_curriculum_grounding(grade: int) -> str:
         f"Grade: {grade}\n"
         f"Chapters: {chapter_titles}"
     )
+
+
+JEE_CLASSROOM_FLOW = {
+    11: [
+        {
+            "chapter": "Sets",
+            "agenda": [
+                "Set notation and representations",
+                "Types of sets and subset relations",
+                "Operations on sets",
+                "Venn diagram applications",
+            ],
+        },
+        {
+            "chapter": "Relations and Functions",
+            "agenda": [
+                "Ordered pairs and relations",
+                "Domain, codomain, and range",
+                "Types of functions",
+                "Composition and inverse basics",
+            ],
+        },
+        {
+            "chapter": "Trigonometric Functions",
+            "agenda": [
+                "Angle measurement and standard positions",
+                "Trigonometric identities",
+                "Graphs of trigonometric functions",
+                "Transformations and periodicity",
+            ],
+        },
+    ],
+    12: [
+        {
+            "chapter": "Relations and Functions",
+            "agenda": [
+                "Types of relations",
+                "One-one and onto mappings",
+                "Inverse trigonometric functions",
+                "Function composition and inverses",
+            ],
+        },
+        {
+            "chapter": "Differential Calculus",
+            "agenda": [
+                "Continuity and differentiability",
+                "Rules of differentiation",
+                "Implicit and logarithmic differentiation",
+                "Applications of derivatives",
+            ],
+        },
+        {
+            "chapter": "Integrals",
+            "agenda": [
+                "Integration as inverse process",
+                "Standard integrals and substitutions",
+                "Integration by parts",
+                "Definite integral properties",
+            ],
+        },
+    ],
+}
+
+
+def get_jee_classroom_flow(grade: int) -> list[dict]:
+    if int(grade or 11) == 12:
+        return JEE_CLASSROOM_FLOW[12]
+    return JEE_CLASSROOM_FLOW[11]
+
+
+def get_jee_chapter_plan(grade: int, chapter_index: int = 0) -> dict:
+    chapters = get_jee_classroom_flow(grade)
+    if not chapters:
+        return {
+            "chapter_index": 0,
+            "chapter": "Sets",
+            "agenda": [
+                "Set notation and representations",
+                "Types of sets and subset relations",
+                "Operations on sets",
+                "Venn diagram applications",
+            ],
+            "total_chapters": 1,
+        }
+
+    bounded_index = max(0, min(int(chapter_index or 0), len(chapters) - 1))
+    chapter = chapters[bounded_index]
+    return {
+        "chapter_index": bounded_index,
+        "chapter": chapter["chapter"],
+        "agenda": list(chapter["agenda"]),
+        "total_chapters": len(chapters),
+    }
