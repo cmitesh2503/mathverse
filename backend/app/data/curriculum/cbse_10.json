@@ -1,0 +1,62 @@
+{
+  "board": "CBSE",
+  "subject": "Mathematics",
+  "default_topic_slug": "real_numbers",
+  "chapters": [
+    {
+      "slug": "real_numbers",
+      "title": "Real Numbers",
+      "summary": "Euclid's division lemma, HCF, irrational numbers, and decimal expansions.",
+      "aliases": ["real numbers"],
+      "teaching_anchor": "For any two positive integers a and b, Euclid's division lemma says a = bq + r, where 0 <= r < b.",
+      "classroom_goal": "Students should use Euclid's division lemma for HCF questions and explain why decimal expansions of rational numbers either terminate or repeat.",
+      "book_topics": [
+        "Euclid's Division Lemma",
+        "Revisiting HCF and LCM",
+        "Decimal Expansions of Rational Numbers",
+        "Irrational Numbers"
+      ],
+      "homework": [
+        "Use Euclid's division lemma to find the HCF of 135 and 225.",
+        "State whether 13/160 has a terminating decimal expansion and explain why.",
+        "Write two examples each of rational and irrational numbers."
+      ],
+      "concepts": [
+        {
+          "id": "euclid_division_lemma",
+          "title": "Euclid's Division Lemma",
+          "definition": "For any two positive integers a and b, there exist whole numbers q and r such that a = bq + r, where 0 <= r < b.",
+          "explanation": "Euclid's division lemma helps us break one number into divisor, quotient, and remainder. It is the starting point for many HCF problems.",
+          "board_work": [
+            "Dividend = Divisor × Quotient + Remainder",
+            "26 = 5 × 5 + 1",
+            "The remainder must always be smaller than the divisor."
+          ],
+          "ncert_examples": [
+            {
+              "prompt": "Using Euclid's division lemma, write 37 in the form 5q + r. What are q and r?",
+              "answer_type": "pair",
+              "answer": [7, 2],
+              "answer_labels": ["q", "r"],
+              "rule_used": "Euclid's division lemma",
+              "hint": "Divide 37 by 5. The quotient is the whole-number part and the remainder is what is left.",
+              "steps": [
+                "Divide 37 by 5.",
+                "We get quotient 7 because 5 x 7 = 35.",
+                "The remainder is 37 - 35 = 2, so 37 = 5 x 7 + 2."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "polynomials",
+      "title": "Polynomials",
+      "summary": "Zeros of polynomials and relations with coefficients.",
+      "aliases": ["polynomials"],
+      "teaching_anchor": "A polynomial is an algebraic expression formed using variables with whole-number powers.",
+      "classroom_goal": "Students should identify the zeroes of simple polynomials and connect the zeroes with the coefficients in quadratic polynomials."
+    }
+  ]
+}

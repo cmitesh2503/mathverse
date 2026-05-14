@@ -114,9 +114,6 @@ def _is_greeting_line(text: str) -> bool:
             "good morning",
             "good evening",
             "welcome back",
-            "grade ",
-            "chapter:",
-            "agenda",
         )
     )
 
@@ -204,7 +201,97 @@ def _needs_problem_board(actions: list[dict[str, Any]]) -> bool:
     return True
 
 
-def _topic_problem_actions(topic: str, variation: int = 0) -> list[dict[str, Any]]:
+def _extract_problem_candidates(rag_context: str, limit: int = 8) -> list[str]:
+    if not isinstance(rag_context, str) or not rag_context.strip():
+        return []
+
+    candidates: list[str] = []
+    seen: set[str] = set()
+    lines = re.split(r"[\r\n]+", rag_context)
+    for raw_line in lines:
+        line = str(raw_line or "").strip()
+        if not line:
+            continue
+
+        line = re.sub(r"^\s*(q(?:uestion)?|ex(?:ample)?)\s*[\d.:-]*\s*", "", line, flags=re.IGNORECASE)
+        line = re.sub(r"\s+", " ", line).strip(" -:;")
+        lowered = line.lower()
+        if len(line) < 14 or len(line) > 220:
+            continue
+        if not (
+            "?" in line
+            or any(
+                token in lowered
+                for token in (
+                    "solve",
+                    "find",
+                    "evaluate",
+                    "prove",
+                    "show",
+                    "simplify",
+                    "determine",
+                    "calculate",
+                )
+            )
+        ):
+            continue
+
+        key = lowered[:180]
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(line)
+        if len(candidates) >= limit:
+            break
+
+    return candidates
+
+
+def _generate_similar_problem(problem: str, seed: int) -> str:
+    if not problem:
+        return "Solve a similar variation for this concept."
+
+    delta = (abs(int(seed)) % 3) + 1
+
+    def _replace(match: re.Match) -> str:
+        value = int(match.group(0))
+        adjusted = value + delta if value >= 0 else value - delta
+        return str(adjusted)
+
+    mutated = re.sub(r"(?<![A-Za-z])\d+(?![A-Za-z])", _replace, problem)
+    if mutated == problem:
+        return f"Solve a similar PYQ-style variation of: {problem}"
+    return mutated
+
+
+def _pyq_problem_actions(topic: str, rag_context: str, variation: int = 0) -> list[dict[str, Any]]:
+    sources = ["PYQ", "Study Material", "Generated from PYQ Pattern"]
+    source_label = sources[variation % len(sources)]
+    candidates = _extract_problem_candidates(rag_context)
+
+    if candidates:
+        base_problem = candidates[variation % len(candidates)]
+    else:
+        base_problem = f"Solve one step-by-step problem based on {topic or 'the current topic'}."
+
+    if source_label == "Generated from PYQ Pattern":
+        prompt = _generate_similar_problem(base_problem, variation + 1)
+    elif source_label == "Study Material" and len(candidates) > 1:
+        prompt = candidates[(variation + 1) % len(candidates)]
+    else:
+        prompt = base_problem
+
+    return [
+        {"action": "draw_text", "content": f"Source: {source_label}"},
+        {"action": "draw_text", "content": f"Problem: {prompt}"},
+        {"action": "draw_text", "content": "Step 1: Given -> Required"},
+        {"action": "draw_text", "content": "Step 2: Pick rule from concept"},
+        {"action": "draw_text", "content": "Step 3: Substitute and simplify"},
+        {"action": "draw_text", "content": "Step 4: Final answer check"},
+    ]
+
+
+def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = "") -> list[dict[str, Any]]:
     lowered = (topic or "").lower()
     alt = variation % 2
 
@@ -265,15 +352,15 @@ def _topic_problem_actions(topic: str, variation: int = 0) -> list[dict[str, Any
             {"action": "write_equation", "content": "Transitive: Check pairs to conclude"},
         ]
 
-    return [
-        {"action": "draw_text", "content": f"Problem on: {topic or 'current topic'}"},
-        {"action": "write_equation", "content": "Given: 2x + 5 = 17"},
-        {"action": "write_equation", "content": "2x = 17 - 5 = 12"},
-        {"action": "write_equation", "content": "x = 6"},
-    ]
+    return _pyq_problem_actions(topic=topic, rag_context=rag_context, variation=variation)
 
 
-def _prepare_problem_whiteboard_actions(topic: str, actions: list[dict[str, Any]], variation: int) -> list[dict[str, Any]]:
+def _prepare_problem_whiteboard_actions(
+    topic: str,
+    actions: list[dict[str, Any]],
+    variation: int,
+    rag_context: str = "",
+) -> list[dict[str, Any]]:
     cleaned: list[dict[str, Any]] = []
     for action in actions:
         if not isinstance(action, dict):
@@ -292,8 +379,38 @@ def _prepare_problem_whiteboard_actions(topic: str, actions: list[dict[str, Any]
         cleaned.append(action)
 
     if _needs_problem_board(cleaned):
-        return _topic_problem_actions(topic, variation=variation)
+        return _topic_problem_actions(topic, variation=variation, rag_context=rag_context)
     return cleaned
+
+
+def _resolve_session_topic(session: StudentSession) -> str:
+    if session.current_topic:
+        return str(session.current_topic)
+    if session.agenda and 0 <= session.current_topic_index < len(session.agenda):
+        return str(session.agenda[session.current_topic_index])
+    return str(session.chapter_name or "Current Topic")
+
+
+def _ensure_board_header_actions(session: StudentSession, actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    chapter = str(session.chapter_name or "Current Chapter")
+    topic = _resolve_session_topic(session)
+    has_chapter = False
+    has_topic = False
+    for action in actions:
+        text = _action_text(action).lower()
+        if text.startswith("chapter:"):
+            has_chapter = True
+        if text.startswith("topic:"):
+            has_topic = True
+
+    header: list[dict[str, Any]] = []
+    if not has_chapter:
+        header.append({"action": "draw_text", "content": f"Chapter: {chapter}"})
+    if not has_topic:
+        header.append({"action": "draw_text", "content": f"Topic: {topic}"})
+    if not header:
+        return actions
+    return [*header, *actions]
 
 
 def _normalize_action(input_data: dict[str, Any]) -> str:
@@ -384,13 +501,18 @@ def _class_expired_payload(session: StudentSession) -> dict:
 
 def _rag_context_for_session(session: StudentSession, exam_type: str) -> str:
     topic = (
-        session.current_topic
-        or (session.agenda[session.current_topic_index] if session.agenda and 0 <= session.current_topic_index < len(session.agenda) else "")
+        _resolve_session_topic(session)
         or session.chapter_name
     )
-    query = f"{session.chapter_name} {topic}".strip()
+    query = (
+        f"Grade {getattr(session, 'grade', 11)} "
+        f"{str(exam_type or 'cbse').upper()} Mathematics "
+        f"chapter {session.chapter_name or topic} "
+        f"topic {topic} "
+        "PYQ study material worked examples"
+    ).strip()
     try:
-        return retrieve_context(query=query, exam_type=exam_type)
+        return retrieve_context(query=query, exam_type=exam_type, k=6)
     except Exception as error:
         print(f"Tutor RAG lookup failed ({type(error).__name__}): {error}")
         return ""
@@ -398,6 +520,19 @@ def _rag_context_for_session(session: StudentSession, exam_type: str) -> str:
 
 async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any]) -> dict:
     session: StudentSession = orchestrator.get_or_create_session(req.session_id)
+    route_context = dict(req.context or {})
+    if "grade" not in route_context and input_data.get("grade") is not None:
+        route_context["grade"] = input_data.get("grade")
+    if "exam" not in route_context and req.get_exam():
+        route_context["exam"] = req.get_exam()
+
+    if route_context.get("grade") is not None:
+        try:
+            session.grade = int(route_context["grade"])
+        except (TypeError, ValueError):
+            pass
+    session.exam = "jee" if str(route_context.get("exam", req.get_exam())).lower() == "jee" else "cbse"
+
     action = _normalize_action(input_data)
     _ensure_class_timer(session, action)
     if _is_class_time_over(session) and action != "start":
@@ -406,7 +541,6 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
     session.current_topic = (
         input_data.get("topic")
         or input_data.get("chapter")
-        or input_data.get("question")
         or session.current_topic
         or "JEE Mathematics"
     )
@@ -428,9 +562,9 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         session.session_id,
         user_message,
         mode=req.mode,
-        context=req.context or {},
+        context=route_context,
     )
-    session.exam = req.get_exam()
+    session.current_topic = _resolve_session_topic(session)
     rag_context = _rag_context_for_session(session, session.exam)
     diagnostic_result = None
     nudge = None
@@ -469,26 +603,34 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         topic=session.current_topic or session.chapter_name,
         actions=whiteboard_actions,
         variation=session.questions_asked,
+        rag_context=rag_context,
     )
     session.questions_asked += 1
+    whiteboard_actions = _ensure_board_header_actions(session, whiteboard_actions)
     steps = _steps_from_actions(whiteboard_actions)
     if not steps:
-        fallback_actions = _topic_problem_actions(session.current_topic or session.chapter_name, variation=session.questions_asked)
-        whiteboard_actions = fallback_actions
+        fallback_actions = _topic_problem_actions(
+            session.current_topic or session.chapter_name,
+            variation=session.questions_asked,
+            rag_context=rag_context,
+        )
+        whiteboard_actions = _ensure_board_header_actions(session, fallback_actions)
         steps = _steps_from_actions(whiteboard_actions)
 
+    chapter_title = session.chapter_name or session.current_topic or "Current Chapter"
+    topic_title = session.current_topic or chapter_title
     return {
         "type": "exam" if route == "proctor_agent" else ("teach" if route != "diagnostic_agent" else "evaluation"),
-        "chapter": session.current_topic,
-        "topic": session.current_topic,
-        "concept": session.current_topic,
+        "chapter": chapter_title,
+        "topic": topic_title,
+        "concept": topic_title,
         "explanation": spoken_response,
         "voice_text": spoken_response,
         "spoken_response": spoken_response,
         "steps": steps,
         "whiteboard_actions": whiteboard_actions,
         "whiteboard": {
-            "title": session.current_topic or "Smart Blackboard",
+            "title": f"{chapter_title} | {topic_title}",
             "subtitle": "Arvind Sir's smart blackboard",
             "chalk_lines": steps,
             "actions": whiteboard_actions,

@@ -215,13 +215,18 @@ class LiveTutorBridge:
             rag_context=source_material or "No RAG context provided.",
         )
 
+        agenda_list = getattr(self.student_session, "agenda", [])
+        agenda_text = "\n".join(f"{i+1}. {topic}" for i, topic in enumerate(agenda_list)) if agenda_list else f"1. {topic_title}"
+
         system_prompt = (
             f"{resolved_system_prompt}\n\n"
-            "LIVE AUDIO RULES:\n"
-            "Reply directly to the student in a natural live tutoring voice.\n"
-            "Keep each turn short, slow, and interactive.\n"
-            "If the student interrupts, stop speaking and listen.\n"
-            "Do not mention internal routing, diagnostics, or hidden nudges.\n\n"
+            "LIVE AUDIO & CLASSROOM RULES:\n"
+            "1. YOU ARE THE DRIVER: You are leading a continuous 45-minute class. DO NOT wait for the user to explicitly ask to move on.\n"
+            "2. AUTO-TRANSITION: When a concept is fully explained and the student understands, seamlessly and automatically transition to the next topic on the agenda below.\n"
+            f"CLASS AGENDA (Teach sequentially):\n{agenda_text}\n\n"
+            "3. TEACHING FLOW: For each concept: Introduce it -> Explain the formula -> Walk through step-by-step examples -> Solve an exercise from the textbook with them.\n"
+            "4. Keep each spoken turn short, slow, and interactive. Pause to ensure they are following before proceeding to the next step.\n"
+            "5. Do not mention internal routing, diagnostics, or hidden nudges.\n\n"
             f"Current chapter focus: {topic_title}\n"
             f"Current classroom memory:\n{memory_context}\n\n"
             f"Curriculum grounding:\n{curriculum_grounding}"
@@ -245,15 +250,12 @@ class LiveTutorBridge:
             realtime_input_config=live_types.RealtimeInputConfig(
                 activity_handling=live_types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
                 turn_coverage=live_types.TurnCoverage.TURN_INCLUDES_ONLY_ACTIVITY,
-                # Ultra low latency interruption: minimal padding and silence window.
                 automatic_activity_detection=live_types.AutomaticActivityDetection(
                     prefix_padding_ms=20,
                     silence_duration_ms=300,
                 )
             ),
-            session_resumption=live_types.SessionResumptionConfig(
-                handle=None,
-            ),
+            session_resumption=live_types.SessionResumptionConfig(handle=None),
             context_window_compression=live_types.ContextWindowCompressionConfig(
                 trigger_tokens=24000,
                 sliding_window=live_types.SlidingWindow(target_tokens=12000),
@@ -273,6 +275,14 @@ class LiveTutorBridge:
         self._sync_student_session()
         effective_mode = mode or self._active_mode
         effective_context = context if isinstance(context, dict) else self._active_context
+        if not isinstance(effective_context, dict):
+            effective_context = {}
+        if effective_context.get("grade") is not None:
+            try:
+                self.student_session.grade = int(effective_context["grade"])
+            except (TypeError, ValueError):
+                pass
+        self.student_session.exam = "jee" if str(effective_context.get("exam", self.student_session.exam)).lower() == "jee" else "cbse"
         action = self._extract_action_from_message(message)
 
         if effective_mode == "class":
@@ -286,28 +296,24 @@ class LiveTutorBridge:
             mode=effective_mode,
             context=effective_context,
         )
-        if isinstance(effective_context, dict):
-            self.student_session.exam = "jee" if str(effective_context.get("exam", "")).lower() == "jee" else "cbse"
-        else:
-            self.student_session.exam = getattr(self.student_session, "exam", "cbse")
+        self.student_session.current_topic = self._resolve_current_topic()
         nudge = None
         diagnostic_result = None
         proctor_payload = None
         rag_context = ""
+        
+        # ✅ FIX 1: Lock RAG query to Grade 10 and NCERT Textbooks dynamically
         if effective_mode == "class":
-            topic = (
-                self.student_session.current_topic
-                or (
-                    self.student_session.agenda[self.student_session.current_topic_index]
-                    if self.student_session.agenda
-                    and 0 <= self.student_session.current_topic_index < len(self.student_session.agenda)
-                    else ""
-                )
-                or self.student_session.chapter_name
-            )
-            query = f"{self.student_session.chapter_name} {topic}".strip()
+            topic = self._resolve_current_topic()
+            query = (
+                f"Grade {getattr(self.student_session, 'grade', 10)} "
+                f"{str(self.student_session.exam or 'cbse').upper()} Mathematics "
+                f"chapter {self.student_session.chapter_name or topic} "
+                f"topic {topic} {message} "
+                "NCERT textbook exercise problems and concepts"
+            ).strip()
             try:
-                rag_context = rag_get_context(query=query, exam_type=self.student_session.exam)
+                rag_context = rag_get_context(query=query, exam_type=self.student_session.exam, k=6)
             except Exception as error:
                 print(f"Live RAG lookup failed ({type(error).__name__}): {error}")
                 rag_context = ""
@@ -335,6 +341,13 @@ class LiveTutorBridge:
             spoken_response = tutor_payload.get("spoken_response", "")
             whiteboard_actions = tutor_payload.get("whiteboard_actions", [])
         else:
+            # ✅ FIX 2: Explicitly order the AI Agent to solve the problem on the board
+            if effective_mode == "class":
+                candidates = self._extract_problem_candidates(rag_context)
+                if candidates:
+                    base_prob = candidates[self.student_session.questions_asked % len(candidates)]
+                    nudge = (nudge or "") + f"\nSYSTEM INSTRUCTION: You MUST write the following problem on the whiteboard and solve it mathematically step-by-step using 'write_equation' actions. Problem: {base_prob}"
+
             tutor_payload = await self.tutor_agent.process_message(
                 self.student_session,
                 message,
@@ -345,17 +358,21 @@ class LiveTutorBridge:
             whiteboard_actions = tutor_payload.get("whiteboard_actions", [])
 
         whiteboard_actions = self._prepare_problem_whiteboard_actions(
-            topic=self.student_session.current_topic or self.student_session.chapter_name,
+            topic=self._resolve_current_topic(),
             actions=whiteboard_actions,
             variation=self.student_session.questions_asked,
+            rag_context=rag_context,
         )
         self.student_session.questions_asked += 1
+        whiteboard_actions = self._ensure_board_header_actions(whiteboard_actions)
 
         if not self._has_action_text(whiteboard_actions):
             whiteboard_actions = self._topic_problem_actions(
-                topic=self.student_session.current_topic or self.student_session.chapter_name,
+                topic=self._resolve_current_topic(),
                 variation=self.student_session.questions_asked,
+                rag_context=rag_context,
             )
+            whiteboard_actions = self._ensure_board_header_actions(whiteboard_actions)
         state = self._build_agent_state(whiteboard_actions)
 
         if append_user:
@@ -434,8 +451,38 @@ class LiveTutorBridge:
         session = self.orchestrator.get_or_create_session(self.session_id)
         self.student_session = session
         session_record = session_service.get_session(self.session_id)
-        if session_record and session_record.topic_title:
+        if session_record and session_record.topic_title and not self.student_session.current_topic:
             self.student_session.current_topic = session_record.topic_title
+        if session_record and session_record.grade:
+            self.student_session.grade = int(session_record.grade)
+
+    def _resolve_current_topic(self) -> str:
+        if self.student_session.current_topic:
+            return str(self.student_session.current_topic)
+        if self.student_session.agenda and 0 <= self.student_session.current_topic_index < len(self.student_session.agenda):
+            return str(self.student_session.agenda[self.student_session.current_topic_index])
+        return str(self.student_session.chapter_name or "Current Topic")
+
+    def _ensure_board_header_actions(self, actions: list[dict]) -> list[dict]:
+        chapter = str(self.student_session.chapter_name or "Current Chapter")
+        topic = self._resolve_current_topic()
+        has_chapter = False
+        has_topic = False
+        for action in actions:
+            text = self._action_text(action).lower()
+            if text.startswith("chapter:"):
+                has_chapter = True
+            if text.startswith("topic:"):
+                has_topic = True
+
+        header: list[dict] = []
+        if not has_chapter:
+            header.append({"action": "draw_text", "content": f"Chapter: {chapter}"})
+        if not has_topic:
+            header.append({"action": "draw_text", "content": f"Topic: {topic}"})
+        if not header:
+            return actions
+        return [*header, *actions]
 
     def _build_agent_state(self, whiteboard_actions: list[dict]) -> dict:
         chalk_lines = []
@@ -456,15 +503,18 @@ class LiveTutorBridge:
             if isinstance(content, str) and content.strip():
                 chalk_lines.append(content.strip())
 
+        chapter_title = self.student_session.chapter_name or self._resolve_current_topic()
+        topic_title = self._resolve_current_topic()
+
         return {
             "stage": self.student_session.active_phase,
-            "topic_title": self.student_session.current_topic,
+            "topic_title": topic_title,
             "difficulty_level": self.student_session.difficulty_level,
             "mistake_history": self.student_session.mistake_history,
             "current_problem": self.student_session.current_problem,
             "whiteboard_actions": whiteboard_actions,
             "whiteboard": {
-                "title": self.student_session.current_topic or "Live JEE tutoring",
+                "title": f"{chapter_title} | {topic_title}",
                 "subtitle": "Arvind Sir's smart blackboard",
                 "chalk_lines": chalk_lines,
                 "actions": whiteboard_actions,
@@ -680,9 +730,6 @@ class LiveTutorBridge:
                 "good morning",
                 "good evening",
                 "welcome back",
-                "grade ",
-                "chapter:",
-                "agenda",
             )
         )
 
@@ -735,6 +782,10 @@ class LiveTutorBridge:
         if not actions:
             return True
 
+        # ✅ FIX 3: Trust the AI! If it returns more than 2 steps, it's solving the math!
+        if len(actions) > 2:
+            return False
+
         has_equation_action = any(
             str(action.get("action", "")).strip().lower()
             in {"write_equation", "plot_curve", "draw_coordinate_axes", "draw_line", "draw_circle"}
@@ -769,7 +820,91 @@ class LiveTutorBridge:
     def _has_action_text(self, actions: list[dict[str, object]]) -> bool:
         return any(self._action_text(action) for action in actions if isinstance(action, dict))
 
-    def _topic_problem_actions(self, topic: str, variation: int = 0) -> list[dict]:
+    def _extract_problem_candidates(self, rag_context: str, limit: int = 8) -> list[str]:
+        if not isinstance(rag_context, str) or not rag_context.strip():
+            return []
+
+        candidates: list[str] = []
+        seen: set[str] = set()
+        lines = re.split(r"[\r\n]+", rag_context)
+        for raw_line in lines:
+            line = str(raw_line or "").strip()
+            if not line:
+                continue
+
+            line = re.sub(r"^\s*(q(?:uestion)?|ex(?:ample)?)\s*[\d.:-]*\s*", "", line, flags=re.IGNORECASE)
+            line = re.sub(r"\s+", " ", line).strip(" -:;")
+            lowered = line.lower()
+            if len(line) < 14 or len(line) > 220:
+                continue
+            if not (
+                "?" in line
+                or any(
+                    token in lowered
+                    for token in (
+                        "solve",
+                        "find",
+                        "evaluate",
+                        "prove",
+                        "show",
+                        "simplify",
+                        "determine",
+                        "calculate",
+                    )
+                )
+            ):
+                continue
+
+            key = lowered[:180]
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(line)
+            if len(candidates) >= limit:
+                break
+        return candidates
+
+    def _generate_similar_problem(self, problem: str, seed: int) -> str:
+        if not problem:
+            return "Solve a similar variation for this concept."
+
+        delta = (abs(int(seed)) % 3) + 1
+
+        def _replace(match: re.Match) -> str:
+            value = int(match.group(0))
+            adjusted = value + delta if value >= 0 else value - delta
+            return str(adjusted)
+
+        mutated = re.sub(r"(?<![A-Za-z])\d+(?![A-Za-z])", _replace, problem)
+        if mutated == problem:
+            return f"Solve a similar textbook variation of: {problem}"
+        return mutated
+
+    # ✅ FIX 4: Entirely removed fake dummy steps!
+    def _pyq_problem_actions(self, topic: str, rag_context: str, variation: int = 0) -> list[dict]:
+        sources = ["NCERT Textbook", "CBSE Exercise", "Similar Practice Problem"]
+        source_label = sources[variation % len(sources)]
+        candidates = self._extract_problem_candidates(rag_context)
+
+        if candidates:
+            base_problem = candidates[variation % len(candidates)]
+        else:
+            base_problem = f"Solve one step-by-step problem based on {topic or 'the current topic'}."
+
+        if source_label == "Similar Practice Problem":
+            prompt = self._generate_similar_problem(base_problem, variation + 1)
+        elif source_label in ["NCERT Textbook", "CBSE Exercise"] and len(candidates) > 1:
+            prompt = candidates[(variation + 1) % len(candidates)]
+        else:
+            prompt = base_problem
+
+        return [
+            {"action": "draw_text", "content": f"Source: {source_label}"},
+            {"action": "draw_text", "content": f"Problem: {prompt}"},
+            {"action": "draw_text", "content": "Solving step-by-step..."}
+        ]
+
+    def _topic_problem_actions(self, topic: str, variation: int = 0, rag_context: str = "") -> list[dict]:
         lowered = (topic or "").lower()
         alt = variation % 2
 
@@ -830,18 +965,14 @@ class LiveTutorBridge:
                 {"action": "write_equation", "content": "Transitive: Check pairs to conclude"},
             ]
 
-        return [
-            {"action": "draw_text", "content": f"Problem on: {topic or 'current topic'}"},
-            {"action": "write_equation", "content": "Given: 2x + 5 = 17"},
-            {"action": "write_equation", "content": "2x = 17 - 5 = 12"},
-            {"action": "write_equation", "content": "x = 6"},
-        ]
+        return self._pyq_problem_actions(topic=topic, rag_context=rag_context, variation=variation)
 
     def _prepare_problem_whiteboard_actions(
         self,
         topic: str,
         actions: list[dict[str, object]],
         variation: int,
+        rag_context: str = "",
     ) -> list[dict]:
         cleaned: list[dict] = []
         for action in actions:
@@ -861,7 +992,7 @@ class LiveTutorBridge:
             cleaned.append(dict(action))
 
         if self._needs_problem_board(cleaned):
-            return self._topic_problem_actions(topic, variation=variation)
+            return self._topic_problem_actions(topic, variation=variation, rag_context=rag_context)
         return cleaned
 
     def _extract_action_from_message(self, message: str) -> str:

@@ -1,10 +1,9 @@
 from __future__ import annotations
-
 import json
-
 from ..models.session import SessionPhase, StudentSession
-from ..tutor_brain.curriculum import get_jee_chapter_plan, get_jee_classroom_flow
 
+# ✅ Use the new dynamic Firestore loader instead of hardcoded JEE functions
+from ..tutor_brain.curriculum import list_chapters
 
 class Orchestrator:
     ANSWER_KEYWORDS = ("answer is", "submitted", "final")
@@ -22,33 +21,65 @@ class Orchestrator:
     def _normalize_grade(self, context: dict | None, fallback: int) -> int:
         raw_grade = (context or {}).get("grade", fallback)
         try:
-            parsed = int(raw_grade)
+            return int(raw_grade) # ✅ Stop forcing Grade 11! Respect the actual grade.
         except (TypeError, ValueError):
             return fallback
-        return 12 if parsed == 12 else 11
 
     def _initialize_grade_curriculum(self, session: StudentSession, grade: int) -> None:
-        chapter_plan = get_jee_chapter_plan(grade, 0)
         session.grade = grade
-        session.current_chapter_index = int(chapter_plan["chapter_index"])
-        session.chapter_name = str(chapter_plan["chapter"])
-        session.agenda = [str(topic) for topic in chapter_plan["agenda"]]
+        exam = getattr(session, "exam", "cbse")
+        
+        # ✅ Fetch the correct syllabus directly from Firestore
+        chapters = list_chapters(grade, exam)
+
+        if not chapters:
+            session.current_chapter_index = 0
+            session.chapter_name = "Welcome"
+            session.agenda = ["Introduction"]
+            session.current_topic_index = 0
+            session.current_topic = "Introduction"
+            return
+
+        first_chapter = chapters[0]
+        session.current_chapter_index = 0
+        
+        # Handle both CBSE ("title") and JEE ("chapter") formats
+        session.chapter_name = first_chapter.get("title") or first_chapter.get("chapter") or "Chapter 1"
+
+        agenda = []
+        if "agenda" in first_chapter:
+            agenda = [str(a) for a in first_chapter["agenda"]]
+        elif "concepts" in first_chapter:
+            agenda = [str(c.get("title", "")) for c in first_chapter["concepts"]]
+
+        session.agenda = agenda if agenda else [session.chapter_name]
         session.current_topic_index = 0
-        session.current_topic = session.agenda[0] if session.agenda else session.chapter_name
+        session.current_topic = session.agenda[0]
 
     def _advance_to_next_topic(self, session: StudentSession) -> str:
         if not session.agenda:
-            self._initialize_grade_curriculum(session, getattr(session, "grade", 11))
+            self._initialize_grade_curriculum(session, getattr(session, "grade", 10))
 
         session.current_topic_index += 1
+        
         if session.current_topic_index >= len(session.agenda):
+            exam = getattr(session, "exam", "cbse")
+            grade = getattr(session, "grade", 10)
+            chapters = list_chapters(grade, exam)
             next_chapter_index = session.current_chapter_index + 1
-            chapter_flow = get_jee_classroom_flow(getattr(session, "grade", 11))
-            if next_chapter_index < len(chapter_flow):
-                next_plan = get_jee_chapter_plan(session.grade, next_chapter_index)
-                session.current_chapter_index = int(next_plan["chapter_index"])
-                session.chapter_name = str(next_plan["chapter"])
-                session.agenda = [str(topic) for topic in next_plan["agenda"]]
+            
+            if next_chapter_index < len(chapters):
+                next_chapter = chapters[next_chapter_index]
+                session.current_chapter_index = next_chapter_index
+                session.chapter_name = next_chapter.get("title") or next_chapter.get("chapter") or f"Chapter {next_chapter_index + 1}"
+                
+                agenda = []
+                if "agenda" in next_chapter:
+                    agenda = [str(a) for a in next_chapter["agenda"]]
+                elif "concepts" in next_chapter:
+                    agenda = [str(c.get("title", "")) for c in next_chapter["concepts"]]
+
+                session.agenda = agenda if agenda else [session.chapter_name]
                 session.current_topic_index = 0
             else:
                 session.current_topic_index = max(0, len(session.agenda) - 1)
@@ -79,8 +110,10 @@ class Orchestrator:
         message = message_text.lower()
         exam = str((context or {}).get("exam", "")).lower()
         mode_normalized = (mode or "").lower()
-        grade = self._normalize_grade(context, getattr(session, "grade", 11))
+        
+        # ✅ Ensure Exam and Grade respect the frontend
         session.exam = "jee" if exam == "jee" else "cbse"
+        grade = self._normalize_grade(context, getattr(session, "grade", 10))
 
         action = ""
         if message_text.startswith("{") and message_text.endswith("}"):
@@ -94,6 +127,9 @@ class Orchestrator:
             action = "next"
         elif message in {"start", "begin"}:
             action = "start"
+        # ✅ NEW: Allow natural voice affirmations to trigger progression
+        elif len(message) < 25 and any(phrase in message for phrase in ["understood", "got it", "makes sense", "move on", "continue", "go ahead", "clear"]):
+            action = "next"
 
         if action == "start":
             self._initialize_grade_curriculum(session, grade)
@@ -102,7 +138,7 @@ class Orchestrator:
         elif not session.agenda or session.current_topic is None:
             self._initialize_grade_curriculum(session, grade)
 
-        if exam == "jee" and mode_normalized in {"mock_test", "exam"}:
+        if session.exam == "jee" and mode_normalized in {"mock_test", "exam"}:
             return "proctor_agent"
 
         if phase == SessionPhase.TEACHING:

@@ -1,0 +1,20 @@
+[
+  {
+    "chapter": "Sets",
+    "agenda": [
+      "Set notation and representations",
+      "Types of sets and subset relations",
+      "Operations on sets",
+      "Venn diagram applications"
+    ]
+  },
+  {
+    "chapter": "Relations and Functions",
+    "agenda": [
+      "Ordered pairs and relations",
+      "Domain, codomain, and range",
+      "Types of functions",
+      "Composition and inverse basics"
+    ]
+  }
+]

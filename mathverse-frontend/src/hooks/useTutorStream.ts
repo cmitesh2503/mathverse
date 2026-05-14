@@ -102,7 +102,7 @@ export function useTutorStream({ sessionId, examMode, onResponse }: Args) {
 
       try {
         const requestedGrade = typeof input.grade === "number" ? input.grade : undefined;
-        const requestedExamMode = requestedGrade ? "jee" : examMode;
+        //const requestedExamMode = requestedGrade ? "jee" : examMode;
         const stream =
           isAutoContinueTurn && prefetchedStreamRef.current
             ? prefetchedStreamRef.current
@@ -110,7 +110,7 @@ export function useTutorStream({ sessionId, examMode, onResponse }: Args) {
                 session_id: sessionId,
                 input,
                 context: {
-                  exam: requestedExamMode,
+                  exam:  examMode,
                   grade: requestedGrade,
                 },
               });

@@ -80,7 +80,7 @@ def get_retriever(exam_type: str = "cbse"):
 
 def get_context(query: str, exam_type: str = "cbse", k: int = 3) -> str:
     retriever = get_retriever(exam_type=exam_type)
-    docs = retriever.get_relevant_documents(query)
+    docs = retriever.invoke(query)
     return "\n\n".join((doc.page_content or "").strip() for doc in docs[:k] if getattr(doc, "page_content", None))
 
 

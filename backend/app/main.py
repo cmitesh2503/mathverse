@@ -135,6 +135,9 @@ async def tutor_ws(websocket: WebSocket):
     live_connected = False
     initial_mode = (websocket.query_params.get("mode") or "").lower()
     initial_exam = (websocket.query_params.get("exam") or "").lower()
+    with contextlib.suppress(Exception):
+        live_bridge.student_session.grade = int(session_record.grade)
+    live_bridge.student_session.exam = "jee" if initial_exam == "jee" else "cbse"
 
     async def ensure_live_bridge() -> bool:
         nonlocal live_connected
@@ -192,7 +195,18 @@ async def tutor_ws(websocket: WebSocket):
     #asyncio.create_task(asyncio.to_thread(init_cbse))
 
     if not (initial_mode == "exam" and initial_exam == "jee") and not session_record.transcript:
-        await live_bridge.send_text_turn("ready")
+        bootstrap_context: dict[str, object] = {}
+        if initial_exam:
+            bootstrap_context["exam"] = initial_exam
+        grade_param = websocket.query_params.get("grade")
+        if grade_param is not None:
+            with contextlib.suppress(ValueError):
+                bootstrap_context["grade"] = int(grade_param)
+        await live_bridge.send_text_turn(
+            "ready",
+            mode=initial_mode or None,
+            context=bootstrap_context or None,
+        )
 
     try:
         while True:

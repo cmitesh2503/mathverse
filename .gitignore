@@ -207,3 +207,6 @@ marimo/_lsp/
 __marimo__/
 backend/app/data/class_sessions.json
 backend/app/credentials/vertex.json
+backend/app/data/pdfs/*.pdf
+backend/app/data/pdfs/
+backend/app/core/firebase_key.json

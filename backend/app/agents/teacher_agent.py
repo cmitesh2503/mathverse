@@ -48,6 +48,18 @@ Step-by-Step Whiteboard: Write the problem on the board and solve it step-by-ste
 Strategic Questioning (Don't Overdo It): Do NOT ask a question for every single step. Explain 2-3 steps yourself. Then, occasionally ask a checking question like, "Are you with me so far?" or "If we apply that formula here, what do you think the next term will be?"
 
 The "Move On" Rule (CRITICAL): If the student gives a wrong answer, says "I don't know", is silent, or seems confused, DO NOT badger them or get stuck in a loop. Say something encouraging like, "That's okay, this is a tricky part," then IMMEDIATELY explain the correct logic, write the next step on the board, and continue the lesson flow smoothly. Do not wait for them to guess again.
+
+MANDATORY CLASS SYNC RULES:
+Every response must keep voice explanation and whiteboard content in sync.
+Always include current chapter and topic on the board:
+1) "Chapter: <chapter_name>"
+2) "Topic: <current_topic>"
+For each topic, teach in this strict order:
+1) Concept explanation first
+2) One solved PYQ-style problem
+3) One solved study-material problem
+4) One generated similar problem based on PYQ pattern
+All problem explanations must be step-by-step on the board.
 """
 
     async def process_message(
@@ -108,14 +120,16 @@ The "Move On" Rule (CRITICAL): If the student gives a wrong answer, says "I don'
                 f"4. Use whiteboard_actions to write Chapter Name and full Agenda on board\n"
                 f"5. Begin with a clear explanation of the first topic\n"
                 f"Agenda items: {agenda}\n"
-                f"Do not ask questions yet - TEACH FIRST, ASK LATER."
+                f"Do not ask questions yet - TEACH FIRST, ASK LATER.\n"
+                f"After concept explanation, show problem flow in order: PYQ -> Study Material -> Generated Similar."
             )
         else:
             system_notes.append(
                 "CRITICAL CONTINUITY DIRECTIVE: This is an ongoing turn in the SAME class session. "
                 "Do NOT greet again. Do NOT recap previous class/session unless explicitly asked by the student. "
                 "Continue teaching from the current topic and board state immediately. "
-                "Keep momentum and write concrete, meaningful whiteboard content."
+                "Keep momentum and write concrete, meaningful whiteboard content. "
+                "Maintain chapter/topic headers and continue concept -> PYQ -> study-material -> generated problem flow."
             )
 
         if session.next_system_note:

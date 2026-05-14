@@ -64,7 +64,10 @@ const SILENCE_TIMEOUT_MS = 15000;
 const SILENCE_RMS_THRESHOLD = 0.004;
 const CLASS_SESSION_DURATION_SECONDS = 45 * 60;
 
-function tutorWsUrl(sessionId: string, grade: 11 | 12) {
+const CLASSROOM_GRADES = [10, 11, 12] as const;
+type ClassroomGrade = (typeof CLASSROOM_GRADES)[number];
+
+function tutorWsUrl(sessionId: string, grade: ClassroomGrade) {
   const base = API_BASE_URL.replace(/^http/, "ws").replace(/\/$/, "");
   return `${base}/ws/tutor?session_id=${encodeURIComponent(sessionId)}&grade=${grade}&subject=Mathematics&mode=class&exam=jee`;
 }
@@ -133,7 +136,7 @@ export default function Classroom({ onNavigate }: Props) {
   const recordTutorSession = useTutorStore((state) => state.recordTutorSession);
   const recordResponse = useTutorStore((state) => state.recordResponse);
   const [answer, setAnswer] = useState("");
-  const [selectedGrade, setSelectedGrade] = useState<11 | 12>(11);
+  const [selectedGrade, setSelectedGrade] = useState<ClassroomGrade>(11);
   const [classStarted, setClassStarted] = useState(false);
   const [micActive, setMicActive] = useState(false);
   const [nextCoolingDown, setNextCoolingDown] = useState(false);
@@ -618,11 +621,11 @@ export default function Classroom({ onNavigate }: Props) {
             <p className="mt-2 text-sm text-slate-300">Select grade before Arvind Sir starts the session and chapter agenda.</p>
 
             <div className="mt-5 grid grid-cols-2 gap-3">
-              {[11, 12].map((grade) => (
+              {CLASSROOM_GRADES.map((grade) => (
                 <button
                   key={grade}
                   type="button"
-                  onClick={() => setSelectedGrade(grade as 11 | 12)}
+                  onClick={() => setSelectedGrade(grade)}
                   className={`rounded-lg border px-4 py-3 text-sm font-semibold transition ${
                     selectedGrade === grade
                       ? "border-cyan-300 bg-cyan-400 text-slate-950"
