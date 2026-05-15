@@ -30,6 +30,9 @@ class Orchestrator:
         session.grade = grade
         exam = getattr(session, "exam", "cbse")
         chapters = list_chapters(grade, exam)
+        session.topic_problem_cursors = {}
+        session.topic_problem_history = {}
+        session.topic_problem_quotas = {}
 
         if not chapters:
             session.current_chapter_index = 0

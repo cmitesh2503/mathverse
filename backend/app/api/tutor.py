@@ -122,6 +122,7 @@ def _spoken_from_steps(
         for line in filtered
         if line.lower().startswith("step ")
         or line.lower().startswith("problem:")
+        or line.lower().startswith("exercise:")
         or line.lower().startswith("final answer:")
         or line.lower().startswith("diagram:")
     ]
@@ -324,62 +325,259 @@ def _generate_similar_problem(problem: str, seed: int) -> str:
 
     mutated = re.sub(r"(?<![A-Za-z])\d+(?![A-Za-z])", _replace, problem)
     if mutated == problem:
-        return f"Solve a similar PYQ-style variation of: {problem}"
+        return f"Solve a similar PYQ-style variation {seed}: {problem}"
     return mutated
 
 
-def _pyq_problem_actions(topic: str, rag_context: str, variation: int = 0) -> list[dict[str, Any]]:
-    lowered_context = (rag_context or "").lower()
-    if "ncert" in lowered_context or "cbse" in lowered_context:
-        sources = ["NCERT Example", "NCERT Exercise", "Similar NCERT Practice"]
-    else:
-        sources = ["PYQ", "Study Material", "Generated from PYQ Pattern"]
-    source_label = sources[variation % len(sources)]
+def _problem_key(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
+def _problem_prompt_from_actions(actions: list[dict[str, Any]]) -> str:
+    for action in actions:
+        text = _action_text(action)
+        if not text:
+            continue
+        if text.lower().startswith("problem:"):
+            return text.split(":", 1)[1].strip()
+    return ""
+
+
+def _word_problem_target(prompt: str) -> str:
+    question = str(prompt or "").strip()
+    lowered = question.lower()
+    match = re.search(
+        r"\b(find|determine|calculate|evaluate|state|show|prove|what is|what are|how many)\b\s*(.+?)(?:\?|$)",
+        lowered,
+    )
+    if match:
+        target = match.group(2).strip(" .,:;")
+        if target:
+            return target
+    if "what are q and r" in lowered:
+        return "the quotient q and remainder r"
+    return "the exact quantity asked in the question"
+
+
+def _is_word_problem(prompt: str) -> bool:
+    text = str(prompt or "").strip()
+    if not text:
+        return False
+    lowered = text.lower()
+    token_count = len(text.split())
+    if token_count < 10:
+        return False
+    if any(symbol in text for symbol in ("=", "{", "}", "^", "+", "-", "*", "/", "subset", "intersection", "sqrt(")):
+        return False
+    if re.search(r"\b\d*[a-z]\s*[+\-*/]\s*[a-z]\b", lowered):
+        return False
+    return any(
+        keyword in lowered
+        for keyword in (
+            "student",
+            "person",
+            "train",
+            "minutes",
+            "hours",
+            "distance",
+            "money",
+            "rupees",
+            "apples",
+            "books",
+            "class",
+            "circular path",
+            "starting point",
+            "how many",
+            "what is",
+        )
+    )
+
+
+def _clean_step_text(step: str) -> str:
+    cleaned = str(step or "").strip()
+    cleaned = re.sub(r"(?i)^step\s*\d+\s*[:.)-]?\s*", "", cleaned).strip()
+    return cleaned
+
+
+def _solution_actions(
+    *,
+    exercise_label: str,
+    problem_number: str,
+    prompt: str,
+    solved_steps: list[str],
+    answer: str,
+    source_label: str,
+    diagram_hint: str | None = None,
+) -> list[dict[str, Any]]:
+    steps = [_clean_step_text(step) for step in solved_steps if _clean_step_text(step)]
+    actions: list[dict[str, Any]] = [
+        {"action": "draw_text", "content": f"Exercise: {exercise_label} | Problem: {problem_number}"},
+        {"action": "draw_text", "content": f"Problem: {prompt}"},
+        {"action": "draw_text", "content": f"Source: {source_label}"},
+    ]
+    if diagram_hint:
+        actions.append({"action": "draw_text", "content": f"Diagram: {diagram_hint}"})
+
+    offset = 0
+    if _is_word_problem(prompt):
+        target = _word_problem_target(prompt)
+        actions.append(
+            {
+                "action": "draw_text",
+                "content": "Step 1: Understand the word problem by converting the story into mathematical quantities.",
+            }
+        )
+        actions.append({"action": "draw_text", "content": f"Step 2: Identify what to find: {target}."})
+        offset = 2
+
+    for index, step in enumerate(steps[:10], start=1):
+        actions.append({"action": "draw_text", "content": f"Step {index + offset}: {step}"})
+
+    if answer:
+        actions.append({"action": "draw_text", "content": f"Final answer: {answer}"})
+    return actions
+
+
+def _topic_state_key(session: StudentSession) -> str:
+    chapter = str(session.chapter_name or "").strip().lower()
+    topic = _resolve_session_topic(session).strip().lower()
+    return f"{chapter}|{topic}"
+
+
+def _topic_problem_quota(topic: str, rag_context: str) -> int:
     candidates = _extract_problem_candidates(rag_context)
     topic_candidates = _best_topic_candidates(candidates, topic=topic, chapter=topic)
-
     if topic_candidates:
-        base_problem = topic_candidates[variation % len(topic_candidates)]
+        return max(2, min(8, len(topic_candidates)))
+    return 5
+
+
+def _next_problem_actions_for_session(
+    session: StudentSession,
+    *,
+    topic: str,
+    rag_context: str,
+    action: str,
+) -> list[dict[str, Any]]:
+    step_actions = {"next", "continue", "repeat", "next_exercise", "next_pdf_exercise", "start"}
+    topic_switch_actions = {"next_topic", "next_chapter", "skip_topic", "skip_chapter"}
+
+    cursors = dict(getattr(session, "topic_problem_cursors", {}) or {})
+    history = dict(getattr(session, "topic_problem_history", {}) or {})
+    quotas = dict(getattr(session, "topic_problem_quotas", {}) or {})
+    key = _topic_state_key(session)
+    seen = [entry for entry in history.get(key, []) if str(entry).strip()]
+    seen_set = set(seen)
+
+    if action in step_actions:
+        quota = int(quotas.get(key) or _topic_problem_quota(topic, rag_context))
+        quotas[key] = quota
+        if len(seen) >= quota and action != "start":
+            orchestrator._advance_to_next_topic(session)
+            topic = _resolve_session_topic(session)
+            rag_context = _rag_context_for_session(session, session.exam)
+            key = _topic_state_key(session)
+            seen = [entry for entry in history.get(key, []) if str(entry).strip()]
+            seen_set = set(seen)
+            quotas[key] = int(quotas.get(key) or _topic_problem_quota(topic, rag_context))
+    elif action in topic_switch_actions:
+        quotas[key] = int(quotas.get(key) or _topic_problem_quota(topic, rag_context))
+
+    cursor = int(cursors.get(key, 0))
+    selected_actions: list[dict[str, Any]] | None = None
+    selected_key = ""
+
+    for attempt in range(0, 18):
+        variation = cursor + attempt
+        candidate_actions = _topic_problem_actions(topic=topic, variation=variation, rag_context=rag_context)
+        prompt = _problem_prompt_from_actions(candidate_actions)
+        prompt_key = _problem_key(prompt or " ".join(_steps_from_actions(candidate_actions)[:2]))
+        if prompt_key and prompt_key not in seen_set:
+            selected_actions = candidate_actions
+            selected_key = prompt_key
+            cursor = variation + 1
+            break
+
+    if selected_actions is None:
+        selected_actions = _topic_problem_actions(topic=topic, variation=cursor, rag_context=rag_context)
+        selected_key = _problem_key(
+            _problem_prompt_from_actions(selected_actions) or " ".join(_steps_from_actions(selected_actions)[:2])
+        )
+        cursor += 1
+
+    if selected_key:
+        seen.append(selected_key)
+        history[key] = seen[-80:]
+    else:
+        history[key] = seen[-80:]
+    cursors[key] = cursor
+
+    session.topic_problem_cursors = cursors
+    session.topic_problem_history = history
+    session.topic_problem_quotas = quotas
+    return selected_actions
+
+
+def _voice_chunks_from_steps(spoken_response: str, steps: list[str]) -> list[str]:
+    candidate_chunks = [
+        str(step).strip()
+        for step in steps
+        if str(step).strip().lower().startswith(("exercise:", "problem:", "step ", "final answer:"))
+    ]
+    if candidate_chunks:
+        return candidate_chunks[:14]
+    fallback = _steps_from_spoken_response(spoken_response, limit=12)
+    return fallback if fallback else ([spoken_response] if spoken_response else [])
+
+
+def _pyq_problem_actions(topic: str, rag_context: str, variation: int = 0) -> list[dict[str, Any]]:
+    candidates = _extract_problem_candidates(rag_context)
+    topic_candidates = _best_topic_candidates(candidates, topic=topic, chapter=topic)
+    pool = topic_candidates or candidates
+    if pool:
+        base_problem = pool[variation % len(pool)]
+        cycle = variation // max(1, len(pool))
+        prompt = base_problem if cycle == 0 else _generate_similar_problem(base_problem, cycle + 1)
     else:
         base_problem = f"Solve one step-by-step problem based on {topic or 'the current topic'}."
-
-    if source_label in {"Generated from PYQ Pattern", "Similar NCERT Practice"}:
         prompt = _generate_similar_problem(base_problem, variation + 1)
-    elif source_label in {"Study Material", "NCERT Exercise"} and len(topic_candidates) > 1:
-        prompt = topic_candidates[(variation + 1) % len(topic_candidates)]
+
+    lowered_context = (rag_context or "").lower()
+    if "ncert" in lowered_context or "cbse" in lowered_context:
+        source_label = "NCERT Exercise"
+        exercise_label = "NCERT Practice"
     else:
-        prompt = base_problem
+        source_label = "PYQ Pattern"
+        exercise_label = "PYQ Practice"
 
     solved = build_exercise_solution(
         {
             "chapter_title": topic or "Mathematics",
-            "exercise": source_label,
+            "exercise": exercise_label,
             "number": str(variation + 1),
             "prompt": prompt,
         }
     )
     solved_steps = [str(step).strip() for step in solved.get("steps", []) if str(step).strip()]
     answer = str(solved.get("answer") or "").strip()
-
-    actions: list[dict[str, Any]] = [
-        {"action": "draw_text", "content": f"Problem: {prompt}"},
-        {"action": "draw_text", "content": f"Source: {source_label}"},
-    ]
-    for index, step in enumerate(solved_steps[:8], start=1):
-        actions.append({"action": "draw_text", "content": f"Step {index}: {step}"})
-    if answer:
-        actions.append({"action": "draw_text", "content": f"Final answer: {answer}"})
-    return actions
+    return _solution_actions(
+        exercise_label=exercise_label,
+        problem_number=str(variation + 1),
+        prompt=prompt,
+        solved_steps=solved_steps,
+        answer=answer,
+        source_label=source_label,
+        diagram_hint="Map known values, choose the theorem/formula, then simplify to the final result.",
+    )
 
 
 def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = "") -> list[dict[str, Any]]:
     lowered = (topic or "").lower()
 
     if "euclid" in lowered or "division lemma" in lowered:
-        divisors = [5, 7, 8, 9, 11, 13, 14, 15]
-        divisor = divisors[variation % len(divisors)]
-        quotient = 6 + (variation % 11)
-        remainder = 1 + ((variation * 3) % max(1, divisor - 1))
+        divisor = 7 + (variation % 23)
+        quotient = 8 + ((variation * 2) % 17)
+        remainder = 1 + ((variation * 5) % max(1, divisor - 1))
         dividend = divisor * quotient + remainder
         prompt = (
             f"Using Euclid's division lemma, write {dividend} in the form {divisor}q + r. "
@@ -395,20 +593,19 @@ def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = ""
         )
         solved_steps = [str(step).strip() for step in solved.get("steps", []) if str(step).strip()]
         answer = str(solved.get("answer") or "").strip()
-        actions: list[dict[str, Any]] = [
-            {"action": "draw_text", "content": f"Problem: {prompt}"},
-            {"action": "draw_text", "content": "Source: Chapter Exercise"},
-            {"action": "draw_text", "content": "Diagram: a = bq + r with quotient part and remainder part."},
-        ]
-        for index, step in enumerate(solved_steps[:8], start=1):
-            actions.append({"action": "draw_text", "content": f"Step {index}: {step}"})
-        if answer:
-            actions.append({"action": "draw_text", "content": f"Final answer: {answer}"})
-        return actions
+        return _solution_actions(
+            exercise_label="Euclid's Division Lemma",
+            problem_number=str(variation + 1),
+            prompt=prompt,
+            solved_steps=solved_steps,
+            answer=answer,
+            source_label="Chapter Exercise",
+            diagram_hint="Use a = bq + r and split dividend into quotient-part plus remainder.",
+        )
 
     if "hcf" in lowered or "lcm" in lowered or "euclid algorithm" in lowered:
-        hcf_base = 2 + (variation % 9)
-        hcf = 3 + (variation % 7)
+        hcf_base = 3 + (variation % 13)
+        hcf = 4 + (variation % 11)
         first = hcf * (2 * hcf_base + 5)
         second = hcf * (hcf_base + 4)
         if first == second:
@@ -424,25 +621,24 @@ def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = ""
         )
         solved_steps = [str(step).strip() for step in solved.get("steps", []) if str(step).strip()]
         answer = str(solved.get("answer") or "").strip()
-        actions: list[dict[str, Any]] = [
-            {"action": "draw_text", "content": f"Problem: {prompt}"},
-            {"action": "draw_text", "content": "Source: Chapter Exercise"},
-            {"action": "draw_text", "content": "Diagram: Division chain with decreasing remainders."},
-        ]
-        for index, step in enumerate(solved_steps[:8], start=1):
-            actions.append({"action": "draw_text", "content": f"Step {index}: {step}"})
-        if answer:
-            actions.append({"action": "draw_text", "content": f"Final answer: {answer}"})
-        return actions
+        return _solution_actions(
+            exercise_label="Revisiting HCF and LCM",
+            problem_number=str(variation + 1),
+            prompt=prompt,
+            solved_steps=solved_steps,
+            answer=answer,
+            source_label="Chapter Exercise",
+            diagram_hint="Create the Euclid remainder chain until remainder becomes zero.",
+        )
 
     if "decimal expansion" in lowered:
         if variation % 2 == 0:
-            pow2 = 3 + (variation % 4)
-            pow5 = 1 + (variation % 3)
+            pow2 = 3 + (variation % 6)
+            pow5 = 1 + (variation % 5)
             denominator = (2 ** pow2) * (5 ** pow5)
             numerator = 3 + (variation % 17)
         else:
-            denominator = (2 ** (2 + (variation % 3))) * (3 + (variation % 5))
+            denominator = (2 ** (2 + (variation % 5))) * (3 + (variation % 11))
             numerator = 5 + ((variation * 2) % 19)
         fraction = f"{numerator}/{denominator}"
         prompt = f"State whether {fraction} has a terminating decimal expansion or a non-terminating repeating decimal expansion."
@@ -456,22 +652,21 @@ def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = ""
         )
         solved_steps = [str(step).strip() for step in solved.get("steps", []) if str(step).strip()]
         answer = str(solved.get("answer") or "").strip()
-        actions: list[dict[str, Any]] = [
-            {"action": "draw_text", "content": f"Problem: {prompt}"},
-            {"action": "draw_text", "content": "Source: Chapter Exercise"},
-            {"action": "draw_text", "content": "Diagram: Prime factors of denominator determine decimal type."},
-        ]
-        for index, step in enumerate(solved_steps[:8], start=1):
-            actions.append({"action": "draw_text", "content": f"Step {index}: {step}"})
-        if answer:
-            actions.append({"action": "draw_text", "content": f"Final answer: {answer}"})
-        return actions
+        return _solution_actions(
+            exercise_label="Decimal Expansions",
+            problem_number=str(variation + 1),
+            prompt=prompt,
+            solved_steps=solved_steps,
+            answer=answer,
+            source_label="Chapter Exercise",
+            diagram_hint="Prime-factor tree of denominator: keep only 2 and 5 for terminating decimals.",
+        )
 
     if "irrational" in lowered:
-        radicals = [2, 3, 5, 7, 11]
+        radicals = [2, 3, 5, 7, 11, 13, 17]
         radicand = radicals[variation % len(radicals)]
-        coefficient = 2 + (variation % 9)
-        constant = 3 + ((variation * 2) % 11)
+        coefficient = 2 + (variation % 13)
+        constant = 3 + ((variation * 3) % 19)
         prompt = f"Show that {constant} + {coefficient}sqrt({radicand}) is irrational."
         solved = build_exercise_solution(
             {
@@ -483,73 +678,175 @@ def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = ""
         )
         solved_steps = [str(step).strip() for step in solved.get("steps", []) if str(step).strip()]
         answer = str(solved.get("answer") or "").strip()
-        actions: list[dict[str, Any]] = [
-            {"action": "draw_text", "content": f"Problem: {prompt}"},
-            {"action": "draw_text", "content": "Source: Chapter Exercise"},
-            {"action": "draw_text", "content": "Diagram: Contradiction flow -> assumption leads to impossible result."},
-        ]
-        for index, step in enumerate(solved_steps[:8], start=1):
-            actions.append({"action": "draw_text", "content": f"Step {index}: {step}"})
-        if answer:
-            actions.append({"action": "draw_text", "content": f"Final answer: {answer}"})
-        return actions
+        return _solution_actions(
+            exercise_label="Irrational Numbers",
+            problem_number=str(variation + 1),
+            prompt=prompt,
+            solved_steps=solved_steps,
+            answer=answer,
+            source_label="Chapter Exercise",
+            diagram_hint="Contradiction flow: assume rational -> derive impossible statement -> conclude irrational.",
+        )
 
     if "set notation" in lowered or "representations" in lowered:
+        alt = variation % 2
         if alt == 0:
-            return [
-                {"action": "draw_text", "content": "Problem: Write B in roster form"},
-                {"action": "write_equation", "content": "B = {x in N | 2 <= x <= 6}"},
-                {"action": "write_equation", "content": "B = {2,3,4,5,6}"},
-                {"action": "draw_text", "content": "Now compare with A = {1,2,3,4,5}"},
+            start = 2 + (variation % 5)
+            end = start + 4
+            prompt = f"Write B in roster form if B = {{x in N | {start} <= x <= {end}}}."
+            solved_steps = [
+                f"Natural numbers from {start} to {end} are written one by one, because roster form lists elements explicitly.",
+                f"B = {{{','.join(str(item) for item in range(start, end + 1))}}}.",
             ]
+            return [
+                *_solution_actions(
+                    exercise_label="Set notation and representations",
+                    problem_number=str(variation + 1),
+                    prompt=prompt,
+                    solved_steps=solved_steps,
+                    answer=f"B = {{{','.join(str(item) for item in range(start, end + 1))}}}",
+                    source_label="Chapter Exercise",
+                    diagram_hint="Map set-builder condition to consecutive numbers on a number line.",
+                ),
+            ]
+        base = 3 + (variation % 4)
+        prompt = f"Convert A = {{{base},{2*base},{3*base},{4*base}}} into set-builder form."
+        solved_steps = [
+            "Observe each element is a multiple of the same base number.",
+            f"Let x = {base}n where n is a natural number from 1 to 4.",
+            f"A = {{x in N | x = {base}n, 1 <= n <= 4}}.",
+        ]
         return [
-            {"action": "draw_text", "content": "Problem: Convert roster to set-builder"},
-            {"action": "write_equation", "content": "A = {3,6,9,12}"},
-            {"action": "write_equation", "content": "A = {x in N | x = 3n, 1 <= n <= 4}"},
+            *_solution_actions(
+                exercise_label="Set notation and representations",
+                problem_number=str(variation + 1),
+                prompt=prompt,
+                solved_steps=solved_steps,
+                answer=f"A = {{x in N | x = {base}n, 1 <= n <= 4}}",
+                source_label="Chapter Exercise",
+                diagram_hint="Group equal jumps of size base on a number line to show the pattern.",
+            ),
         ]
 
     if "subset" in lowered or "types of sets" in lowered:
-        return [
-            {"action": "draw_text", "content": "Problem: Check subset and proper subset"},
-            {"action": "write_equation", "content": "A = {1,2,3}, B = {1,2,3,4,5}"},
-            {"action": "write_equation", "content": "A subseteq B  (every element of A is in B)"},
-            {"action": "write_equation", "content": "A subset B because A != B"},
+        base = 1 + (variation % 4)
+        set_a = [base, base + 1, base + 2]
+        set_b = [base - 1, *set_a, base + 3, base + 4]
+        prompt = f"Check whether A = {{{','.join(str(item) for item in set_a)}}} is a proper subset of B = {{{','.join(str(item) for item in set_b)}}}."
+        solved_steps = [
+            "List each element of A and verify it appears in B.",
+            "Since every element of A is present in B, A is a subset of B.",
+            "Because B has extra elements not in A, A is a proper subset of B.",
         ]
+        return _solution_actions(
+            exercise_label="Types of sets and subset relations",
+            problem_number=str(variation + 1),
+            prompt=prompt,
+            solved_steps=solved_steps,
+            answer="A is a proper subset of B.",
+            source_label="Chapter Exercise",
+            diagram_hint="Draw two nested circles with A fully inside B.",
+        )
 
     if "operation" in lowered:
-        return [
-            {"action": "draw_text", "content": "Problem: Find union, intersection, differences"},
-            {"action": "write_equation", "content": "A = {1,2,3,4}, B = {3,4,5,6}"},
-            {"action": "write_equation", "content": "A union B = {1,2,3,4,5,6}"},
-            {"action": "write_equation", "content": "A intersection B = {3,4}"},
-            {"action": "write_equation", "content": "A - B = {1,2},  B - A = {5,6}"},
+        start = 1 + (variation % 4)
+        set_a = [start, start + 1, start + 2, start + 3]
+        set_b = [start + 2, start + 3, start + 4, start + 5]
+        union = sorted(set(set_a) | set(set_b))
+        inter = sorted(set(set_a) & set(set_b))
+        diff_ab = [value for value in set_a if value not in set_b]
+        diff_ba = [value for value in set_b if value not in set_a]
+        prompt = f"For A = {{{','.join(map(str, set_a))}}} and B = {{{','.join(map(str, set_b))}}}, find A union B, A intersection B, A - B, and B - A."
+        solved_steps = [
+            f"Union combines all unique elements: A union B = {{{','.join(map(str, union))}}}.",
+            f"Intersection keeps common elements: A intersection B = {{{','.join(map(str, inter))}}}.",
+            f"Difference A - B keeps elements only in A: {{{','.join(map(str, diff_ab))}}}.",
+            f"Difference B - A keeps elements only in B: {{{','.join(map(str, diff_ba))}}}.",
         ]
+        return _solution_actions(
+            exercise_label="Operations on sets",
+            problem_number=str(variation + 1),
+            prompt=prompt,
+            solved_steps=solved_steps,
+            answer=f"A union B = {{{','.join(map(str, union))}}}, A intersection B = {{{','.join(map(str, inter))}}}",
+            source_label="Chapter Exercise",
+            diagram_hint="Venn diagram with overlap for intersection and side regions for differences.",
+        )
 
     if "venn" in lowered:
-        return [
-            {"action": "draw_text", "content": "Problem: Students liking Cricket (C) and Football (F)"},
-            {"action": "write_equation", "content": "n(U)=40, n(C)=22, n(F)=18, n(C intersection F)=10"},
-            {"action": "write_equation", "content": "Only C = 22 - 10 = 12"},
-            {"action": "write_equation", "content": "Only F = 18 - 10 = 8"},
-            {"action": "write_equation", "content": "Neither = 40 - (12+10+8) = 10"},
+        total = 35 + (variation % 16)
+        c_like = 18 + (variation % 10)
+        f_like = 14 + (variation % 9)
+        both = 6 + (variation % 7)
+        only_c = c_like - both
+        only_f = f_like - both
+        neither = total - (only_c + only_f + both)
+        prompt = (
+            f"In a class of {total} students, {c_like} like Cricket, {f_like} like Football, "
+            f"and {both} like both. Find only-Cricket, only-Football, and neither."
+        )
+        solved_steps = [
+            f"Only Cricket = {c_like} - {both} = {only_c}, because both-likers are counted in Cricket total.",
+            f"Only Football = {f_like} - {both} = {only_f}, for the same reason.",
+            f"Students liking at least one game = {only_c} + {both} + {only_f} = {only_c + both + only_f}.",
+            f"Neither = total - at least one = {total} - {only_c + both + only_f} = {neither}.",
         ]
+        return _solution_actions(
+            exercise_label="Venn diagram applications",
+            problem_number=str(variation + 1),
+            prompt=prompt,
+            solved_steps=solved_steps,
+            answer=f"Only Cricket = {only_c}, Only Football = {only_f}, Neither = {neither}",
+            source_label="Chapter Exercise",
+            diagram_hint="Two-circle Venn diagram: left-only, overlap, right-only, and outside region.",
+        )
 
     if "ordered pair" in lowered or "cartesian" in lowered:
-        return [
-            {"action": "draw_text", "content": "Problem: Form Cartesian product and a relation"},
-            {"action": "write_equation", "content": "A = {1,2}, B = {a,b}"},
-            {"action": "write_equation", "content": "A x B = {(1,a),(1,b),(2,a),(2,b)}"},
-            {"action": "write_equation", "content": "R = {(1,a),(2,b)} subseteq A x B"},
+        first = 1 + (variation % 3)
+        set_a = [first, first + 1]
+        labels = ["a", "b", "c", "d"]
+        set_b = [labels[(variation + 0) % len(labels)], labels[(variation + 1) % len(labels)]]
+        cartesian_pairs = [f"({x},{y})" for x in set_a for y in set_b]
+        relation = [f"({set_a[0]},{set_b[0]})", f"({set_a[1]},{set_b[1]})"]
+        prompt = f"For A = {{{set_a[0]},{set_a[1]}}} and B = {{{set_b[0]},{set_b[1]}}}, form A x B and one relation R from A to B."
+        solved_steps = [
+            "Cartesian product contains every ordered pair with first element from A and second from B.",
+            f"A x B = {{{','.join(cartesian_pairs)}}}.",
+            f"Choose any valid subset of A x B as relation, e.g. R = {{{','.join(relation)}}}.",
         ]
+        return _solution_actions(
+            exercise_label="Relations and functions basics",
+            problem_number=str(variation + 1),
+            prompt=prompt,
+            solved_steps=solved_steps,
+            answer=f"R = {{{','.join(relation)}}}",
+            source_label="Chapter Exercise",
+            diagram_hint="Arrow diagram from each element of A to selected elements of B.",
+        )
 
     if "relation" in lowered:
-        return [
-            {"action": "draw_text", "content": "Problem: Check relation properties"},
-            {"action": "write_equation", "content": "A = {1,2,3}, R = {(1,1),(2,2),(3,3),(1,2),(2,1)}"},
-            {"action": "write_equation", "content": "Reflexive: Yes (all (a,a) present)"},
-            {"action": "write_equation", "content": "Symmetric: Yes ((1,2) and (2,1))"},
-            {"action": "write_equation", "content": "Transitive: Check pairs to conclude"},
+        base = 1 + (variation % 3)
+        a = [base, base + 1, base + 2]
+        prompt = (
+            f"On A = {{{a[0]},{a[1]},{a[2]}}}, let R = "
+            f"{{({a[0]},{a[0]}),({a[1]},{a[1]}),({a[2]},{a[2]}),({a[0]},{a[1]}),({a[1]},{a[0]})}}. "
+            "Check reflexive and symmetric properties."
+        )
+        solved_steps = [
+            "Reflexive test: all pairs (a,a) for each element of A must be present.",
+            "Here (1,1)-type pairs for all elements are present, so relation is reflexive.",
+            "Symmetric test: if (x,y) is present then (y,x) must also be present.",
+            "Since both cross-pairs are present, relation is symmetric.",
         ]
+        return _solution_actions(
+            exercise_label="Relation properties",
+            problem_number=str(variation + 1),
+            prompt=prompt,
+            solved_steps=solved_steps,
+            answer="R is reflexive and symmetric.",
+            source_label="Chapter Exercise",
+            diagram_hint="Relation matrix or arrow diagram to verify mirror pairs.",
+        )
 
     return _pyq_problem_actions(topic=topic, rag_context=rag_context, variation=variation)
 
@@ -845,9 +1142,9 @@ def _class_expired_payload(session: StudentSession) -> dict:
         "session_expired": True,
         "avatar_voice": {
             "style": "calm",
-            "pace": "slow-paused",
+            "pace": "steady",
             "sync_to_whiteboard": True,
-            "pause_ms": 520,
+            "pause_ms": 220,
         },
         "avatar_stream": {
             "voice_chunks": [spoken_response],
@@ -855,8 +1152,8 @@ def _class_expired_payload(session: StudentSession) -> dict:
                 f"Session complete: {session.class_duration_minutes} minutes",
                 "Review today's notes and homework.",
             ],
-            "pace": "slow-paused",
-            "pause_ms": 520,
+            "pace": "steady",
+            "pause_ms": 220,
         },
     }
 
@@ -976,39 +1273,42 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         spoken_response = tutor_payload.get("spoken_response", "")
         whiteboard_actions = tutor_payload.get("whiteboard_actions", [])
 
-    if route != "proctor_agent" and tutor_payload:
-        whiteboard_actions = [*whiteboard_actions, *_widget_to_actions(tutor_payload.get("widget"))]
-
-    if route != "proctor_agent" and tutor_payload and tutor_payload.get("advance_topic"):
-        next_topic = orchestrator._advance_to_next_topic(session)
-        whiteboard_actions = [
-            *whiteboard_actions,
-            {"action": "draw_text", "content": f"Topic complete. Next topic: {next_topic}"},
-        ]
+    if route != "proctor_agent" and action not in {"homework", "finish", "end"}:
+        whiteboard_actions = _next_problem_actions_for_session(
+            session,
+            topic=session.current_topic or session.chapter_name,
+            rag_context=rag_context,
+            action=action,
+        )
+    else:
+        if route != "proctor_agent" and tutor_payload:
+            whiteboard_actions = [*whiteboard_actions, *_widget_to_actions(tutor_payload.get("widget"))]
+        whiteboard_actions = _prepare_problem_whiteboard_actions(
+            topic=session.current_topic or session.chapter_name,
+            actions=whiteboard_actions,
+            variation=turn_index,
+            rag_context=rag_context,
+        )
 
     if route != "proctor_agent" and isinstance(session.chapter_transition, dict):
         transition_spoken_prefix, transition_actions = _chapter_transition_actions(session.chapter_transition)
         session.chapter_transition = None
+        session.current_topic = _resolve_session_topic(session)
 
     if transition_spoken_prefix:
         spoken_response = f"{transition_spoken_prefix} {spoken_response}".strip()
 
-    whiteboard_actions = _prepare_problem_whiteboard_actions(
-        topic=session.current_topic or session.chapter_name,
-        actions=whiteboard_actions,
-        variation=turn_index,
-        rag_context=rag_context,
-    )
     if transition_actions:
         whiteboard_actions = [*transition_actions, *whiteboard_actions]
     include_headers = action in {"start", "next_topic", "next_chapter", "skip_topic", "skip_chapter"} or turn_index == 0
     whiteboard_actions = _ensure_board_header_actions(session, whiteboard_actions, include_headers=include_headers)
     steps = _steps_from_actions(whiteboard_actions)
     if not steps:
-        fallback_actions = _topic_problem_actions(
-            session.current_topic or session.chapter_name,
-            variation=turn_index,
+        fallback_actions = _next_problem_actions_for_session(
+            session,
+            topic=session.current_topic or session.chapter_name,
             rag_context=rag_context,
+            action=action,
         )
         whiteboard_actions = _ensure_board_header_actions(session, fallback_actions, include_headers=include_headers)
         steps = _steps_from_actions(whiteboard_actions)
@@ -1018,6 +1318,11 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
     chapter_title = session.chapter_name or session.current_topic or "Current Chapter"
     topic_title = session.current_topic or chapter_title
     spoken_response = _spoken_from_steps(spoken_response, steps, topic_title)
+    voice_chunks = _voice_chunks_from_steps(spoken_response, steps)
+    highlight_steps = [
+        str(step).strip() for step in steps if str(step).strip().lower().startswith("step ")
+    ] or steps
+    board_problem = _problem_prompt_from_actions(whiteboard_actions)
     return {
         "type": "exam" if route == "proctor_agent" else ("teach" if route != "diagnostic_agent" else "evaluation"),
         "chapter": chapter_title,
@@ -1031,6 +1336,7 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         "whiteboard": {
             "title": f"{chapter_title} | {topic_title}",
             "subtitle": "Arvind Sir's smart blackboard",
+            "problem": board_problem or None,
             "chalk_lines": steps,
             "actions": whiteboard_actions,
         },
@@ -1048,15 +1354,15 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         "session_expired": False,
         "avatar_voice": {
             "style": "calm",
-            "pace": "slow-paused",
+            "pace": "steady",
             "sync_to_whiteboard": True,
-            "pause_ms": 520,
+            "pause_ms": 180,
         },
         "avatar_stream": {
-            "voice_chunks": [spoken_response] if spoken_response else [],
-            "steps": steps,
-            "pace": "slow-paused",
-            "pause_ms": 520,
+            "voice_chunks": voice_chunks,
+            "steps": highlight_steps,
+            "pace": "steady",
+            "pause_ms": 180,
         },
     }
 
