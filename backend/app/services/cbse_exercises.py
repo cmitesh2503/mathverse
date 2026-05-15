@@ -223,7 +223,48 @@ def build_exercise_solution(problem: dict[str, Any]) -> dict[str, Any]:
     steps: list[str]
     answer: str | None = None
 
-    if "circular path" in lowered and "starting point" in lowered and len(numbers) >= 2:
+    euclid_match = re.search(r"write\s+(\d+)\s+in\s+the\s+form\s+(\d+)\s*q\s*\+\s*r", lowered)
+    fraction_match = re.search(r"(\d+)\s*/\s*(\d+)", lowered)
+
+    if "euclid" in lowered and "division lemma" in lowered and euclid_match:
+        dividend = int(euclid_match.group(1))
+        divisor = int(euclid_match.group(2))
+        quotient = dividend // divisor
+        remainder = dividend % divisor
+        steps = [
+            "Use Euclid's division lemma: a = bq + r with 0 <= r < b.",
+            f"Here a = {dividend} and b = {divisor}, so divide {dividend} by {divisor}.",
+            f"Quotient is {quotient} because {divisor} x {quotient} = {divisor * quotient}.",
+            f"Remainder is {remainder} because {dividend} - {divisor * quotient} = {remainder}.",
+            f"So {dividend} = {divisor} x {quotient} + {remainder}.",
+            f"Check remainder rule: 0 <= {remainder} < {divisor}.",
+        ]
+        answer = f"q = {quotient}, r = {remainder}"
+    elif ("terminating decimal expansion" in lowered or "repeating decimal expansion" in lowered) and fraction_match:
+        numerator = int(fraction_match.group(1))
+        denominator = int(fraction_match.group(2))
+        common = math.gcd(abs(numerator), abs(denominator)) or 1
+        reduced_den = abs(denominator) // common
+        original_reduced = reduced_den
+        while reduced_den % 2 == 0:
+            reduced_den //= 2
+        while reduced_den % 5 == 0:
+            reduced_den //= 5
+        terminating = reduced_den == 1
+        steps = [
+            f"First reduce {numerator}/{denominator} to lowest terms by dividing by HCF {common}.",
+            f"Reduced denominator is {original_reduced}.",
+            "A rational number has a terminating decimal iff the reduced denominator has only prime factors 2 and/or 5.",
+            "Remove all factors of 2 and 5 from the reduced denominator.",
+            f"Remaining factor after removing 2 and 5 is {reduced_den}.",
+            "If the remaining factor is 1, decimal terminates; otherwise it repeats.",
+        ]
+        answer = (
+            "Terminating decimal expansion"
+            if terminating
+            else "Non-terminating repeating decimal expansion"
+        )
+    elif "circular path" in lowered and "starting point" in lowered and len(numbers) >= 2:
         times = [number for number in numbers if number > 1][:2]
         if len(times) >= 2:
             first_time, second_time = times[0], times[1]

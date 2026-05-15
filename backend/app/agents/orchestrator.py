@@ -1,9 +1,10 @@
 from __future__ import annotations
-import json
-from ..models.session import SessionPhase, StudentSession
 
-# ✅ Use the new dynamic Firestore loader instead of hardcoded JEE functions
+import json
+
+from ..models.session import SessionPhase, StudentSession
 from ..tutor_brain.curriculum import list_chapters
+
 
 class Orchestrator:
     ANSWER_KEYWORDS = ("answer is", "submitted", "final")
@@ -21,15 +22,13 @@ class Orchestrator:
     def _normalize_grade(self, context: dict | None, fallback: int) -> int:
         raw_grade = (context or {}).get("grade", fallback)
         try:
-            return int(raw_grade) # ✅ Stop forcing Grade 11! Respect the actual grade.
+            return int(raw_grade)
         except (TypeError, ValueError):
             return fallback
 
     def _initialize_grade_curriculum(self, session: StudentSession, grade: int) -> None:
         session.grade = grade
         exam = getattr(session, "exam", "cbse")
-        
-        # ✅ Fetch the correct syllabus directly from Firestore
         chapters = list_chapters(grade, exam)
 
         if not chapters:
@@ -42,42 +41,52 @@ class Orchestrator:
 
         first_chapter = chapters[0]
         session.current_chapter_index = 0
-        
-        # Handle both CBSE ("title") and JEE ("chapter") formats
         session.chapter_name = first_chapter.get("title") or first_chapter.get("chapter") or "Chapter 1"
-
-        agenda = []
-        if "agenda" in first_chapter:
-            agenda = [str(a) for a in first_chapter["agenda"]]
-        elif "concepts" in first_chapter:
-            agenda = [str(c.get("title", "")) for c in first_chapter["concepts"]]
+        agenda = self._chapter_agenda(first_chapter, fallback=session.chapter_name)
 
         session.agenda = agenda if agenda else [session.chapter_name]
         session.current_topic_index = 0
         session.current_topic = session.agenda[0]
+        session.chapter_transition = None
+
+    def _chapter_agenda(self, chapter: dict, *, fallback: str) -> list[str]:
+        agenda: list[str] = []
+        if isinstance(chapter.get("agenda"), list):
+            agenda = [str(item).strip() for item in chapter["agenda"] if str(item).strip()]
+        elif isinstance(chapter.get("book_topics"), list):
+            agenda = [str(item).strip() for item in chapter["book_topics"] if str(item).strip()]
+        elif isinstance(chapter.get("concepts"), list):
+            agenda = [
+                str(item.get("title", "")).strip()
+                for item in chapter["concepts"]
+                if isinstance(item, dict) and str(item.get("title", "")).strip()
+            ]
+        return agenda if agenda else [fallback]
 
     def _advance_to_next_topic(self, session: StudentSession) -> str:
         if not session.agenda:
             self._initialize_grade_curriculum(session, getattr(session, "grade", 10))
 
+        previous_chapter = session.chapter_name
+        chapter_changed = False
         session.current_topic_index += 1
-        
+
         if session.current_topic_index >= len(session.agenda):
             exam = getattr(session, "exam", "cbse")
             grade = getattr(session, "grade", 10)
             chapters = list_chapters(grade, exam)
             next_chapter_index = session.current_chapter_index + 1
-            
+
             if next_chapter_index < len(chapters):
                 next_chapter = chapters[next_chapter_index]
                 session.current_chapter_index = next_chapter_index
-                session.chapter_name = next_chapter.get("title") or next_chapter.get("chapter") or f"Chapter {next_chapter_index + 1}"
-                
-                agenda = []
-                if "agenda" in next_chapter:
-                    agenda = [str(a) for a in next_chapter["agenda"]]
-                elif "concepts" in next_chapter:
-                    agenda = [str(c.get("title", "")) for c in next_chapter["concepts"]]
+                session.chapter_name = (
+                    next_chapter.get("title")
+                    or next_chapter.get("chapter")
+                    or f"Chapter {next_chapter_index + 1}"
+                )
+                chapter_changed = True
+                agenda = self._chapter_agenda(next_chapter, fallback=session.chapter_name)
 
                 session.agenda = agenda if agenda else [session.chapter_name]
                 session.current_topic_index = 0
@@ -90,10 +99,24 @@ class Orchestrator:
             else session.chapter_name
         )
         session.current_topic = next_topic
-        session.next_system_note = (
-            "SYSTEM NOTE: The student pressed 'Next'. You MUST move on to the next topic on the agenda: "
-            f"{next_topic}."
-        )
+        if chapter_changed:
+            session.chapter_transition = {
+                "from_chapter": previous_chapter,
+                "to_chapter": session.chapter_name,
+                "topics": list(session.agenda or []),
+                "first_topic": next_topic,
+            }
+            session.next_system_note = (
+                "SYSTEM NOTE: Previous chapter is complete. Announce chapter completion and then start the new chapter. "
+                f"New chapter: {session.chapter_name}. Begin with topic: {next_topic}. "
+                "Also introduce the chapter topic list clearly."
+            )
+        else:
+            session.chapter_transition = None
+            session.next_system_note = (
+                "SYSTEM NOTE: The student pressed Next. You MUST move on to the next topic on the agenda: "
+                f"{next_topic}."
+            )
         return next_topic
 
     async def route_message(
@@ -110,8 +133,7 @@ class Orchestrator:
         message = message_text.lower()
         exam = str((context or {}).get("exam", "")).lower()
         mode_normalized = (mode or "").lower()
-        
-        # ✅ Ensure Exam and Grade respect the frontend
+
         session.exam = "jee" if exam == "jee" else "cbse"
         grade = self._normalize_grade(context, getattr(session, "grade", 10))
 
@@ -123,18 +145,36 @@ class Orchestrator:
                     action = str(payload.get("action", "")).strip().lower()
             except json.JSONDecodeError:
                 action = ""
-        elif message in {"next", "next_step", "next topic", "next_topic"}:
-            action = "next"
+            if action in {"skip_topic", "skip_chapter", "next_chapter"}:
+                action = "next_topic"
+            elif action == "next":
+                action = "next_step"
+        elif message in {"next topic", "next_topic", "next chapter", "next_chapter", "skip topic", "skip_topic", "skip chapter", "skip_chapter", "skip ahead"}:
+            action = "next_topic"
+        elif message in {"next", "next_step"}:
+            action = "next_step"
         elif message in {"start", "begin"}:
             action = "start"
-        # ✅ NEW: Allow natural voice affirmations to trigger progression
-        elif len(message) < 25 and any(phrase in message for phrase in ["understood", "got it", "makes sense", "move on", "continue", "go ahead", "clear"]):
-            action = "next"
+        elif len(message) < 25 and any(
+            phrase in message
+            for phrase in ["understood", "got it", "makes sense", "move on", "go ahead", "clear"]
+        ):
+            action = "next_step"
 
         if action == "start":
             self._initialize_grade_curriculum(session, grade)
-        elif mode_normalized == "class" and action == "next":
+            session.is_first_interaction = True
+            session.next_system_note = None
+            session.questions_asked = 0
+            session.class_problem_cursor = 0
+        elif mode_normalized == "class" and action == "next_topic":
             self._advance_to_next_topic(session)
+        elif mode_normalized == "class" and action == "next_step":
+            session.next_system_note = (
+                "SYSTEM NOTE: The student pressed Next for the same topic. "
+                "Continue from the current step in this topic. "
+                "Do not restart the chapter introduction and do not repeat the same solved example."
+            )
         elif not session.agenda or session.current_topic is None:
             self._initialize_grade_curriculum(session, grade)
 

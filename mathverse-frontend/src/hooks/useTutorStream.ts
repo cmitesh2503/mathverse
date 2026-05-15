@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClassResponse, ExamMode, TutorPayload } from "../services/api";
-import { startClassStream, type TutorStreamData } from "../services/tutorStream";
+import { startClassStream } from "../services/tutorStream";
 import { playVoiceStream, type VoiceController } from "../services/voice";
 
 type Args = {
@@ -14,6 +14,7 @@ type Args = {
 export function useTutorStream({ sessionId, examMode, onResponse }: Args) {
   const [response, setResponse] = useState<ClassResponse | null>(null);
   const [visibleSteps, setVisibleSteps] = useState<string[]>([]);
+  const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,42 +23,13 @@ export function useTutorStream({ sessionId, examMode, onResponse }: Args) {
   const autoTimerRef = useRef<number | null>(null);
   const lastGradeRef = useRef<number | undefined>(undefined);
   const lastSubjectRef = useRef<string | undefined>(undefined);
-  const prefetchedStreamRef = useRef<TutorStreamData | null>(null);
-  const prefetchInFlightRef = useRef<Promise<void> | null>(null);
   const silentRetryRef = useRef(0);
 
   const stop = useCallback(() => {
     voiceRef.current?.stop();
     if (autoTimerRef.current) window.clearTimeout(autoTimerRef.current);
+    setActiveStepIndex(null);
   }, []);
-
-  const prefetchNextContinue = useCallback((grade?: number, subject?: string) => {
-    if (prefetchedStreamRef.current || prefetchInFlightRef.current) {
-      return;
-    }
-    const requestedGrade = typeof grade === "number" ? grade : undefined;
-    prefetchInFlightRef.current = (async () => {
-      try {
-        const stream = await startClassStream({
-          session_id: sessionId,
-          input: {
-            action: "continue",
-            grade: requestedGrade,
-            subject: subject || "math",
-          },
-          context: {
-            exam: requestedGrade ? "jee" : examMode,
-            grade: requestedGrade,
-          },
-        });
-        prefetchedStreamRef.current = stream;
-      } catch {
-        // Silent prefetch failure: main flow can still request on-demand.
-      } finally {
-        prefetchInFlightRef.current = null;
-      }
-    })();
-  }, [examMode, sessionId]);
 
   const prime = useCallback(
     (nextResponse: ClassResponse) => {
@@ -74,6 +46,7 @@ export function useTutorStream({ sessionId, examMode, onResponse }: Args) {
 
       setResponse(nextResponse);
       setVisibleSteps(steps);
+      setActiveStepIndex(null);
       setIsSpeaking(false);
       setPaused(false);
       setLoading(false);
@@ -84,7 +57,7 @@ export function useTutorStream({ sessionId, examMode, onResponse }: Args) {
 
   const start = useCallback(
     async (
-      input: TutorPayload["input"] & { grade?: number; subject?: string } = { action: "start", grade: 11, subject: "math" },
+      input: TutorPayload["input"] & { grade?: number; subject?: string } = { action: "start", grade: 10, subject: "math" },
       options?: { silent?: boolean },
     ) => {
       stop();
@@ -93,60 +66,61 @@ export function useTutorStream({ sessionId, examMode, onResponse }: Args) {
       }
       setError(null);
       setPaused(false);
+      setVisibleSteps([]);
+      setActiveStepIndex(null);
       lastGradeRef.current = typeof input.grade === "number" ? input.grade : lastGradeRef.current;
       lastSubjectRef.current = typeof input.subject === "string" ? input.subject : lastSubjectRef.current;
       const isAutoContinueTurn = options?.silent && String(input.action || "").toLowerCase() === "continue";
-      if (!isAutoContinueTurn) {
-        prefetchedStreamRef.current = null;
-      }
 
       try {
         const requestedGrade = typeof input.grade === "number" ? input.grade : undefined;
-        //const requestedExamMode = requestedGrade ? "jee" : examMode;
-        const stream =
-          isAutoContinueTurn && prefetchedStreamRef.current
-            ? prefetchedStreamRef.current
-            : await startClassStream({
-                session_id: sessionId,
-                input,
-                context: {
-                  exam:  examMode,
-                  grade: requestedGrade,
-                },
-              });
-        if (isAutoContinueTurn) {
-          prefetchedStreamRef.current = null;
-        }
+        const stream = await startClassStream({
+          session_id: sessionId,
+          input,
+          context: {
+            exam: examMode,
+            grade: requestedGrade,
+          },
+        });
         silentRetryRef.current = 0;
 
         setResponse(stream.response);
+        setVisibleSteps(stream.steps);
         onResponse?.(stream.response);
 
+        const avatarVoice = stream.response.avatar_voice || stream.response.content?.avatar_voice;
+        const paceLabel = String(avatarVoice?.pace || "").toLowerCase();
+        const voiceRate =
+          paceLabel.includes("slow")
+            ? 0.76
+            : paceLabel.includes("short") || paceLabel.includes("fast")
+              ? 0.9
+              : 0.8;
+        const pauseMs =
+          typeof avatarVoice?.pause_ms === "number"
+            ? avatarVoice.pause_ms
+            : paceLabel.includes("slow")
+              ? 520
+              : 420;
+
+        const totalSteps = stream.steps.length;
+        const totalChunks = Math.max(1, stream.voice_chunks.length);
         voiceRef.current = playVoiceStream(stream.voice_chunks.join(". "), {
           chunks: stream.voice_chunks,
+          rate: voiceRate,
+          pauseMs,
           onStart: () => setIsSpeaking(true),
-          onChunkStart: () => undefined,
+          onChunkStart: (chunkIndex) => {
+            if (!totalSteps) return;
+            const mappedIndex = Math.min(
+              totalSteps - 1,
+              Math.floor((chunkIndex * totalSteps) / totalChunks),
+            );
+            setActiveStepIndex(mappedIndex);
+          },
           onEnd: () => {
-            setVisibleSteps(stream.steps);
             setIsSpeaking(false);
-            const autoAdvanceEligible =
-              stream.response.type === "teach" &&
-              stream.response.next_action !== "question" &&
-              stream.response.next_action !== "homework" &&
-              stream.response.next_action !== "finish";
-
-            if (autoAdvanceEligible) {
-              prefetchNextContinue(lastGradeRef.current, lastSubjectRef.current);
-              autoTimerRef.current = window.setTimeout(
-                () =>
-                  void start({
-                    action: "continue",
-                    grade: lastGradeRef.current,
-                    subject: lastSubjectRef.current || "math",
-                  }, { silent: true }),
-                Math.max(1800, stream.response.pause_ms || 1500),
-              );
-            }
+            setActiveStepIndex(null);
           },
         });
       } catch (err) {
@@ -176,7 +150,7 @@ export function useTutorStream({ sessionId, examMode, onResponse }: Args) {
         }
       }
     },
-    [examMode, onResponse, prefetchNextContinue, sessionId, stop],
+    [examMode, onResponse, sessionId, stop],
   );
 
   const pauseOrResume = useCallback(() => {
@@ -197,6 +171,7 @@ export function useTutorStream({ sessionId, examMode, onResponse }: Args) {
   return {
     response,
     visibleSteps,
+    activeStepIndex,
     isSpeaking,
     loading,
     error,

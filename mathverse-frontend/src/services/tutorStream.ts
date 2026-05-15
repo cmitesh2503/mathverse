@@ -34,7 +34,6 @@ function splitText(text: string) {
 
 function formatForAvatar(response: ClassResponse): TutorStreamData {
   const avatarStream = response.avatar_stream || response.content?.avatar_stream;
-  const voiceText = response.voice_text || response.content?.voice_text || response.explanation || response.content?.explanation || "";
   const whiteboard = response.whiteboard || response.content?.whiteboard;
   const steps =
     response.steps?.length
@@ -44,6 +43,13 @@ function formatForAvatar(response: ClassResponse): TutorStreamData {
         : whiteboard?.solution_steps?.length
           ? whiteboard.solution_steps
           : [...(whiteboard?.equations || []), ...(whiteboard?.chalk_lines || [])];
+  const voiceText =
+    response.voice_text ||
+    response.content?.voice_text ||
+    response.explanation ||
+    response.content?.explanation ||
+    (steps.length ? steps.slice(0, 4).join(". ") : "") ||
+    "Let's continue this concept step by step.";
 
   return {
     response,
@@ -56,7 +62,7 @@ export async function startClassStream(payload: StartClassPayload): Promise<Tuto
   const response = await sendAnswer<ClassResponse | { error?: string; detail?: string }>({
     session_id: payload.session_id,
     mode: "class",
-    input: payload.input || { action: "start", grade: 11, subject: "math" },
+    input: payload.input || { action: "start", grade: 10, subject: "math" },
     context: payload.context,
   });
 

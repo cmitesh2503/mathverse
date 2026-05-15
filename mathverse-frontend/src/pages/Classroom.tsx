@@ -6,7 +6,7 @@ import { TutorAvatar } from "../components/TutorAvatar";
 import { UpgradeNotice } from "../components/UpgradeNotice";
 import { Whiteboard } from "../components/Whiteboard";
 import { useTutorStream } from "../hooks/useTutorStream";
-import { API_BASE_URL, type ClassResponse } from "../services/api";
+import { API_BASE_URL, type ClassResponse, type ExamMode } from "../services/api";
 import { canUseFeature, useTutorStore } from "../store/useTutorStore";
 
 type Props = {
@@ -67,9 +67,9 @@ const CLASS_SESSION_DURATION_SECONDS = 45 * 60;
 const CLASSROOM_GRADES = [10, 11, 12] as const;
 type ClassroomGrade = (typeof CLASSROOM_GRADES)[number];
 
-function tutorWsUrl(sessionId: string, grade: ClassroomGrade) {
+function tutorWsUrl(sessionId: string, grade: ClassroomGrade, examMode: ExamMode) {
   const base = API_BASE_URL.replace(/^http/, "ws").replace(/\/$/, "");
-  return `${base}/ws/tutor?session_id=${encodeURIComponent(sessionId)}&grade=${grade}&subject=Mathematics&mode=class&exam=jee`;
+  return `${base}/ws/tutor?session_id=${encodeURIComponent(sessionId)}&grade=${grade}&subject=Mathematics&mode=class&exam=${encodeURIComponent(examMode)}`;
 }
 
 function downsampleBuffer(buffer: Float32Array, sourceRate: number, targetRate: number) {
@@ -136,7 +136,7 @@ export default function Classroom({ onNavigate }: Props) {
   const recordTutorSession = useTutorStore((state) => state.recordTutorSession);
   const recordResponse = useTutorStore((state) => state.recordResponse);
   const [answer, setAnswer] = useState("");
-  const [selectedGrade, setSelectedGrade] = useState<ClassroomGrade>(11);
+  const [selectedGrade, setSelectedGrade] = useState<ClassroomGrade>(10);
   const [classStarted, setClassStarted] = useState(false);
   const [micActive, setMicActive] = useState(false);
   const [nextCoolingDown, setNextCoolingDown] = useState(false);
@@ -191,13 +191,22 @@ export default function Classroom({ onNavigate }: Props) {
     [examMode, recordResponse, recordTutorSession, setCurrentConcept, setCurrentQuestion, setCurrentTopic, setHomeworkQuestions],
   );
 
-  const { response, visibleSteps, isSpeaking, loading, error, paused, start, pauseOrResume, prime } = useTutorStream({
+  const { response, visibleSteps, activeStepIndex, isSpeaking, loading, error, paused, start, pauseOrResume, prime } = useTutorStream({
     sessionId,
     examMode,
     onResponse,
   });
 
+  useEffect(() => {
+    if (examMode === "cbse" && selectedGrade !== 10) {
+      setSelectedGrade(10);
+    }
+  }, [examMode, selectedGrade]);
+
   const classAllowed = examMode === "cbse" ? canUseFeature(plan, "cbse_class") : canUseFeature(plan, "jee_practice");
+  const gradeOptions: ClassroomGrade[] = examMode === "cbse" ? [10] : [...CLASSROOM_GRADES];
+  const examLabel = examMode.toUpperCase();
+  const tutorLabel = examMode === "cbse" ? "CBSE Tutor" : "JEE Tutor";
 
   useEffect(() => {
     if (!classAllowed) return;
@@ -213,7 +222,7 @@ export default function Classroom({ onNavigate }: Props) {
     void start({ action: "start", grade: selectedGrade, subject: "math" });
   }, [classAllowed, classStarted, onResponse, pendingClassResponse, prime, selectedGrade, setPendingClassResponse, start]);
 
-  const concept = response?.concept || response?.content?.concept || "JEE Mathematics";
+  const concept = response?.concept || response?.content?.concept || `${examLabel} Mathematics`;
   const chapter = response?.chapter || response?.content?.chapter || "Live Class";
   const explanation = response?.explanation || response?.content?.explanation || "Class explanation will appear here.";
   const caption = response?.voice_text || response?.content?.voice_text || explanation;
@@ -252,7 +261,7 @@ export default function Classroom({ onNavigate }: Props) {
       ? "Arvind Sir is explaining..."
       : paused
         ? "Raised hand. Tutor paused."
-        : "Class is auto-flowing. Use Push to Talk anytime.";
+        : "Class is paused for you. Click Next when you want the next explanation.";
 
   const nextLabel = sessionExpired
     ? "Start New 45-min Session"
@@ -260,11 +269,11 @@ export default function Classroom({ onNavigate }: Props) {
       ? "Show Board Example"
       : response?.next_action === "question"
         ? "Ask Mini Check"
-        : response?.next_action === "next_exercise"
+      : response?.next_action === "next_exercise"
           ? "Next Exercise"
           : response?.next_action === "homework" || response?.type === "homework"
             ? "Open Homework"
-            : "Skip Ahead";
+            : "Next";
 
   async function submitClassAnswer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -288,9 +297,26 @@ export default function Classroom({ onNavigate }: Props) {
     window.setTimeout(() => setNextCoolingDown(false), 2000);
 
     try {
-      await start({ action: "next", grade: selectedGrade, subject: "math" });
+      const action =
+        response?.next_action === "next_exercise"
+          ? "next_exercise"
+          : response?.next_action === "next_pdf_exercise"
+            ? "next_pdf_exercise"
+            : "continue";
+      await start({ action, grade: selectedGrade, subject: "math" });
     } catch (error) {
       console.error("Failed to advance class topic.", error);
+    }
+  }
+
+  async function skipTopic() {
+    if (sessionExpired || loading || nextCoolingDown) return;
+    setNextCoolingDown(true);
+    window.setTimeout(() => setNextCoolingDown(false), 2000);
+    try {
+      await start({ action: "next_topic", grade: selectedGrade, subject: "math" });
+    } catch (error) {
+      console.error("Failed to skip to the next topic.", error);
     }
   }
 
@@ -432,7 +458,7 @@ export default function Classroom({ onNavigate }: Props) {
     }
 
     return new Promise<WebSocket>((resolve, reject) => {
-      const socket = new WebSocket(tutorWsUrl(sessionId, selectedGrade));
+      const socket = new WebSocket(tutorWsUrl(sessionId, selectedGrade, examMode));
       tutorSocketRef.current = socket;
 
       socket.onopen = () => resolve(socket);
@@ -617,11 +643,11 @@ export default function Classroom({ onNavigate }: Props) {
         <div className="mx-auto flex min-h-[calc(100vh-12rem)] w-full max-w-xl items-center px-4 py-8 sm:px-6">
           <div className="w-full rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Class Setup</p>
-            <h2 className="mt-2 text-2xl font-semibold text-white">Choose Your JEE Grade</h2>
+            <h2 className="mt-2 text-2xl font-semibold text-white">Choose Your {examLabel} Grade</h2>
             <p className="mt-2 text-sm text-slate-300">Select grade before Arvind Sir starts the session and chapter agenda.</p>
 
             <div className="mt-5 grid grid-cols-2 gap-3">
-              {CLASSROOM_GRADES.map((grade) => (
+              {gradeOptions.map((grade) => (
                 <button
                   key={grade}
                   type="button"
@@ -663,7 +689,7 @@ export default function Classroom({ onNavigate }: Props) {
               <div className="rounded-lg border border-slate-700 bg-slate-950 p-4">
                 <TutorAvatar
                   isSpeaking={isSpeaking}
-                  label="JEE Tutor"
+                  label={tutorLabel}
                   text={loading ? "Preparing..." : micActive ? "Listening" : isSpeaking ? "Teaching live" : paused ? "Paused" : "Ready"}
                 />
               </div>
@@ -752,7 +778,7 @@ export default function Classroom({ onNavigate }: Props) {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <button
                   type="button"
                   onClick={() => void goNext()}
@@ -760,6 +786,14 @@ export default function Classroom({ onNavigate }: Props) {
                   className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
                 >
                   {nextCoolingDown ? "Loading..." : nextLabel}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void skipTopic()}
+                  disabled={loading || isQuestion || sessionExpired || nextCoolingDown}
+                  className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
+                >
+                  Skip Topic
                 </button>
                 <button
                   type="button"
@@ -774,7 +808,12 @@ export default function Classroom({ onNavigate }: Props) {
           </aside>
 
           <section className="min-h-[540px]">
-            <Whiteboard steps={visibleSteps} whiteboard={whiteboard} whiteboardActions={whiteboardActions} />
+            <Whiteboard
+              steps={visibleSteps}
+              whiteboard={whiteboard}
+              whiteboardActions={whiteboardActions}
+              activeStepIndex={activeStepIndex}
+            />
           </section>
         </div>
       )}

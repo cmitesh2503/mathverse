@@ -48,6 +48,8 @@ class StudentSession(BaseModel):
     correct_attempts: int = 0
     wrong_attempts: int = 0
     questions_asked: int = 0
+    class_problem_cursor: int = 0
+    chapter_transition: dict[str, Any] | None = None
     warnings_issued: int = 0
     exam_status: Literal["pending", "running", "terminated"] = "pending"
     mock_test_chapters: list[str] = Field(

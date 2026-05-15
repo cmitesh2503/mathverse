@@ -10,6 +10,7 @@ from ..agents.orchestrator import Orchestrator
 from ..agents.proctor_agent import ProctorAgent
 from ..agents.teacher_agent import TutorAgent
 from ..models.session import StudentSession, utc_now
+from ..services.cbse_exercises import build_exercise_solution
 from ..services.rag_service import retrieve_context
 from ..services.firebase_service import get_attempts, save_attempt
 from .models import TutorRequest
@@ -95,6 +96,58 @@ def _steps_from_actions(whiteboard_actions: list[dict]) -> list[str]:
     return steps
 
 
+def _spoken_from_steps(
+    spoken_response: str,
+    steps: list[str],
+    topic_title: str,
+) -> str:
+    spoken = str(spoken_response or "").strip()
+    lowered = spoken.lower()
+    is_placeholder = bool(
+        spoken
+        and (
+            "finished the current board steps" in lowered
+            or "click next when you are ready" in lowered
+            or "ready for the next explanation" in lowered
+        )
+    )
+    compact_steps = [str(step).strip() for step in steps if str(step).strip()]
+    filtered = [
+        line
+        for line in compact_steps
+        if not line.lower().startswith(("chapter:", "topic:", "source:"))
+    ]
+    ordered_step_lines = [
+        line
+        for line in filtered
+        if line.lower().startswith("step ")
+        or line.lower().startswith("problem:")
+        or line.lower().startswith("final answer:")
+        or line.lower().startswith("diagram:")
+    ]
+    narrated_steps = ordered_step_lines if ordered_step_lines else filtered
+
+    if spoken and not is_placeholder:
+        spoken_step_count = len(re.findall(r"\bstep\s*\d+\b", lowered))
+        if narrated_steps and spoken_step_count < min(4, len(narrated_steps)):
+            return (
+                f"{spoken} "
+                f"Now I will explain each board step with reason. {' '.join(narrated_steps[:10])}"
+            )
+        return spoken
+    if compact_steps:
+        if narrated_steps:
+            return (
+                f"Let us continue {topic_title} step by step. "
+                + " ".join(narrated_steps[:10])
+            )
+        return " ".join(compact_steps[:4])
+    return (
+        f"We finished the current board steps for {topic_title}. "
+        "Click Next when you are ready for the next explanation."
+    )
+
+
 def _steps_from_spoken_response(spoken_response: str, limit: int = 4) -> list[str]:
     if not isinstance(spoken_response, str):
         return []
@@ -169,6 +222,13 @@ def _needs_problem_board(actions: list[dict[str, Any]]) -> bool:
     if not actions:
         return True
 
+    text_items = [_action_text(action) for action in actions if isinstance(action, dict)]
+    text_items = [item for item in text_items if item]
+    step_count = sum(1 for item in text_items if re.match(r"(?i)^step\s*\d+", item))
+    has_final_answer = any(item.lower().startswith("final answer") for item in text_items)
+    if step_count >= 2 or has_final_answer:
+        return False
+
     has_equation_action = any(
         str(action.get("action", "")).strip().lower()
         in {"write_equation", "plot_curve", "draw_coordinate_axes", "draw_line", "draw_circle"}
@@ -218,6 +278,10 @@ def _extract_problem_candidates(rag_context: str, limit: int = 8) -> list[str]:
         lowered = line.lower()
         if len(line) < 14 or len(line) > 220:
             continue
+        if lowered.startswith("this theorem can be proved") or lowered.startswith("proof"):
+            continue
+        if lowered.endswith(("such", "therefore", "hence")):
+            continue
         if not (
             "?" in line
             or any(
@@ -265,35 +329,170 @@ def _generate_similar_problem(problem: str, seed: int) -> str:
 
 
 def _pyq_problem_actions(topic: str, rag_context: str, variation: int = 0) -> list[dict[str, Any]]:
-    sources = ["PYQ", "Study Material", "Generated from PYQ Pattern"]
+    lowered_context = (rag_context or "").lower()
+    if "ncert" in lowered_context or "cbse" in lowered_context:
+        sources = ["NCERT Example", "NCERT Exercise", "Similar NCERT Practice"]
+    else:
+        sources = ["PYQ", "Study Material", "Generated from PYQ Pattern"]
     source_label = sources[variation % len(sources)]
     candidates = _extract_problem_candidates(rag_context)
+    topic_candidates = _best_topic_candidates(candidates, topic=topic, chapter=topic)
 
-    if candidates:
-        base_problem = candidates[variation % len(candidates)]
+    if topic_candidates:
+        base_problem = topic_candidates[variation % len(topic_candidates)]
     else:
         base_problem = f"Solve one step-by-step problem based on {topic or 'the current topic'}."
 
-    if source_label == "Generated from PYQ Pattern":
+    if source_label in {"Generated from PYQ Pattern", "Similar NCERT Practice"}:
         prompt = _generate_similar_problem(base_problem, variation + 1)
-    elif source_label == "Study Material" and len(candidates) > 1:
-        prompt = candidates[(variation + 1) % len(candidates)]
+    elif source_label in {"Study Material", "NCERT Exercise"} and len(topic_candidates) > 1:
+        prompt = topic_candidates[(variation + 1) % len(topic_candidates)]
     else:
         prompt = base_problem
 
-    return [
-        {"action": "draw_text", "content": f"Source: {source_label}"},
+    solved = build_exercise_solution(
+        {
+            "chapter_title": topic or "Mathematics",
+            "exercise": source_label,
+            "number": str(variation + 1),
+            "prompt": prompt,
+        }
+    )
+    solved_steps = [str(step).strip() for step in solved.get("steps", []) if str(step).strip()]
+    answer = str(solved.get("answer") or "").strip()
+
+    actions: list[dict[str, Any]] = [
         {"action": "draw_text", "content": f"Problem: {prompt}"},
-        {"action": "draw_text", "content": "Step 1: Given -> Required"},
-        {"action": "draw_text", "content": "Step 2: Pick rule from concept"},
-        {"action": "draw_text", "content": "Step 3: Substitute and simplify"},
-        {"action": "draw_text", "content": "Step 4: Final answer check"},
+        {"action": "draw_text", "content": f"Source: {source_label}"},
     ]
+    for index, step in enumerate(solved_steps[:8], start=1):
+        actions.append({"action": "draw_text", "content": f"Step {index}: {step}"})
+    if answer:
+        actions.append({"action": "draw_text", "content": f"Final answer: {answer}"})
+    return actions
 
 
 def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = "") -> list[dict[str, Any]]:
     lowered = (topic or "").lower()
-    alt = variation % 2
+
+    if "euclid" in lowered or "division lemma" in lowered:
+        divisors = [5, 7, 8, 9, 11, 13, 14, 15]
+        divisor = divisors[variation % len(divisors)]
+        quotient = 6 + (variation % 11)
+        remainder = 1 + ((variation * 3) % max(1, divisor - 1))
+        dividend = divisor * quotient + remainder
+        prompt = (
+            f"Using Euclid's division lemma, write {dividend} in the form {divisor}q + r. "
+            "What are q and r?"
+        )
+        solved = build_exercise_solution(
+            {
+                "chapter_title": "Real Numbers",
+                "exercise": "Euclid's Division Lemma",
+                "number": str(variation + 1),
+                "prompt": prompt,
+            }
+        )
+        solved_steps = [str(step).strip() for step in solved.get("steps", []) if str(step).strip()]
+        answer = str(solved.get("answer") or "").strip()
+        actions: list[dict[str, Any]] = [
+            {"action": "draw_text", "content": f"Problem: {prompt}"},
+            {"action": "draw_text", "content": "Source: Chapter Exercise"},
+            {"action": "draw_text", "content": "Diagram: a = bq + r with quotient part and remainder part."},
+        ]
+        for index, step in enumerate(solved_steps[:8], start=1):
+            actions.append({"action": "draw_text", "content": f"Step {index}: {step}"})
+        if answer:
+            actions.append({"action": "draw_text", "content": f"Final answer: {answer}"})
+        return actions
+
+    if "hcf" in lowered or "lcm" in lowered or "euclid algorithm" in lowered:
+        hcf_base = 2 + (variation % 9)
+        hcf = 3 + (variation % 7)
+        first = hcf * (2 * hcf_base + 5)
+        second = hcf * (hcf_base + 4)
+        if first == second:
+            second += hcf
+        prompt = f"Find HCF of {first} and {second} using Euclid's algorithm."
+        solved = build_exercise_solution(
+            {
+                "chapter_title": "Real Numbers",
+                "exercise": "Revisiting HCF and LCM",
+                "number": str(variation + 1),
+                "prompt": prompt,
+            }
+        )
+        solved_steps = [str(step).strip() for step in solved.get("steps", []) if str(step).strip()]
+        answer = str(solved.get("answer") or "").strip()
+        actions: list[dict[str, Any]] = [
+            {"action": "draw_text", "content": f"Problem: {prompt}"},
+            {"action": "draw_text", "content": "Source: Chapter Exercise"},
+            {"action": "draw_text", "content": "Diagram: Division chain with decreasing remainders."},
+        ]
+        for index, step in enumerate(solved_steps[:8], start=1):
+            actions.append({"action": "draw_text", "content": f"Step {index}: {step}"})
+        if answer:
+            actions.append({"action": "draw_text", "content": f"Final answer: {answer}"})
+        return actions
+
+    if "decimal expansion" in lowered:
+        if variation % 2 == 0:
+            pow2 = 3 + (variation % 4)
+            pow5 = 1 + (variation % 3)
+            denominator = (2 ** pow2) * (5 ** pow5)
+            numerator = 3 + (variation % 17)
+        else:
+            denominator = (2 ** (2 + (variation % 3))) * (3 + (variation % 5))
+            numerator = 5 + ((variation * 2) % 19)
+        fraction = f"{numerator}/{denominator}"
+        prompt = f"State whether {fraction} has a terminating decimal expansion or a non-terminating repeating decimal expansion."
+        solved = build_exercise_solution(
+            {
+                "chapter_title": "Real Numbers",
+                "exercise": "Decimal Expansions",
+                "number": str(variation + 1),
+                "prompt": prompt,
+            }
+        )
+        solved_steps = [str(step).strip() for step in solved.get("steps", []) if str(step).strip()]
+        answer = str(solved.get("answer") or "").strip()
+        actions: list[dict[str, Any]] = [
+            {"action": "draw_text", "content": f"Problem: {prompt}"},
+            {"action": "draw_text", "content": "Source: Chapter Exercise"},
+            {"action": "draw_text", "content": "Diagram: Prime factors of denominator determine decimal type."},
+        ]
+        for index, step in enumerate(solved_steps[:8], start=1):
+            actions.append({"action": "draw_text", "content": f"Step {index}: {step}"})
+        if answer:
+            actions.append({"action": "draw_text", "content": f"Final answer: {answer}"})
+        return actions
+
+    if "irrational" in lowered:
+        radicals = [2, 3, 5, 7, 11]
+        radicand = radicals[variation % len(radicals)]
+        coefficient = 2 + (variation % 9)
+        constant = 3 + ((variation * 2) % 11)
+        prompt = f"Show that {constant} + {coefficient}sqrt({radicand}) is irrational."
+        solved = build_exercise_solution(
+            {
+                "chapter_title": "Real Numbers",
+                "exercise": "Irrational Numbers",
+                "number": str(variation + 1),
+                "prompt": prompt,
+            }
+        )
+        solved_steps = [str(step).strip() for step in solved.get("steps", []) if str(step).strip()]
+        answer = str(solved.get("answer") or "").strip()
+        actions: list[dict[str, Any]] = [
+            {"action": "draw_text", "content": f"Problem: {prompt}"},
+            {"action": "draw_text", "content": "Source: Chapter Exercise"},
+            {"action": "draw_text", "content": "Diagram: Contradiction flow -> assumption leads to impossible result."},
+        ]
+        for index, step in enumerate(solved_steps[:8], start=1):
+            actions.append({"action": "draw_text", "content": f"Step {index}: {step}"})
+        if answer:
+            actions.append({"action": "draw_text", "content": f"Final answer: {answer}"})
+        return actions
 
     if "set notation" in lowered or "representations" in lowered:
         if alt == 0:
@@ -372,8 +571,10 @@ def _prepare_problem_whiteboard_actions(
         if text and _is_greeting_line(text):
             continue
         is_text_action = action_name.lower() in {"write", "write_text", "add_text", "text", "draw_text"}
-        if text and is_text_action and len(text.split()) >= 14 and not _is_equation_line(text):
-            continue
+        if text and is_text_action and len(text.split()) >= 28 and not _is_equation_line(text):
+            structured = re.match(r"(?i)^(step\s*\d+|problem:|final answer:|source:|chapter:|topic:)", text)
+            if not structured:
+                continue
         if action_name.lower() in {"write", "write_text", "add_text", "text"} and not text:
             continue
         cleaned.append(action)
@@ -391,7 +592,15 @@ def _resolve_session_topic(session: StudentSession) -> str:
     return str(session.chapter_name or "Current Topic")
 
 
-def _ensure_board_header_actions(session: StudentSession, actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _ensure_board_header_actions(
+    session: StudentSession,
+    actions: list[dict[str, Any]],
+    *,
+    include_headers: bool = True,
+) -> list[dict[str, Any]]:
+    if not include_headers:
+        return actions
+
     chapter = str(session.chapter_name or "Current Chapter")
     topic = _resolve_session_topic(session)
     has_chapter = False
@@ -415,6 +624,157 @@ def _ensure_board_header_actions(session: StudentSession, actions: list[dict[str
 
 def _normalize_action(input_data: dict[str, Any]) -> str:
     return str(input_data.get("action") or "").strip().lower()
+
+
+def _class_user_message(input_data: dict[str, Any], action: str) -> str:
+    if input_data.get("answer"):
+        return f"My final answer is {input_data['answer']}"
+    if input_data.get("question"):
+        return str(input_data.get("question"))
+    if input_data.get("topic"):
+        return str(input_data.get("topic"))
+
+    if action == "start":
+        return "start"
+    if action == "next":
+        return "next_step"
+    if action in {"continue", "repeat"}:
+        return "next_step"
+    if action in {"next_topic", "next_chapter", "skip_topic", "skip_chapter"}:
+        return "next_topic"
+    if action in {"homework", "finish", "end"}:
+        return "homework"
+    if action in {"help", "unable", "not_able"}:
+        return "help"
+    if action:
+        return action
+    return "ready"
+
+
+def _topic_keywords(value: str) -> list[str]:
+    tokens = re.findall(r"[A-Za-z]{4,}", str(value or "").lower())
+    stop_words = {"chapter", "grade", "class", "mathematics", "math", "topic", "concept", "exercise"}
+    unique: list[str] = []
+    for token in tokens:
+        if token in stop_words:
+            continue
+        if token not in unique:
+            unique.append(token)
+    return unique[:6]
+
+
+def _topic_match_score(text: str, *, topic: str, chapter: str) -> int:
+    lowered = str(text or "").lower()
+    score = 0
+    for keyword in _topic_keywords(topic):
+        if keyword in lowered:
+            score += 3
+    for keyword in _topic_keywords(chapter):
+        if keyword in lowered:
+            score += 1
+    return score
+
+
+def _best_topic_candidates(candidates: list[str], *, topic: str, chapter: str) -> list[str]:
+    scored: list[tuple[int, str]] = []
+    for candidate in candidates:
+        scored.append((_topic_match_score(candidate, topic=topic, chapter=chapter), candidate))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [candidate for score, candidate in scored if score > 0]
+
+
+def _scope_rag_context_to_chapter(raw_context: str, chapter: str, topic: str) -> str:
+    if not isinstance(raw_context, str) or not raw_context.strip():
+        return ""
+
+    blocks = [block.strip() for block in raw_context.split("\n\n") if block.strip()]
+    if not blocks:
+        return raw_context
+
+    keywords = _topic_keywords(chapter) + _topic_keywords(topic)
+    if not keywords:
+        return "\n\n".join(blocks[:6])
+
+    scoped: list[str] = []
+    for block in blocks:
+        lowered = block.lower()
+        if any(keyword in lowered for keyword in keywords):
+            scoped.append(block)
+
+    if scoped:
+        return "\n\n".join(scoped[:6])
+    return "\n\n".join(blocks[:6])
+
+
+def _widget_to_actions(widget: Any) -> list[dict[str, Any]]:
+    if not isinstance(widget, dict):
+        return []
+
+    widget_type = str(widget.get("type") or "").strip().lower()
+    props = widget.get("props") if isinstance(widget.get("props"), dict) else {}
+
+    if widget_type == "graph":
+        equations = props.get("equations") if isinstance(props.get("equations"), list) else []
+        preview = ", ".join(str(eq).strip() for eq in equations if str(eq).strip()) or "relevant curve"
+        return [{"action": "draw_text", "content": f"Diagram: Plot the graph for {preview}."}]
+
+    if widget_type == "number_line":
+        points = props.get("points") if isinstance(props.get("points"), list) else []
+        preview = ", ".join(str(point).strip() for point in points if str(point).strip()) or "key values"
+        return [{"action": "draw_text", "content": f"Diagram: Draw a number line and mark {preview}."}]
+
+    if widget_type == "venn":
+        sets = props.get("sets") if isinstance(props.get("sets"), list) else []
+        labels = []
+        for item in sets:
+            if isinstance(item, dict) and str(item.get("name") or "").strip():
+                labels.append(str(item["name"]).strip())
+        joined = ", ".join(labels) if labels else "the required sets"
+        return [{"action": "draw_text", "content": f"Diagram: Draw a Venn diagram for {joined} and mark common elements."}]
+
+    return []
+
+
+def _chapter_transition_actions(transition: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
+    from_chapter = str(transition.get("from_chapter") or "Current chapter").strip()
+    to_chapter = str(transition.get("to_chapter") or "Next chapter").strip()
+    first_topic = str(transition.get("first_topic") or "").strip()
+    raw_topics = transition.get("topics") if isinstance(transition.get("topics"), list) else []
+    topics = [str(item).strip() for item in raw_topics if str(item).strip()][:8]
+
+    spoken = (
+        f"Excellent work. We completed {from_chapter}. "
+        f"Now we are starting a new chapter: {to_chapter}. "
+    )
+    if topics:
+        spoken += "In this chapter we will cover: " + ", ".join(topics) + ". "
+    if first_topic:
+        spoken += f"First topic is {first_topic}."
+
+    actions: list[dict[str, Any]] = [
+        {"action": "draw_text", "content": f"Chapter complete: {from_chapter}"},
+        {"action": "draw_text", "content": f"Starting new chapter: {to_chapter}"},
+    ]
+    if topics:
+        actions.append({"action": "draw_text", "content": "Topic list:"})
+        for index, topic in enumerate(topics, start=1):
+            actions.append({"action": "draw_text", "content": f"{index}. {topic}"})
+    if first_topic:
+        actions.append({"action": "draw_text", "content": f"Now starting: {first_topic}"})
+
+    return spoken.strip(), actions
+
+
+def _exercise_nudge_from_rag(rag_context: str, variation: int) -> str | None:
+    candidates = _extract_problem_candidates(rag_context)
+    if not candidates:
+        return None
+    selected = candidates[variation % len(candidates)]
+    return (
+        "SYSTEM INSTRUCTION: Solve at least one exercise question fully on the whiteboard now. "
+        "Use this question if relevant: "
+        f"{selected}"
+    )
 
 
 def _ensure_class_timer(session: StudentSession, action: str) -> None:
@@ -484,9 +844,10 @@ def _class_expired_payload(session: StudentSession) -> dict:
         "session_duration_seconds": int(session.class_duration_minutes * 60),
         "session_expired": True,
         "avatar_voice": {
-            "style": "energetic",
-            "pace": "short-punchy",
+            "style": "calm",
+            "pace": "slow-paused",
             "sync_to_whiteboard": True,
+            "pause_ms": 520,
         },
         "avatar_stream": {
             "voice_chunks": [spoken_response],
@@ -494,7 +855,8 @@ def _class_expired_payload(session: StudentSession) -> dict:
                 f"Session complete: {session.class_duration_minutes} minutes",
                 "Review today's notes and homework.",
             ],
-            "pace": "short-punchy",
+            "pace": "slow-paused",
+            "pause_ms": 520,
         },
     }
 
@@ -504,15 +866,23 @@ def _rag_context_for_session(session: StudentSession, exam_type: str) -> str:
         _resolve_session_topic(session)
         or session.chapter_name
     )
+    chapter = session.chapter_name or topic
+    normalized_exam = "jee" if str(exam_type or "").lower() == "jee" else "cbse"
+    source_hint = (
+        "JEE PYQ patterns, solved examples, and problem solving strategies"
+        if normalized_exam == "jee"
+        else "NCERT textbook concept explanations, worked examples, and exercise questions"
+    )
     query = (
-        f"Grade {getattr(session, 'grade', 11)} "
-        f"{str(exam_type or 'cbse').upper()} Mathematics "
-        f"chapter {session.chapter_name or topic} "
-        f"topic {topic} "
-        "PYQ study material worked examples"
+        f"Grade {getattr(session, 'grade', 10)} "
+        f"{normalized_exam.upper()} Mathematics "
+        f"ONLY chapter {chapter}. "
+        f"Current topic {topic}. "
+        f"{source_hint}. Ignore unrelated chapters."
     ).strip()
     try:
-        return retrieve_context(query=query, exam_type=exam_type, k=6)
+        raw_context = retrieve_context(query=query, exam_type=normalized_exam, k=8)
+        return _scope_rag_context_to_chapter(raw_context, chapter=chapter, topic=topic)
     except Exception as error:
         print(f"Tutor RAG lookup failed ({type(error).__name__}): {error}")
         return ""
@@ -534,6 +904,7 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
     session.exam = "jee" if str(route_context.get("exam", req.get_exam())).lower() == "jee" else "cbse"
 
     action = _normalize_action(input_data)
+    turn_index = int(getattr(session, "class_problem_cursor", 0))
     _ensure_class_timer(session, action)
     if _is_class_time_over(session) and action != "start":
         return _class_expired_payload(session)
@@ -542,21 +913,14 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         input_data.get("topic")
         or input_data.get("chapter")
         or session.current_topic
-        or "JEE Mathematics"
+        or ("JEE Mathematics" if session.exam == "jee" else "CBSE Mathematics")
     )
     session.active_phase = "practice" if input_data.get("answer") else "teaching"
 
     if input_data.get("question"):
         session.current_problem = {"prompt": input_data["question"]}
 
-    user_message = (
-        f"My final answer is {input_data['answer']}"
-        if input_data.get("answer")
-        else input_data.get("question")
-        or input_data.get("topic")
-        or input_data.get("action")
-        or "ready"
-    )
+    user_message = _class_user_message(input_data, action)
 
     route = await orchestrator.route_message(
         session.session_id,
@@ -569,6 +933,15 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
     diagnostic_result = None
     nudge = None
     proctor_payload = None
+    tutor_payload: dict[str, Any] | None = None
+    transition_spoken_prefix = ""
+    transition_actions: list[dict[str, Any]] = []
+    continuation_nudge = None
+    if action in {"next", "continue", "repeat"}:
+        continuation_nudge = (
+            "SYSTEM INSTRUCTION: Student clicked Next. Continue the same topic from the next sub-step. "
+            "Do not restart the chapter intro and do not repeat the same solved problem."
+        )
 
     if route == "proctor_agent":
         proctor_payload = await proctor_agent.process_message(session, user_message)
@@ -581,6 +954,8 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
             correct_answer="42",
         )
         nudge = diagnostic_result.get("hidden_nudge")
+        exercise_nudge = _exercise_nudge_from_rag(rag_context, turn_index)
+        nudge = "\n".join(part for part in [nudge, continuation_nudge, exercise_nudge] if part)
         tutor_payload = await tutor_agent.process_message(
             session,
             user_message,
@@ -590,6 +965,8 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         spoken_response = tutor_payload.get("spoken_response", "")
         whiteboard_actions = tutor_payload.get("whiteboard_actions", [])
     else:
+        exercise_nudge = _exercise_nudge_from_rag(rag_context, turn_index)
+        nudge = "\n".join(part for part in [continuation_nudge, exercise_nudge] if part)
         tutor_payload = await tutor_agent.process_message(
             session,
             user_message,
@@ -599,26 +976,48 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         spoken_response = tutor_payload.get("spoken_response", "")
         whiteboard_actions = tutor_payload.get("whiteboard_actions", [])
 
+    if route != "proctor_agent" and tutor_payload:
+        whiteboard_actions = [*whiteboard_actions, *_widget_to_actions(tutor_payload.get("widget"))]
+
+    if route != "proctor_agent" and tutor_payload and tutor_payload.get("advance_topic"):
+        next_topic = orchestrator._advance_to_next_topic(session)
+        whiteboard_actions = [
+            *whiteboard_actions,
+            {"action": "draw_text", "content": f"Topic complete. Next topic: {next_topic}"},
+        ]
+
+    if route != "proctor_agent" and isinstance(session.chapter_transition, dict):
+        transition_spoken_prefix, transition_actions = _chapter_transition_actions(session.chapter_transition)
+        session.chapter_transition = None
+
+    if transition_spoken_prefix:
+        spoken_response = f"{transition_spoken_prefix} {spoken_response}".strip()
+
     whiteboard_actions = _prepare_problem_whiteboard_actions(
         topic=session.current_topic or session.chapter_name,
         actions=whiteboard_actions,
-        variation=session.questions_asked,
+        variation=turn_index,
         rag_context=rag_context,
     )
-    session.questions_asked += 1
-    whiteboard_actions = _ensure_board_header_actions(session, whiteboard_actions)
+    if transition_actions:
+        whiteboard_actions = [*transition_actions, *whiteboard_actions]
+    include_headers = action in {"start", "next_topic", "next_chapter", "skip_topic", "skip_chapter"} or turn_index == 0
+    whiteboard_actions = _ensure_board_header_actions(session, whiteboard_actions, include_headers=include_headers)
     steps = _steps_from_actions(whiteboard_actions)
     if not steps:
         fallback_actions = _topic_problem_actions(
             session.current_topic or session.chapter_name,
-            variation=session.questions_asked,
+            variation=turn_index,
             rag_context=rag_context,
         )
-        whiteboard_actions = _ensure_board_header_actions(session, fallback_actions)
+        whiteboard_actions = _ensure_board_header_actions(session, fallback_actions, include_headers=include_headers)
         steps = _steps_from_actions(whiteboard_actions)
+    session.class_problem_cursor = turn_index + 1
+    session.questions_asked = int(getattr(session, "questions_asked", 0)) + 1
 
     chapter_title = session.chapter_name or session.current_topic or "Current Chapter"
     topic_title = session.current_topic or chapter_title
+    spoken_response = _spoken_from_steps(spoken_response, steps, topic_title)
     return {
         "type": "exam" if route == "proctor_agent" else ("teach" if route != "diagnostic_agent" else "evaluation"),
         "chapter": chapter_title,
@@ -648,14 +1047,16 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         "session_duration_seconds": int(session.class_duration_minutes * 60),
         "session_expired": False,
         "avatar_voice": {
-            "style": "energetic",
-            "pace": "short-punchy",
+            "style": "calm",
+            "pace": "slow-paused",
             "sync_to_whiteboard": True,
+            "pause_ms": 520,
         },
         "avatar_stream": {
             "voice_chunks": [spoken_response] if spoken_response else [],
             "steps": steps,
-            "pace": "short-punchy",
+            "pace": "slow-paused",
+            "pause_ms": 520,
         },
     }
 

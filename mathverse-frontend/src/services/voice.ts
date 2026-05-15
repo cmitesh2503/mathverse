@@ -1,5 +1,7 @@
 type VoiceOptions = {
   chunks?: string[];
+  rate?: number;
+  pauseMs?: number;
   onStart?: () => void;
   onChunkStart?: (index: number, chunk: string) => void;
   onEnd?: () => void;
@@ -18,8 +20,22 @@ function splitText(text: string) {
     .filter(Boolean);
 }
 
+function sanitizeSpokenChunk(chunk: string) {
+  return chunk
+    .replace(/\[(pause|break)\]/gi, " ")
+    .replace(/\((pause|break)\)/gi, " ")
+    .replace(/\bpause\s+(here|now|for a moment)\b[,:;.-]*/gi, " ")
+    .replace(/^\s*pause\s*[,:;.-]*/i, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export function playVoiceStream(text: string, options: VoiceOptions = {}): VoiceController {
-  const chunks = (options.chunks?.length ? options.chunks : splitText(text)).filter(Boolean);
+  const chunks = (options.chunks?.length ? options.chunks : splitText(text))
+    .map((chunk) => sanitizeSpokenChunk(chunk))
+    .filter(Boolean);
+  const rate = typeof options.rate === "number" ? Math.min(1.2, Math.max(0.65, options.rate)) : 0.8;
+  const pauseMs = typeof options.pauseMs === "number" ? Math.max(120, options.pauseMs) : 420;
   let stopped = false;
   let index = 0;
 
@@ -42,12 +58,12 @@ export function playVoiceStream(text: string, options: VoiceOptions = {}): Voice
 
     const chunkIndex = index;
     const utterance = new SpeechSynthesisUtterance(chunks[chunkIndex]);
-    utterance.rate = 0.92;
+    utterance.rate = rate;
     utterance.pitch = 1;
     utterance.onstart = () => options.onChunkStart?.(chunkIndex, chunks[chunkIndex]);
     utterance.onend = () => {
       index += 1;
-      window.setTimeout(speakNext, 120);
+      window.setTimeout(speakNext, pauseMs);
     };
     utterance.onerror = () => {
       index += 1;

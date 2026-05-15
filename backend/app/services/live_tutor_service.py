@@ -16,6 +16,7 @@ from ..core.config import (
     GEMINI_LIVE_VOICE,
 )
 from ..services.ai_gateway import get_live_client, live_api_available
+from ..services.cbse_exercises import build_exercise_solution
 from ..services.rag_service import retrieve_context as rag_get_context
 from ..services.retrieval_service import retrieve_context
 from ..services.session_service import session_service
@@ -300,20 +301,26 @@ class LiveTutorBridge:
         nudge = None
         diagnostic_result = None
         proctor_payload = None
+        tutor_payload = {"advance_topic": False}
         rag_context = ""
-        
-        # ✅ FIX 1: Lock RAG query to Grade 10 and NCERT Textbooks dynamically
+
         if effective_mode == "class":
             topic = self._resolve_current_topic()
+            normalized_exam = "jee" if str(self.student_session.exam or "").lower() == "jee" else "cbse"
+            source_hint = (
+                "JEE PYQ patterns, solved examples, and problem solving strategies"
+                if normalized_exam == "jee"
+                else "NCERT textbook concept explanations, worked examples, and exercise questions"
+            )
             query = (
                 f"Grade {getattr(self.student_session, 'grade', 10)} "
-                f"{str(self.student_session.exam or 'cbse').upper()} Mathematics "
+                f"{normalized_exam.upper()} Mathematics "
                 f"chapter {self.student_session.chapter_name or topic} "
                 f"topic {topic} {message} "
-                "NCERT textbook exercise problems and concepts"
+                f"{source_hint}"
             ).strip()
             try:
-                rag_context = rag_get_context(query=query, exam_type=self.student_session.exam, k=6)
+                rag_context = rag_get_context(query=query, exam_type=normalized_exam, k=6)
             except Exception as error:
                 print(f"Live RAG lookup failed ({type(error).__name__}): {error}")
                 rag_context = ""
@@ -332,6 +339,20 @@ class LiveTutorBridge:
                 correct_answer="42",
             )
             nudge = diagnostic_result.get("hidden_nudge")
+            if effective_mode == "class":
+                candidates = self._extract_problem_candidates(rag_context)
+                if candidates:
+                    base_prob = candidates[self.student_session.questions_asked % len(candidates)]
+                    nudge = "\n".join(
+                        part
+                        for part in [
+                            nudge,
+                            "SYSTEM INSTRUCTION: Solve at least one exercise question fully on the whiteboard "
+                            "using short sequential 'draw_text' steps. "
+                            f"Use this question if relevant: {base_prob}",
+                        ]
+                        if part
+                    )
             tutor_payload = await self.tutor_agent.process_message(
                 self.student_session,
                 message,
@@ -341,12 +362,17 @@ class LiveTutorBridge:
             spoken_response = tutor_payload.get("spoken_response", "")
             whiteboard_actions = tutor_payload.get("whiteboard_actions", [])
         else:
-            # ✅ FIX 2: Explicitly order the AI Agent to solve the problem on the board
+            # âœ… FIX 2: Explicitly order the AI Agent to solve the problem on the board
             if effective_mode == "class":
                 candidates = self._extract_problem_candidates(rag_context)
                 if candidates:
                     base_prob = candidates[self.student_session.questions_asked % len(candidates)]
-                    nudge = (nudge or "") + f"\nSYSTEM INSTRUCTION: You MUST write the following problem on the whiteboard and solve it mathematically step-by-step using 'write_equation' actions. Problem: {base_prob}"
+                    nudge = (
+                        (nudge or "")
+                        + "\nSYSTEM INSTRUCTION: Solve at least one exercise question fully on the whiteboard "
+                        "using short sequential 'draw_text' steps. "
+                        f"Use this question if relevant: {base_prob}"
+                    )
 
             tutor_payload = await self.tutor_agent.process_message(
                 self.student_session,
@@ -356,6 +382,13 @@ class LiveTutorBridge:
             )
             spoken_response = tutor_payload.get("spoken_response", "")
             whiteboard_actions = tutor_payload.get("whiteboard_actions", [])
+
+        if route != "proctor_agent" and tutor_payload.get("advance_topic"):
+            next_topic = self.orchestrator._advance_to_next_topic(self.student_session)
+            whiteboard_actions = [
+                *whiteboard_actions,
+                {"action": "draw_text", "content": f"Topic complete. Next topic: {next_topic}"},
+            ]
 
         whiteboard_actions = self._prepare_problem_whiteboard_actions(
             topic=self._resolve_current_topic(),
@@ -373,6 +406,11 @@ class LiveTutorBridge:
                 rag_context=rag_context,
             )
             whiteboard_actions = self._ensure_board_header_actions(whiteboard_actions)
+        spoken_response = self._spoken_from_actions(
+            spoken_response=spoken_response,
+            whiteboard_actions=whiteboard_actions,
+            topic=self._resolve_current_topic(),
+        )
         state = self._build_agent_state(whiteboard_actions)
 
         if append_user:
@@ -720,6 +758,24 @@ class LiveTutorBridge:
         )
         return str(text).strip()
 
+    def _spoken_from_actions(
+        self,
+        spoken_response: str,
+        whiteboard_actions: list[dict[str, object]],
+        topic: str,
+    ) -> str:
+        spoken = str(spoken_response or "").strip()
+        if spoken:
+            return spoken
+        lines = [self._action_text(action) for action in whiteboard_actions if isinstance(action, dict)]
+        lines = [line for line in lines if line]
+        if lines:
+            return " ".join(lines[:4])
+        return (
+            f"We finished the current board steps for {topic}. "
+            "Click Next when you are ready for the next explanation."
+        )
+
     def _is_greeting_line(self, text: str) -> bool:
         lowered = text.lower()
         return any(
@@ -782,7 +838,7 @@ class LiveTutorBridge:
         if not actions:
             return True
 
-        # ✅ FIX 3: Trust the AI! If it returns more than 2 steps, it's solving the math!
+        # âœ… FIX 3: Trust the AI! If it returns more than 2 steps, it's solving the math!
         if len(actions) > 2:
             return False
 
@@ -837,6 +893,10 @@ class LiveTutorBridge:
             lowered = line.lower()
             if len(line) < 14 or len(line) > 220:
                 continue
+            if lowered.startswith("this theorem can be proved") or lowered.startswith("proof"):
+                continue
+            if lowered.endswith(("such", "therefore", "hence")):
+                continue
             if not (
                 "?" in line
                 or any(
@@ -880,7 +940,7 @@ class LiveTutorBridge:
             return f"Solve a similar textbook variation of: {problem}"
         return mutated
 
-    # ✅ FIX 4: Entirely removed fake dummy steps!
+    # âœ… FIX 4: Entirely removed fake dummy steps!
     def _pyq_problem_actions(self, topic: str, rag_context: str, variation: int = 0) -> list[dict]:
         sources = ["NCERT Textbook", "CBSE Exercise", "Similar Practice Problem"]
         source_label = sources[variation % len(sources)]
@@ -898,11 +958,26 @@ class LiveTutorBridge:
         else:
             prompt = base_problem
 
-        return [
+        solved = build_exercise_solution(
+            {
+                "chapter_title": topic or "Mathematics",
+                "exercise": source_label,
+                "number": str(variation + 1),
+                "prompt": prompt,
+            }
+        )
+        solved_steps = [str(step).strip() for step in solved.get("steps", []) if str(step).strip()]
+        answer = str(solved.get("answer") or "").strip()
+
+        actions: list[dict] = [
             {"action": "draw_text", "content": f"Source: {source_label}"},
             {"action": "draw_text", "content": f"Problem: {prompt}"},
-            {"action": "draw_text", "content": "Solving step-by-step..."}
         ]
+        for index, step in enumerate(solved_steps[:8], start=1):
+            actions.append({"action": "draw_text", "content": f"Step {index}: {step}"})
+        if answer:
+            actions.append({"action": "draw_text", "content": f"Final answer: {answer}"})
+        return actions
 
     def _topic_problem_actions(self, topic: str, variation: int = 0, rag_context: str = "") -> list[dict]:
         lowered = (topic or "").lower()
@@ -985,8 +1060,10 @@ class LiveTutorBridge:
             if text and self._is_greeting_line(text):
                 continue
             is_text_action = action_name.lower() in {"write", "write_text", "add_text", "text", "draw_text"}
-            if text and is_text_action and len(text.split()) >= 14 and not self._is_equation_line(text):
-                continue
+            if text and is_text_action and len(text.split()) >= 28 and not self._is_equation_line(text):
+                structured = re.match(r"(?i)^(step\s*\d+|problem:|final answer:|source:|chapter:|topic:)", text)
+                if not structured:
+                    continue
             if action_name.lower() in {"write", "write_text", "add_text", "text"} and not text:
                 continue
             cleaned.append(dict(action))

@@ -16,6 +16,7 @@ type Props = {
   whiteboardActions?: WhiteboardAction[];
   delayMs?: number;
   visibleStepCount?: number;
+  activeStepIndex?: number | null;
   onScoreUpdate?: (update: { score: number; correct: number; wrong: number }) => void;
 };
 
@@ -97,8 +98,8 @@ function MathText({ children, forceMath = false }: { children: string; forceMath
             key={`${part}-${index}`}
             className={
               math
-                ? "font-serif text-[1.05em] font-semibold italic tracking-normal text-slate-50"
-                : "tracking-normal text-slate-100"
+                ? "font-serif text-[1.06em] font-semibold italic tracking-normal text-emerald-100"
+                : "tracking-normal text-emerald-100"
             }
           >
             {math ? formatLatex(part) : part}
@@ -127,10 +128,11 @@ function actionToNode(action: WhiteboardAction, index: number): VisualNode | nul
 
   if (["draw_text", "write", "write_text", "add_text", "text"].includes(actionName)) {
     if (!content) return null;
+    const isProblemLine = String(content).trim().toLowerCase().startsWith("problem:");
     return {
       id: `action-${index}-${action.action}-${content}`,
-      kind: isMathLike(content) ? "equation" : "text",
-      label: "Tutor note",
+      kind: isProblemLine ? "problem" : isMathLike(content) ? "equation" : "text",
+      label: isProblemLine ? "Problem" : "Tutor note",
       content,
     };
   }
@@ -186,14 +188,41 @@ function nodeTone(kind: VisualNode["kind"]) {
   return "border-slate-100/25 bg-slate-100/10";
 }
 
-export function Whiteboard({ steps, whiteboard, whiteboardActions = [], delayMs = 950, visibleStepCount, onScoreUpdate }: Props) {
+function nodeStepIndex(node: VisualNode): number | null {
+  const fromLabel = /step\s+(\d+)/i.exec(node.label || "");
+  if (fromLabel) return Math.max(0, Number(fromLabel[1]) - 1);
+  const fromContent = /^step\s+(\d+)/i.exec((node.content || "").trim());
+  if (fromContent) return Math.max(0, Number(fromContent[1]) - 1);
+  return null;
+}
+
+export function Whiteboard({
+  steps,
+  whiteboard,
+  whiteboardActions = [],
+  delayMs = 950,
+  visibleStepCount,
+  activeStepIndex = null,
+  onScoreUpdate,
+}: Props) {
   const [visibleCount, setVisibleCount] = useState(0);
   const [actionNodes, setActionNodes] = useState<VisualNode[]>([]);
   const seenActionsRef = useRef<Set<string>>(new Set());
+  const scrollPaneRef = useRef<HTMLDivElement | null>(null);
 
   const incomingActions = useMemo(
     () => [...(whiteboard?.actions || []), ...whiteboardActions],
     [whiteboard?.actions, whiteboardActions],
+  );
+  const hasActionProblem = useMemo(
+    () =>
+      incomingActions.some((action) =>
+        String(action?.content || action?.expression || action?.label || "")
+          .trim()
+          .toLowerCase()
+          .startsWith("problem:"),
+      ),
+    [incomingActions],
   );
 
   const boardSteps = useMemo(
@@ -213,12 +242,20 @@ export function Whiteboard({ steps, whiteboard, whiteboardActions = [], delayMs 
   useEffect(() => {
     seenActionsRef.current = new Set();
     setActionNodes([]);
+    if (scrollPaneRef.current) {
+      scrollPaneRef.current.scrollTop = 0;
+    }
   }, [boardSignature]);
 
   useEffect(() => {
     if (!incomingActions.length) return;
 
     const nextNodes: VisualNode[] = [];
+    const seenProblemContents = new Set(
+      actionNodes
+        .filter((node) => node.kind === "problem")
+        .map((node) => node.content.trim().toLowerCase()),
+    );
     incomingActions.forEach((action, index) => {
       const signature = `${index}:${JSON.stringify(action)}`;
       if (seenActionsRef.current.has(signature)) return;
@@ -230,6 +267,11 @@ export function Whiteboard({ steps, whiteboard, whiteboardActions = [], delayMs 
       }
       const node = actionToNode(action, index);
       if (node) {
+        if (node.kind === "problem") {
+          const key = node.content.trim().toLowerCase();
+          if (seenProblemContents.has(key)) return;
+          seenProblemContents.add(key);
+        }
         nextNodes.push(node);
       }
     });
@@ -237,7 +279,7 @@ export function Whiteboard({ steps, whiteboard, whiteboardActions = [], delayMs 
     if (nextNodes.length) {
       setActionNodes((current) => [...current, ...nextNodes]);
     }
-  }, [incomingActions, onScoreUpdate]);
+  }, [actionNodes, incomingActions, onScoreUpdate]);
 
   useEffect(() => {
     if (visibleStepCount !== undefined) return;
@@ -259,7 +301,7 @@ export function Whiteboard({ steps, whiteboard, whiteboardActions = [], delayMs 
 
   const baseNodes = useMemo<VisualNode[]>(() => {
     const nodes: VisualNode[] = [];
-    if (whiteboard?.problem) {
+    if (whiteboard?.problem && !hasActionProblem) {
       nodes.push({
         id: "problem",
         kind: "problem",
@@ -287,9 +329,14 @@ export function Whiteboard({ steps, whiteboard, whiteboardActions = [], delayMs 
     }
 
     return nodes;
-  }, [boardSteps, renderedCount, whiteboard?.answer, whiteboard?.problem]);
+  }, [boardSteps, hasActionProblem, renderedCount, whiteboard?.answer, whiteboard?.problem]);
 
-  const visualNodes = [...baseNodes, ...actionNodes];
+  const visualNodes = useMemo(() => {
+    const merged = [...baseNodes, ...actionNodes];
+    const problems = merged.filter((node) => node.kind === "problem");
+    const others = merged.filter((node) => node.kind !== "problem");
+    return [...problems, ...others];
+  }, [baseNodes, actionNodes]);
 
   return (
     <section className="flex h-full min-h-[540px] flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-950 shadow-2xl">
@@ -304,6 +351,7 @@ export function Whiteboard({ steps, whiteboard, whiteboardActions = [], delayMs 
       </div>
 
       <div
+        ref={scrollPaneRef}
         className="relative flex-1 overflow-auto bg-slate-900 p-5"
         style={{
           backgroundImage:
@@ -320,9 +368,23 @@ export function Whiteboard({ steps, whiteboard, whiteboardActions = [], delayMs 
                     {index + 1}
                   </div>
                   {index < visualNodes.length - 1 && <div className="absolute left-4 top-8 h-[calc(100%+1.25rem)] w-px bg-slate-400/30" />}
-                  <div className={`max-w-3xl rounded-lg border px-5 py-4 shadow-lg backdrop-blur-sm ${nodeTone(node.kind)}`}>
+                  <div
+                    className={`max-w-3xl rounded-lg border px-5 py-4 shadow-lg backdrop-blur-sm ${
+                      nodeTone(node.kind)
+                    } ${
+                      activeStepIndex !== null && nodeStepIndex(node) === activeStepIndex
+                        ? "ring-2 ring-emerald-300 shadow-[0_0_0_1px_rgba(16,185,129,0.75)]"
+                        : ""
+                    }`}
+                  >
                     <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{node.label}</p>
-                    <p className="mt-2 text-lg leading-8 tracking-normal text-slate-50">
+                    <p
+                      className={`mt-2 tracking-normal ${
+                        node.kind === "problem"
+                          ? "text-2xl font-bold leading-9 text-emerald-200"
+                          : "text-xl leading-9 text-emerald-100"
+                      }`}
+                    >
                       <MathText forceMath={node.kind === "equation" || node.kind === "answer"}>{node.content}</MathText>
                     </p>
                   </div>
