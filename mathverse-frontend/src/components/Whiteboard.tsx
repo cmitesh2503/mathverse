@@ -236,6 +236,11 @@ export function Whiteboard({
           ],
     [steps, whiteboard],
   );
+  const firstBoardProblem = useMemo(
+    () =>
+      boardSteps.find((line) => String(line || "").trim().toLowerCase().startsWith("problem:")) || "",
+    [boardSteps],
+  );
 
   const boardSignature = `${whiteboard?.title || ""}|${whiteboard?.problem || ""}|${boardSteps.join("|")}`;
 
@@ -308,9 +313,17 @@ export function Whiteboard({
         label: "Problem",
         content: whiteboard.problem,
       });
+    } else if (firstBoardProblem && !hasActionProblem) {
+      nodes.push({
+        id: "problem-from-steps",
+        kind: "problem",
+        label: "Problem",
+        content: firstBoardProblem,
+      });
     }
 
     boardSteps.slice(0, renderedCount).forEach((step, index) => {
+      if (String(step || "").trim().toLowerCase().startsWith("problem:")) return;
       nodes.push({
         id: `step-${index}-${step}`,
         kind: isMathLike(step) ? "equation" : "step",
@@ -329,7 +342,7 @@ export function Whiteboard({
     }
 
     return nodes;
-  }, [boardSteps, hasActionProblem, renderedCount, whiteboard?.answer, whiteboard?.problem]);
+  }, [boardSteps, firstBoardProblem, hasActionProblem, renderedCount, whiteboard?.answer, whiteboard?.problem]);
 
   const visualNodes = useMemo(() => {
     const merged = [...baseNodes, ...actionNodes];

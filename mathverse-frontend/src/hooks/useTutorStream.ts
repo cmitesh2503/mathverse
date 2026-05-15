@@ -92,16 +92,18 @@ export function useTutorStream({ sessionId, examMode, onResponse }: Args) {
         const paceLabel = String(avatarVoice?.pace || "").toLowerCase();
         const voiceRate =
           paceLabel.includes("slow")
-            ? 0.76
+            ? 0.82
             : paceLabel.includes("short") || paceLabel.includes("fast")
-              ? 0.9
-              : 0.8;
+              ? 1.0
+              : paceLabel.includes("steady") || paceLabel.includes("normal")
+                ? 0.95
+                : 0.9;
         const pauseMs =
           typeof avatarVoice?.pause_ms === "number"
-            ? avatarVoice.pause_ms
+            ? Math.max(120, avatarVoice.pause_ms)
             : paceLabel.includes("slow")
-              ? 520
-              : 420;
+              ? 320
+              : 180;
 
         const totalSteps = stream.steps.length;
         const totalChunks = Math.max(1, stream.voice_chunks.length);
