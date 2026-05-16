@@ -320,6 +320,28 @@ export default function Classroom({ onNavigate }: Props) {
     }
   }
 
+  async function goPrevious() {
+    if (sessionExpired || loading || nextCoolingDown) return;
+    setNextCoolingDown(true);
+    window.setTimeout(() => setNextCoolingDown(false), 1200);
+    try {
+      await start({ action: "previous_problem", grade: selectedGrade, subject: "math" });
+    } catch (error) {
+      console.error("Failed to go to previous problem.", error);
+    }
+  }
+
+  async function refreshProblem() {
+    if (sessionExpired || loading || nextCoolingDown) return;
+    setNextCoolingDown(true);
+    window.setTimeout(() => setNextCoolingDown(false), 1200);
+    try {
+      await start({ action: "refresh_problem", grade: selectedGrade, subject: "math" });
+    } catch (error) {
+      console.error("Failed to refresh problem.", error);
+    }
+  }
+
   const sendSocketPayload = useCallback((payload: Record<string, unknown>) => {
     const socket = tutorSocketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -778,7 +800,7 @@ export default function Classroom({ onNavigate }: Props) {
                 </div>
               )}
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
                 <button
                   type="button"
                   onClick={() => void goNext()}
@@ -789,11 +811,35 @@ export default function Classroom({ onNavigate }: Props) {
                 </button>
                 <button
                   type="button"
+                  onClick={() => void goPrevious()}
+                  disabled={loading || isQuestion || sessionExpired || nextCoolingDown}
+                  className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
                   onClick={() => void skipTopic()}
                   disabled={loading || isQuestion || sessionExpired || nextCoolingDown}
                   className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
                 >
                   Skip Topic
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void refreshProblem()}
+                  disabled={loading || sessionExpired || nextCoolingDown}
+                  className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
+                >
+                  Refresh
+                </button>
+                <button
+                  type="button"
+                  onClick={pauseOrResume}
+                  disabled={loading || sessionExpired}
+                  className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
+                >
+                  {paused ? "Resume" : "Pause"}
                 </button>
                 <button
                   type="button"

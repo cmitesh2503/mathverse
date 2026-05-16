@@ -20,6 +20,7 @@ from ..services.cbse_exercises import build_exercise_solution
 from ..services.rag_service import retrieve_context as rag_get_context
 from ..services.retrieval_service import retrieve_context
 from ..services.session_service import session_service
+from ..tutor_brain.curriculum import get_grade_curriculum
 
 try:
     from app.agents.diagnostic_agent import DiagnosticAgent
@@ -193,7 +194,12 @@ class LiveTutorBridge:
         memory_context = session_service.build_memory_context(self.session_id)
         topic_title = session_record.topic_title or "CBSE Mathematics"
 
-        source_material = retrieve_context(topic_title, session_record.grade)
+        source_material = self._firebase_curriculum_context(
+            grade=int(getattr(session_record, "grade", 10) or 10),
+            exam=str(getattr(self.student_session, "exam", "cbse") or "cbse"),
+            chapter=topic_title,
+            topic=topic_title,
+        ) or retrieve_context(topic_title, session_record.grade)
         curriculum_grounding = (
             f"Board: {session_record.board}\n"
             f"Subject: {session_record.subject}\n"
@@ -320,7 +326,12 @@ class LiveTutorBridge:
                 f"{source_hint}"
             ).strip()
             try:
-                rag_context = rag_get_context(query=query, exam_type=normalized_exam, k=6)
+                rag_context = self._firebase_curriculum_context(
+                    grade=int(getattr(self.student_session, "grade", 10) or 10),
+                    exam=normalized_exam,
+                    chapter=self.student_session.chapter_name or topic,
+                    topic=topic,
+                ) or rag_get_context(query=query, exam_type=normalized_exam, k=6)
             except Exception as error:
                 print(f"Live RAG lookup failed ({type(error).__name__}): {error}")
                 rag_context = ""
@@ -923,6 +934,62 @@ class LiveTutorBridge:
             if len(candidates) >= limit:
                 break
         return candidates
+
+    def _firebase_curriculum_context(self, *, grade: int, exam: str, chapter: str, topic: str) -> str:
+        try:
+            curriculum = get_grade_curriculum(int(grade or 10), "jee" if str(exam).lower() == "jee" else "cbse")
+            chapters = curriculum.get("chapters") if isinstance(curriculum, dict) else []
+            if not isinstance(chapters, list) or not chapters:
+                return ""
+
+            chapter_l = str(chapter or "").strip().lower()
+            topic_l = str(topic or "").strip().lower()
+            chapter_match = None
+            for item in chapters:
+                if not isinstance(item, dict):
+                    continue
+                title = str(item.get("title") or item.get("chapter") or "").strip()
+                slug = str(item.get("slug") or "").strip()
+                title_l = title.lower()
+                slug_l = slug.lower()
+                if chapter_l and (chapter_l in title_l or title_l in chapter_l or chapter_l == slug_l):
+                    chapter_match = item
+                    break
+                if topic_l and (topic_l in title_l or topic_l == slug_l):
+                    chapter_match = item
+                    break
+
+            if not isinstance(chapter_match, dict):
+                return ""
+
+            lines: list[str] = []
+            lines.append(f"Chapter: {chapter_match.get('title') or chapter_match.get('chapter') or chapter}")
+            if chapter_match.get("summary"):
+                lines.append(f"Summary: {chapter_match.get('summary')}")
+            if chapter_match.get("teaching_anchor"):
+                lines.append(f"Anchor: {chapter_match.get('teaching_anchor')}")
+            if chapter_match.get("classroom_goal"):
+                lines.append(f"Goal: {chapter_match.get('classroom_goal')}")
+            for concept in chapter_match.get("concepts", [])[:6]:
+                if not isinstance(concept, dict):
+                    continue
+                if concept.get("title"):
+                    lines.append(f"Concept: {concept.get('title')}")
+                if concept.get("definition"):
+                    lines.append(f"Definition: {concept.get('definition')}")
+                if concept.get("explanation"):
+                    lines.append(f"Explanation: {concept.get('explanation')}")
+                for bw in (concept.get("board_work") or [])[:4]:
+                    lines.append(str(bw))
+                for example in (concept.get("ncert_examples") or [])[:4]:
+                    if isinstance(example, dict) and example.get("prompt"):
+                        lines.append(f"Exercise question: {example.get('prompt')}")
+                    for step in (example.get("steps") or [])[:5]:
+                        lines.append(f"Step: {step}")
+            context = "\n".join(str(line).strip() for line in lines if str(line).strip())
+            return context if len(context) >= 200 else ""
+        except Exception:
+            return ""
 
     def _generate_similar_problem(self, problem: str, seed: int) -> str:
         if not problem:

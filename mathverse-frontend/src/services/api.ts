@@ -36,7 +36,7 @@ export type TutorPayload = {
     question?: string;
     answer?: string;
     topic?: string;
-    action?: "start" | "next" | "next_concept" | "next_topic" | "continue" | "repeat" | "homework" | "skip_homework" | "finish" | "end" | "end_day" | "help" | "unable" | "not_able" | "solve_pdf_exercises" | "solve_all_exercises" | "solve_all_pdf_exercises" | "next_exercise" | "next_pdf_exercise";
+    action?: "start" | "next" | "next_concept" | "next_topic" | "continue" | "repeat" | "homework" | "skip_homework" | "finish" | "end" | "end_day" | "help" | "unable" | "not_able" | "solve_pdf_exercises" | "solve_all_exercises" | "solve_all_pdf_exercises" | "next_exercise" | "next_pdf_exercise" | "previous_problem" | "refresh_problem";
     scope?: "all_chapters" | "current_chapter" | "chapter" | string;
     question_index?: number;
     question_data?: HomeworkQuestion;

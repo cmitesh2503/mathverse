@@ -205,151 +205,78 @@ export function Whiteboard({
   activeStepIndex = null,
   onScoreUpdate,
 }: Props) {
-  const [visibleCount, setVisibleCount] = useState(0);
-  const [actionNodes, setActionNodes] = useState<VisualNode[]>([]);
-  const seenActionsRef = useRef<Set<string>>(new Set());
   const scrollPaneRef = useRef<HTMLDivElement | null>(null);
 
   const incomingActions = useMemo(
-    () => [...(whiteboard?.actions || []), ...whiteboardActions],
+    () => (whiteboardActions.length ? whiteboardActions : whiteboard?.actions || []),
     [whiteboard?.actions, whiteboardActions],
   );
-  const hasActionProblem = useMemo(
-    () =>
-      incomingActions.some((action) =>
-        String(action?.content || action?.expression || action?.label || "")
-          .trim()
-          .toLowerCase()
-          .startsWith("problem:"),
-      ),
-    [incomingActions],
-  );
-
-  const boardSteps = useMemo(
-    () =>
-      steps.length
-        ? steps
-        : [
-            ...(whiteboard?.solution_steps || []),
-            ...(whiteboard?.equations || []),
-            ...(whiteboard?.chalk_lines || []),
-          ],
-    [steps, whiteboard],
-  );
-  const firstBoardProblem = useMemo(
-    () =>
-      boardSteps.find((line) => String(line || "").trim().toLowerCase().startsWith("problem:")) || "",
-    [boardSteps],
-  );
-
-  const boardSignature = `${whiteboard?.title || ""}|${whiteboard?.problem || ""}|${boardSteps.join("|")}`;
+  const boardSignature = `${whiteboard?.title || ""}|${whiteboard?.problem || ""}|${JSON.stringify(incomingActions)}`;
 
   useEffect(() => {
-    seenActionsRef.current = new Set();
-    setActionNodes([]);
     if (scrollPaneRef.current) {
       scrollPaneRef.current.scrollTop = 0;
     }
   }, [boardSignature]);
 
-  useEffect(() => {
-    if (!incomingActions.length) return;
-
-    const nextNodes: VisualNode[] = [];
-    const seenProblemContents = new Set(
-      actionNodes
-        .filter((node) => node.kind === "problem")
-        .map((node) => node.content.trim().toLowerCase()),
-    );
-    incomingActions.forEach((action, index) => {
-      const signature = `${index}:${JSON.stringify(action)}`;
-      if (seenActionsRef.current.has(signature)) return;
-      seenActionsRef.current.add(signature);
-      const scoreUpdate = scoreFromAction(action);
-      if (scoreUpdate) {
-        onScoreUpdate?.(scoreUpdate);
-        return;
-      }
-      const node = actionToNode(action, index);
-      if (node) {
-        if (node.kind === "problem") {
-          const key = node.content.trim().toLowerCase();
-          if (seenProblemContents.has(key)) return;
-          seenProblemContents.add(key);
-        }
-        nextNodes.push(node);
-      }
-    });
-
-    if (nextNodes.length) {
-      setActionNodes((current) => [...current, ...nextNodes]);
-    }
-  }, [actionNodes, incomingActions, onScoreUpdate]);
-
-  useEffect(() => {
-    if (visibleStepCount !== undefined) return;
-
-    setVisibleCount(0);
-    if (!boardSteps.length) return;
-
-    const timers = boardSteps.map((step, index) =>
-      renderStepWithVoice(step, delayMs * index, () => {
-        setVisibleCount((count) => Math.max(count, index + 1));
-      }),
-    );
-
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [boardSteps, delayMs, visibleStepCount]);
-
-  const renderedCount = steps.length ? steps.length : visibleStepCount ?? visibleCount;
   const modeLabel = whiteboard?.mode ? whiteboard.mode.replace(/_/g, " ") : "Live board";
 
-  const baseNodes = useMemo<VisualNode[]>(() => {
-    const nodes: VisualNode[] = [];
-    if (whiteboard?.problem && !hasActionProblem) {
-      nodes.push({
-        id: "problem",
-        kind: "problem",
-        label: "Problem",
-        content: whiteboard.problem,
-      });
-    } else if (firstBoardProblem && !hasActionProblem) {
-      nodes.push({
-        id: "problem-from-steps",
-        kind: "problem",
-        label: "Problem",
-        content: firstBoardProblem,
-      });
+  const boardModel = useMemo(() => {
+    const model = {
+      chapterNo: "-",
+      chapterName: "-",
+      topicName: "-",
+      exerciseNo: "-",
+      problemNo: "-",
+      problemStatement: "-",
+      solutionSteps: [] as string[],
+      finalAnswer: "",
+    };
+
+    const lastClearIndex = incomingActions.reduce((last, action, index) => {
+      const name = String(action?.action || "").toLowerCase();
+      return ["clear", "clear_board", "erase", "reset_board"].includes(name) ? index : last;
+    }, -1);
+    const currentActions = lastClearIndex >= 0 ? incomingActions.slice(lastClearIndex + 1) : incomingActions;
+    const lines = currentActions
+      .map((action) => {
+        const scoreUpdate = scoreFromAction(action);
+        if (scoreUpdate) onScoreUpdate?.(scoreUpdate);
+        const content =
+          action.content ||
+          action.expression ||
+          action.label ||
+          (action as WhiteboardAction & { text?: string; value?: string; message?: string }).text ||
+          (action as WhiteboardAction & { text?: string; value?: string; message?: string }).value ||
+          (action as WhiteboardAction & { text?: string; value?: string; message?: string }).message ||
+          "";
+        return String(content || "").trim();
+      })
+      .filter(Boolean);
+
+    let currentStepBlock: string[] = [];
+    let latestStepBlock: string[] = [];
+    for (const line of lines) {
+      const lower = line.toLowerCase();
+      if (lower.startsWith("chapter no:")) model.chapterNo = line.split(":", 2)[1]?.trim() || "-";
+      else if (lower.startsWith("chapter name:")) model.chapterName = line.split(":", 2)[1]?.trim() || "-";
+      else if (lower.startsWith("topic name:")) model.topicName = line.split(":", 2)[1]?.trim() || "-";
+      else if (lower.startsWith("exercise no:")) model.exerciseNo = line.split(":", 2)[1]?.trim() || "-";
+      else if (lower.startsWith("problem no:")) model.problemNo = line.split(":", 2)[1]?.trim() || "-";
+      else if (lower.startsWith("problem statement:")) model.problemStatement = line.split(":", 2)[1]?.trim() || "-";
+      else if (lower.startsWith("step ")) {
+        const n = Number((/^step\s+(\d+)/i.exec(line)?.[1] || "0"));
+        if (n === 1 && currentStepBlock.length) {
+          latestStepBlock = currentStepBlock;
+          currentStepBlock = [];
+        }
+        currentStepBlock.push(line);
+      }
+      else if (lower.startsWith("final answer:")) model.finalAnswer = line;
     }
-
-    boardSteps.slice(0, renderedCount).forEach((step, index) => {
-      if (String(step || "").trim().toLowerCase().startsWith("problem:")) return;
-      nodes.push({
-        id: `step-${index}-${step}`,
-        kind: isMathLike(step) ? "equation" : "step",
-        label: `Step ${index + 1}`,
-        content: step,
-      });
-    });
-
-    if (whiteboard?.answer && renderedCount >= boardSteps.length) {
-      nodes.push({
-        id: "answer",
-        kind: "answer",
-        label: "Answer check",
-        content: whiteboard.answer,
-      });
-    }
-
-    return nodes;
-  }, [boardSteps, firstBoardProblem, hasActionProblem, renderedCount, whiteboard?.answer, whiteboard?.problem]);
-
-  const visualNodes = useMemo(() => {
-    const merged = [...baseNodes, ...actionNodes];
-    const problems = merged.filter((node) => node.kind === "problem");
-    const others = merged.filter((node) => node.kind !== "problem");
-    return [...problems, ...others];
-  }, [baseNodes, actionNodes]);
+    model.solutionSteps = (currentStepBlock.length ? currentStepBlock : latestStepBlock).slice(0, 14);
+    return model;
+  }, [incomingActions, onScoreUpdate]);
 
   return (
     <section className="flex h-full min-h-[540px] flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-950 shadow-2xl">
@@ -363,54 +290,43 @@ export function Whiteboard({
         </span>
       </div>
 
-      <div
-        ref={scrollPaneRef}
-        className="relative flex-1 overflow-auto bg-slate-900 p-5"
-        style={{
-          backgroundImage:
-            "linear-gradient(rgba(148, 163, 184, 0.09) 1px, transparent 1px), linear-gradient(90deg, rgba(148, 163, 184, 0.09) 1px, transparent 1px)",
-          backgroundSize: "32px 32px",
-        }}
-      >
-        <div className="min-h-[760px] min-w-[760px] pb-24 pr-20">
-          {visualNodes.length ? (
-            <div className="relative space-y-5">
-              {visualNodes.map((node, index) => (
-                <div key={node.id} className="relative flex items-start gap-4">
-                  <div className="relative z-10 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-slate-300/40 bg-slate-950 text-xs font-semibold text-slate-100">
-                    {index + 1}
-                  </div>
-                  {index < visualNodes.length - 1 && <div className="absolute left-4 top-8 h-[calc(100%+1.25rem)] w-px bg-slate-400/30" />}
-                  <div
-                    className={`max-w-3xl rounded-lg border px-5 py-4 shadow-lg backdrop-blur-sm ${
-                      nodeTone(node.kind)
-                    } ${
-                      activeStepIndex !== null && nodeStepIndex(node) === activeStepIndex
-                        ? "ring-2 ring-emerald-300 shadow-[0_0_0_1px_rgba(16,185,129,0.75)]"
-                        : ""
-                    }`}
-                  >
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{node.label}</p>
+      <div ref={scrollPaneRef} className="relative flex-1 overflow-auto bg-slate-900 p-5">
+        <div className="mx-auto max-w-4xl rounded-lg border-4 border-slate-700 bg-slate-950 p-4">
+          <div className="grid grid-cols-2 gap-3 text-sm text-slate-200 md:grid-cols-3">
+            <p><span className="font-semibold">Chapter no:</span> {boardModel.chapterNo}</p>
+            <p><span className="font-semibold">Chapter name:</span> {boardModel.chapterName}</p>
+            <p><span className="font-semibold">Topic name:</span> {boardModel.topicName}</p>
+            <p className="md:col-span-3"><span className="font-semibold">Exercise no:</span> {boardModel.exerciseNo}</p>
+          </div>
+
+          <div className="mt-4 rounded-md border-2 border-slate-600 bg-slate-900 p-4">
+            <p className="text-xl font-bold text-emerald-300">
+              Problem no: {boardModel.problemNo} : "{boardModel.problemStatement}"
+            </p>
+
+            <p className="mt-4 text-base font-bold text-white">Solution</p>
+            {boardModel.solutionSteps.length ? (
+              <div className="mt-2 space-y-2">
+                {boardModel.solutionSteps.map((step, index) => {
+                  const stepIndex = nodeStepIndex({ id: `s-${index}`, kind: "step", label: step, content: step });
+                  return (
                     <p
-                      className={`mt-2 tracking-normal ${
-                        node.kind === "problem"
-                          ? "text-2xl font-bold leading-9 text-emerald-200"
-                          : "text-xl leading-9 text-emerald-100"
+                      key={`${step}-${index}`}
+                      className={`rounded px-2 py-1 text-lg text-emerald-100 ${
+                        activeStepIndex !== null && stepIndex === activeStepIndex ? "ring-2 ring-emerald-300" : ""
                       }`}
                     >
-                      <MathText forceMath={node.kind === "equation" || node.kind === "answer"}>{node.content}</MathText>
+                      <MathText>{step}</MathText>
                     </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="grid h-full min-h-96 place-items-center">
-              <div className="rounded-lg border border-dashed border-slate-500/60 bg-slate-950/70 px-6 py-5 text-sm font-medium tracking-normal text-slate-300">
-                Waiting for Arvind Sir to write on the board...
+                  );
+                })}
               </div>
-            </div>
-          )}
+            ) : (
+              <p className="mt-2 text-slate-300">Waiting for solution steps...</p>
+            )}
+
+            {boardModel.finalAnswer ? <p className="mt-4 text-lg font-semibold text-cyan-200">{boardModel.finalAnswer}</p> : null}
+          </div>
         </div>
       </div>
     </section>

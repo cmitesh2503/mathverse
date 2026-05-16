@@ -157,6 +157,27 @@ def _split_questions(body: str) -> list[tuple[str, str]]:
     return questions
 
 
+def _split_subparts(prompt: str) -> list[tuple[str, str]]:
+    text = str(prompt or "").strip()
+    if not text:
+        return []
+    markers = list(re.finditer(r"\(\s*(i{1,3}|iv|v|vi{0,3}|ix|x)\s*\)", text, flags=re.IGNORECASE))
+    if len(markers) < 2:
+        return []
+    stem = text[: markers[0].start()].strip(" :-")
+    parts: list[tuple[str, str]] = []
+    for idx, marker in enumerate(markers):
+        start = marker.end()
+        end = markers[idx + 1].start() if idx + 1 < len(markers) else len(text)
+        roman = marker.group(1).lower()
+        sub = text[start:end].strip(" .;:")
+        if not sub:
+            continue
+        combined = f"{stem} ({roman}) {sub}" if stem else f"({roman}) {sub}"
+        parts.append((roman, combined))
+    return parts
+
+
 def load_chapter_pdf_exercises(
     grade: int,
     chapter_index: int,
@@ -170,16 +191,30 @@ def load_chapter_pdf_exercises(
     exercises: list[PdfExercise] = []
     for exercise_name, body in _exercise_segments(text):
         for number, prompt in _split_questions(body):
-            exercises.append(
-                PdfExercise(
-                    chapter_index=chapter_index,
-                    chapter_title=chapter_title,
-                    exercise=f"Exercise {exercise_name}",
-                    number=number,
-                    prompt=prompt,
-                    source_file=path.name,
+            subparts = _split_subparts(prompt)
+            if subparts:
+                for roman, subprompt in subparts:
+                    exercises.append(
+                        PdfExercise(
+                            chapter_index=chapter_index,
+                            chapter_title=chapter_title,
+                            exercise=f"Exercise {exercise_name}",
+                            number=f"{number}({roman})",
+                            prompt=subprompt,
+                            source_file=path.name,
+                        )
+                    )
+            else:
+                exercises.append(
+                    PdfExercise(
+                        chapter_index=chapter_index,
+                        chapter_title=chapter_title,
+                        exercise=f"Exercise {exercise_name}",
+                        number=number,
+                        prompt=prompt,
+                        source_file=path.name,
+                    )
                 )
-            )
     return [exercise.as_problem() for exercise in exercises]
 
 
@@ -196,6 +231,38 @@ def load_all_pdf_exercises(grade: int, chapters: list[dict[str, Any]]) -> list[d
 
 def _integers(text: str) -> list[int]:
     return [int(match) for match in re.findall(r"(?<![\w.])-?\d+(?![\w.])", text)]
+
+
+def _focused_prompt(problem: dict[str, Any]) -> str:
+    prompt = str(problem.get("prompt") or "").strip()
+    number = str(problem.get("number") or "").strip().lower()
+    if not prompt:
+        return prompt
+
+    roman_match = re.search(r"\(([ivx]+)\)$", number)
+    target_roman = roman_match.group(1) if roman_match else ""
+    if not target_roman:
+        return prompt
+
+    markers = list(re.finditer(r"\(\s*(i{1,3}|iv|v|vi{0,3}|ix|x)\s*\)", prompt, flags=re.IGNORECASE))
+    if not markers:
+        return prompt
+
+    target_index = -1
+    for idx, marker in enumerate(markers):
+        if marker.group(1).strip().lower() == target_roman:
+            target_index = idx
+            break
+    if target_index < 0:
+        return prompt
+
+    stem = prompt[: markers[0].start()].strip(" :-")
+    start = markers[target_index].end()
+    end = markers[target_index + 1].start() if target_index + 1 < len(markers) else len(prompt)
+    sub = prompt[start:end].strip(" .;:")
+    if not sub:
+        return prompt
+    return f"{stem} ({target_roman}) {sub}" if stem else f"({target_roman}) {sub}"
 
 
 def _prime_factor_steps(numbers: list[int]) -> list[str]:
@@ -216,8 +283,24 @@ def _prime_factor_steps(numbers: list[int]) -> list[str]:
     return steps
 
 
+def _prime_factors_of(n: int) -> list[int]:
+    value = abs(int(n))
+    if value <= 1:
+        return [value]
+    out: list[int] = []
+    d = 2
+    while d * d <= value:
+        while value % d == 0:
+            out.append(d)
+            value //= d
+        d += 1 if d == 2 else 2
+    if value > 1:
+        out.append(value)
+    return out
+
+
 def build_exercise_solution(problem: dict[str, Any]) -> dict[str, Any]:
-    prompt = str(problem.get("prompt") or "")
+    prompt = _focused_prompt(problem)
     lowered = prompt.lower()
     numbers = _integers(prompt)
     steps: list[str]
@@ -323,13 +406,26 @@ def build_exercise_solution(problem: dict[str, Any]) -> dict[str, Any]:
         pair_matches = re.findall(r"(\d+)\s*(?:,|and)\s*(\d+)", prompt, flags=re.IGNORECASE)
         pairs = [(int(a), int(b)) for a, b in pair_matches[:8]]
         if pairs:
-            steps = ["For each pair, use HCF x LCM = product of the two numbers."]
+            steps = []
             answers: list[str] = []
             for label_index, (a, b) in enumerate(pairs, start=1):
+                fa = _prime_factors_of(a)
+                fb = _prime_factors_of(b)
                 hcf = math.gcd(a, b)
                 lcm = abs(a * b) // hcf
-                steps.append(f"Part {label_index}: for {a} and {b}, HCF = {hcf}, LCM = {lcm}.")
-                steps.append(f"Check: {hcf} x {lcm} = {hcf * lcm} and {a} x {b} = {a * b}.")
+                steps.append(f"Part {label_index}: {a} = {' x '.join(str(x) for x in fa)}")
+                steps.append(f"Part {label_index}: {b} = {' x '.join(str(x) for x in fb)}")
+                common = sorted(set(fa).intersection(set(fb)))
+                if common:
+                    common_text = ", ".join(f"[{c}]" for c in common)
+                    steps.append(f"Part {label_index}: Circle common prime factors in both lines: {common_text}.")
+                else:
+                    steps.append(f"Part {label_index}: No common prime factor, so HCF = 1.")
+                steps.append(f"Part {label_index}: HCF = {hcf}")
+                steps.append(
+                    f"Part {label_index}: LCM = product of highest powers of all primes = {lcm}"
+                )
+                steps.append(f"Part {label_index}: Check -> {hcf} x {lcm} = {hcf * lcm}, and {a} x {b} = {a * b}")
                 answers.append(f"({a}, {b}): HCF {hcf}, LCM {lcm}")
             answer = "; ".join(answers)
         else:
@@ -341,8 +437,13 @@ def build_exercise_solution(problem: dict[str, Any]) -> dict[str, Any]:
                 lcm = abs(lcm * value) // math.gcd(lcm, value)
             steps = [
                 f"Numbers to compare: {', '.join(str(value) for value in values)}.",
-                "Find the HCF by taking the common prime factors with the smallest powers.",
-                "Find the LCM by taking all prime factors with the greatest powers.",
+                "Derive prime factorisation of each number first.",
+                *[
+                    f"{value} = {' x '.join(str(x) for x in _prime_factors_of(value))}"
+                    for value in values
+                ],
+                "Find HCF from common prime factors with smallest powers.",
+                "Find LCM from all prime factors with greatest powers.",
                 f"HCF = {hcf} and LCM = {lcm}.",
             ]
             if len(values) == 2:
@@ -437,6 +538,7 @@ def build_exercise_solution(problem: dict[str, Any]) -> dict[str, Any]:
 
     return {
         **problem,
+        "prompt": prompt,
         "steps": steps[:10],
         "answer": answer,
         "answer_type": "text",
