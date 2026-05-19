@@ -1,17 +1,27 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import List, Optional
 
-from app.services.firebase_service import _get_db
-from app.services.cbse_exercises import (
-    GRADE_10_PDF_CHAPTERS,
-    load_chapter_pdf_exercises,
-)
+try:
+    from app.services.firebase_service import _get_db
+    from app.services.cbse_exercises import (
+        GRADE_10_PDF_CHAPTERS,
+        load_chapter_pdf_exercises,
+    )
+except ModuleNotFoundError:
+    from ..services.firebase_service import _get_db
+    from ..services.cbse_exercises import (
+        GRADE_10_PDF_CHAPTERS,
+        load_chapter_pdf_exercises,
+    )
 
 
 LOCAL_CURRICULUM_DIR = Path(__file__).resolve().parents[1] / "data" / "curriculum"
+USE_FIRESTORE_CURRICULUM = os.getenv("MATHVERSE_CURRICULUM_SOURCE", "local").strip().lower() == "firestore"
+_CURRICULUM_CACHE: dict[tuple[int, str], dict] = {}
 CBSE10_CHAPTER_TITLES: dict[str, str] = {
     "real_numbers": "Real Numbers",
     "polynomials": "Polynomials",
@@ -63,7 +73,6 @@ def _augment_curriculum_from_pdf(payload: dict, grade: int, exam: str) -> dict:
         if chapter_no <= 0 or slug in existing_slugs:
             continue
         title = CBSE10_CHAPTER_TITLES.get(slug, slug.replace("_", " ").title())
-        pdf_examples = load_chapter_pdf_exercises(10, chapter_no, title)
         chapter_obj = {
             "slug": slug,
             "title": title,
@@ -80,15 +89,7 @@ def _augment_curriculum_from_pdf(payload: dict, grade: int, exam: str) -> dict:
                         "Identify theorem/formula and known values.",
                         "Solve step by step and verify final answer.",
                     ],
-                    "ncert_examples": [
-                        {
-                            "prompt": problem.get("prompt"),
-                            "rule_used": "NCERT textbook exercise",
-                            "steps": [],
-                        }
-                        for problem in pdf_examples[:30]
-                        if isinstance(problem, dict) and str(problem.get("prompt") or "").strip()
-                    ],
+                    "ncert_examples": [],
                 }
             ],
         }
@@ -100,6 +101,16 @@ def _augment_curriculum_from_pdf(payload: dict, grade: int, exam: str) -> dict:
 
 def get_grade_curriculum(grade: int, exam: str = "cbse") -> dict:
     """Fetch grade+exam curriculum from Firestore, with local JSON fallback."""
+    cache_key = (int(grade or 10), str(exam or "cbse").lower())
+    cached = _CURRICULUM_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    if not USE_FIRESTORE_CURRICULUM:
+        payload = _augment_curriculum_from_pdf(_load_local_curriculum(grade, exam), grade, exam)
+        _CURRICULUM_CACHE[cache_key] = payload
+        return payload
+
     try:
         db = _get_db()
         doc_ref = db.collection("curriculums").document(f"{exam}_{grade}")
@@ -107,12 +118,18 @@ def get_grade_curriculum(grade: int, exam: str = "cbse") -> dict:
         if doc.exists:
             data = doc.to_dict()
             if isinstance(data, dict):
-                return _augment_curriculum_from_pdf(data, grade, exam)
+                payload = _augment_curriculum_from_pdf(data, grade, exam)
+                _CURRICULUM_CACHE[cache_key] = payload
+                return payload
         print(f"Firestore curriculum missing for {exam}_{grade}. Using local fallback.")
-        return _augment_curriculum_from_pdf(_load_local_curriculum(grade, exam), grade, exam)
+        payload = _augment_curriculum_from_pdf(_load_local_curriculum(grade, exam), grade, exam)
+        _CURRICULUM_CACHE[cache_key] = payload
+        return payload
     except Exception as error:
         print(f"Firestore fetch failed: {error}")
-        return _augment_curriculum_from_pdf(_load_local_curriculum(grade, exam), grade, exam)
+        payload = _augment_curriculum_from_pdf(_load_local_curriculum(grade, exam), grade, exam)
+        _CURRICULUM_CACHE[cache_key] = payload
+        return payload
 
 
 def list_chapters(grade: int, exam: str = "cbse") -> List[dict]:
@@ -129,6 +146,22 @@ def get_topic(grade: int, topic_slug: Optional[str] = None, exam: str = "cbse") 
         if chapter.get("slug") == slug:
             return chapter
     return None
+
+
+def get_next_topic(grade: int, topic_slug: Optional[str] = None, exam: str = "cbse") -> Optional[dict]:
+    chapters = list_chapters(grade, exam)
+    if not chapters:
+        return None
+
+    if not topic_slug:
+        return chapters[0]
+
+    for index, chapter in enumerate(chapters):
+        if chapter.get("slug") == topic_slug:
+            next_index = index + 1
+            return chapters[next_index] if next_index < len(chapters) else None
+
+    return chapters[0]
 
 
 def get_topic_concepts(grade: int, topic_slug: str, exam: str = "cbse") -> List[dict]:

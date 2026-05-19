@@ -1,4 +1,5 @@
 import os
+import base64
 from typing import Any
 from datetime import timedelta
 import re
@@ -17,11 +18,13 @@ from ..services.cbse_exercises import (
 )
 from ..services.rag_service import retrieve_context
 from ..services.firebase_service import get_attempts, save_attempt
+from ..services.ai_gateway import generate_audio
 from ..tutor_brain.curriculum import get_grade_curriculum
 from .models import TutorRequest
 
 router = APIRouter()
 ATTEMPT_LOGGING_ENABLED = os.getenv("MATHVERSE_ENABLE_ATTEMPT_LOGGING", "").lower() in {"1", "true", "yes"}
+TTS_ENABLED = os.getenv("MATHVERSE_ENABLE_TTS", "").lower() in {"1", "true", "yes"}
 CLASS_SESSION_MINUTES = 45
 
 orchestrator = Orchestrator()
@@ -29,6 +32,7 @@ tutor_agent = TutorAgent()
 diagnostic_agent = DiagnosticAgent()
 proctor_agent = ProctorAgent()
 _legacy_engine = None
+_RAG_CONTEXT_CACHE: dict[tuple[int, str, str, str], str] = {}
 
 
 def _get_legacy_engine():
@@ -122,6 +126,14 @@ def _spoken_from_steps(
         for line in compact_steps
         if not line.lower().startswith(("chapter:", "topic:", "source:"))
     ]
+    problem_no_line = next(
+        (
+            line
+            for line in compact_steps
+            if line.lower().startswith("problem no:")
+        ),
+        "",
+    )
     problem_line = next(
         (
             line
@@ -141,38 +153,29 @@ def _spoken_from_steps(
     ]
     narrated_steps = ordered_step_lines if ordered_step_lines else filtered
 
+    question_intro = ""
+    if problem_line:
+        prompt_text = problem_line.split(":", 1)[1].strip()
+        problem_no_text = problem_no_line.split(":", 1)[1].strip() if problem_no_line else ""
+        target = _word_problem_target(prompt_text) if prompt_text else "the required value"
+        question_intro = (
+            f"Now we will solve Problem no {problem_no_text}. "
+            f"Let us read what is asked in the question: {prompt_text}. "
+            f"We need to find {target}. "
+        )
+
     if spoken and not is_placeholder:
         spoken_step_count = len(re.findall(r"\bstep\s*\d+\b", lowered))
         if narrated_steps and spoken_step_count < min(4, len(narrated_steps)):
-            prompt_text = problem_line.split(":", 1)[1].strip() if problem_line else ""
-            target = _word_problem_target(prompt_text) if prompt_text else "the required value"
-            prefix = (
-                f"First let us read the problem statement carefully: {prompt_text}. "
-                f"We need to find {target}. "
-                if problem_line
-                else ""
-            )
             return (
-                f"{spoken} {prefix}"
+                f"{question_intro}{spoken} "
                 f"Now I will explain each board step with reason. {' '.join(narrated_steps[:10])}"
             )
-        return spoken
+        return f"{question_intro}{spoken}".strip()
     if compact_steps:
-        if problem_line and _is_word_problem(problem_line.split(":", 1)[1].strip()):
-            target = _word_problem_target(problem_line.split(":", 1)[1].strip())
-            prefix = (
-                f"This is a word problem. We need to find {target}. "
-                f"Let us read the problem statement carefully: {problem_line.split(':',1)[1].strip()}. "
-            )
-        else:
-            prefix = (
-                f"Let us read the problem statement carefully: {problem_line.split(':',1)[1].strip()}. "
-                if problem_line
-                else ""
-            )
         if narrated_steps:
             return (
-                f"{prefix}Let us continue {topic_title} step by step. "
+                f"{question_intro}Let us continue {topic_title} step by step. "
                 + " ".join(narrated_steps[:10])
             )
         return " ".join(compact_steps[:4])
@@ -380,7 +383,7 @@ def _word_problem_target(prompt: str) -> str:
     question = str(prompt or "").strip()
     lowered = question.lower()
     match = re.search(
-        r"\b(find|determine|calculate|evaluate|state|show|prove|what is|what are|how many)\b\s*(.+?)(?:\?|$)",
+        r"\b(find|determine|calculate|evaluate|state|show|prove|express|factorise|what is|what are|how many)\b\s*(.+?)(?:\?|$)",
         lowered,
     )
     if match:
@@ -389,7 +392,17 @@ def _word_problem_target(prompt: str) -> str:
             return target
     if "what are q and r" in lowered:
         return "the quotient q and remainder r"
+    if "express each number as a product of its prime factors" in lowered:
+        return "the prime factorisation of the given number(s)"
+    if lowered.startswith("express "):
+        tail = re.sub(r"\(\s*[ivx]+\s*\)\s*[\d,\s]+$", "", question, flags=re.IGNORECASE).strip(" .")
+        if tail:
+            return tail
     return "the exact quantity asked in the question"
+
+
+def _force_problem_readout_prefix(steps: list[str]) -> str:
+    return ""
 
 
 def _is_word_problem(prompt: str) -> bool:
@@ -444,6 +457,10 @@ def _normalize_board_math_style(step: str) -> str:
     if "=" in text and not text.lower().startswith(("step ", "final answer:", "problem", "chapter", "topic", "exercise")):
         text = text.replace(" = ", " = ")
     return text
+
+
+def _prepend_tutoring_principles(problem_statement: str, steps: list[str]) -> list[str]:
+    return steps
 
 
 def _equation_rhs_factors(step: str) -> list[str]:
@@ -706,6 +723,7 @@ def _ensure_problem_headers(
         raw_solution_lines.append(text)
 
     normalized_steps = [line.strip() for line in raw_solution_lines if str(line).strip()]
+    normalized_steps = _prepend_tutoring_principles(problem_statement, normalized_steps)
     normalized_steps = _visualize_step_sequence(normalized_steps)
     step_actions = [
         {"action": "draw_text", "content": f"Step {idx}: {line}"}
@@ -1487,12 +1505,22 @@ def _rag_context_for_session(session: StudentSession, exam_type: str) -> str:
     )
     chapter = session.chapter_name or topic
     normalized_exam = "jee" if str(exam_type or "").lower() == "jee" else "cbse"
+    grade = int(getattr(session, "grade", 10) or 10)
+    cache_key = (
+        grade,
+        normalized_exam,
+        str(chapter or "").strip().lower(),
+        str(topic or "").strip().lower(),
+    )
+    cached_context = _RAG_CONTEXT_CACHE.get(cache_key)
+    if cached_context is not None:
+        return cached_context
+
     source_hint = (
         "JEE PYQ patterns, solved examples, and problem solving strategies"
         if normalized_exam == "jee"
         else "NCERT textbook concept explanations, worked examples, and exercise questions"
     )
-    grade = int(getattr(session, "grade", 10) or 10)
     query = (
         f"Grade {grade} "
         f"{normalized_exam.upper()} Mathematics "
@@ -1550,7 +1578,9 @@ def _rag_context_for_session(session: StudentSession, exam_type: str) -> str:
 
                 firebase_context = "\n".join(str(line).strip() for line in lines if str(line).strip())
                 if len(firebase_context) >= 200:
-                    return _scope_rag_context_to_chapter(firebase_context, chapter=chapter, topic=topic)
+                    scoped_context = _scope_rag_context_to_chapter(firebase_context, chapter=chapter, topic=topic)
+                    _RAG_CONTEXT_CACHE[cache_key] = scoped_context
+                    return scoped_context
     except Exception as error:
         print(f"Firestore curriculum grounding failed ({type(error).__name__}): {error}")
 
@@ -1561,9 +1591,12 @@ def _rag_context_for_session(session: StudentSession, exam_type: str) -> str:
             k=12,
             grade=grade,
         )
-        return _scope_rag_context_to_chapter(raw_context, chapter=chapter, topic=topic)
+        scoped_context = _scope_rag_context_to_chapter(raw_context, chapter=chapter, topic=topic)
+        _RAG_CONTEXT_CACHE[cache_key] = scoped_context
+        return scoped_context
     except Exception as error:
         print(f"Tutor RAG lookup failed ({type(error).__name__}): {error}")
+        _RAG_CONTEXT_CACHE[cache_key] = ""
         return ""
 
 
@@ -1621,11 +1654,35 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
             "SYSTEM INSTRUCTION: Student clicked Next. Continue the same topic from the next sub-step. "
             "Do not restart the chapter intro and do not repeat the same solved problem."
         )
+    local_board_actions = {
+        "start",
+        "next",
+        "continue",
+        "repeat",
+        "refresh_problem",
+        "previous_problem",
+        "next_exercise",
+        "next_pdf_exercise",
+        "next_topic",
+        "next_chapter",
+        "skip_topic",
+        "skip_chapter",
+    }
+    can_use_local_board = (
+        route != "proctor_agent"
+        and action in local_board_actions
+        and not input_data.get("answer")
+        and not input_data.get("question")
+    )
 
     if route == "proctor_agent":
         proctor_payload = await proctor_agent.process_message(session, user_message)
         spoken_response = proctor_payload.get("spoken_response", "")
         whiteboard_actions = proctor_payload.get("whiteboard_actions", [])
+    elif can_use_local_board:
+        spoken_response = ""
+        whiteboard_actions = []
+        tutor_payload = {"advance_topic": False}
     elif route == "diagnostic_agent":
         diagnostic_result = await diagnostic_agent.evaluate_answer(
             session,
@@ -1712,7 +1769,21 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
     chapter_title = session.chapter_name or session.current_topic or "Current Chapter"
     topic_title = session.current_topic or chapter_title
     spoken_response = _spoken_from_steps(spoken_response, steps, topic_title)
+    forced_prefix = _force_problem_readout_prefix(steps)
+    if forced_prefix:
+        lowered_spoken = str(spoken_response or "").lower()
+        prompt_anchor = forced_prefix.lower().split("let us read the problem statement:", 1)[-1][:60]
+        if "let us read the problem statement" not in lowered_spoken and prompt_anchor.strip() not in lowered_spoken:
+            spoken_response = f"{forced_prefix}{spoken_response}".strip()
     voice_chunks = _voice_chunks_from_steps(spoken_response, steps)
+    audio_base64 = None
+    if TTS_ENABLED and str(spoken_response or "").strip():
+        try:
+            audio_bytes = await generate_audio(spoken_response)
+            if audio_bytes:
+                audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
+        except Exception as error:
+            print(f"TTS audio generation failed: {error}")
     highlight_steps = [
         str(step).strip() for step in steps if str(step).strip().lower().startswith("step ")
     ] or steps
@@ -1764,6 +1835,7 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
             "pace": "steady",
             "pause_ms": 180,
         },
+        "audio_base64": audio_base64,
     }
 
 

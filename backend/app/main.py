@@ -116,6 +116,26 @@ def _serialize_lesson_state(snapshot):
     return dict(snapshot) if isinstance(snapshot, dict) else {}
 
 
+def _is_probably_silent_pcm(audio_bytes: bytes, *, threshold: int = 18) -> bool:
+    if len(audio_bytes) < 2:
+        return True
+
+    sample_count = min(len(audio_bytes) // 2, 800)
+    if sample_count <= 0:
+        return True
+
+    total = 0
+    peak = 0
+    for index in range(sample_count):
+        offset = index * 2
+        sample = int.from_bytes(audio_bytes[offset : offset + 2], "little", signed=True)
+        magnitude = abs(sample)
+        total += magnitude
+        peak = max(peak, magnitude)
+
+    return peak < threshold or (total / sample_count) < (threshold / 2)
+
+
 
 
 @app.websocket("/ws/tutor")
@@ -124,28 +144,63 @@ async def tutor_ws(websocket: WebSocket):
 
     from .services.session_service import session_service
     from .services.ai_gateway import live_api_available
-    from .services.live_tutor_service import LiveTutorBridge
+    from .services.live_tutor_service import LiveTutorBridge, LiveTutorConnectionError
 
     print("Tutor WebSocket connected")
 
     start_request = _session_request_from_socket(websocket)
     session_record = session_service.create_or_resume_session(start_request)
     session_id = session_record.session_id
-    live_bridge = LiveTutorBridge(session_id, websocket.send_json)
+    client_connected = True
+
+    async def safe_send_json(payload: dict) -> bool:
+        nonlocal client_connected
+        if not client_connected:
+            return False
+        try:
+            await websocket.send_json(payload)
+            return True
+        except (WebSocketDisconnect, RuntimeError):
+            client_connected = False
+            return False
+
+    live_bridge = LiveTutorBridge(session_id, safe_send_json)
     live_connected = False
+    live_connect_retry_after = 0.0
+    last_live_audio_sent_at = 0.0
+    last_silent_audio_sent_at = 0.0
+    last_live_warning_sent_at = 0.0
     initial_mode = (websocket.query_params.get("mode") or "").lower()
     initial_exam = (websocket.query_params.get("exam") or "").lower()
     with contextlib.suppress(Exception):
         live_bridge.student_session.grade = int(session_record.grade)
     live_bridge.student_session.exam = "jee" if initial_exam == "jee" else "cbse"
+    
+    # Seed lesson context before the Gemini Live connection handshake.
+    with contextlib.suppress(Exception):
+        live_bridge.student_session.chapter_name = (
+            getattr(session_record, "chapter_name", None)
+            or getattr(session_record, "topic_title", None)
+            or "Mathematics Overview"
+        )
+    with contextlib.suppress(Exception):
+        live_bridge.student_session.current_topic = (
+            getattr(session_record, "topic_title", None)
+            or live_bridge.student_session.chapter_name
+        )
+    with contextlib.suppress(Exception):
+        live_bridge.student_session.agenda = getattr(session_record, 'agenda', [])
 
     async def ensure_live_bridge() -> bool:
-        nonlocal live_connected
+        nonlocal live_connected, live_connect_retry_after
 
         if live_connected:
             return True
 
         if not live_api_available() or not live_bridge.available:
+            return False
+        loop_time = asyncio.get_running_loop().time()
+        if loop_time < live_connect_retry_after:
             return False
 
         try:
@@ -153,12 +208,10 @@ async def tutor_ws(websocket: WebSocket):
         except Exception as error:  # pragma: no cover - network dependent
             print(f"Gemini Live connect failed: {error}")
             live_connected = False
+            live_connect_retry_after = asyncio.get_running_loop().time() + 15.0
         return live_connected
 
-    with contextlib.suppress(Exception):
-        live_connected = await ensure_live_bridge()
-
-    await websocket.send_json(
+    if not await safe_send_json(
         {
             "type": "session_meta",
             "session": session_service.serialize_session(session_record),
@@ -169,8 +222,10 @@ async def tutor_ws(websocket: WebSocket):
                 "transport": "server-websocket",
             },
         }
-    )
-    await websocket.send_json(
+    ):
+        await live_bridge.close()
+        return
+    if not await safe_send_json(
         {
             "type": "history",
             "messages": [
@@ -184,13 +239,17 @@ async def tutor_ws(websocket: WebSocket):
                 if turn.role in {"user", "assistant"}
             ],
         }
-    )
-    await websocket.send_json(
+    ):
+        await live_bridge.close()
+        return
+    if not await safe_send_json(
         {
             "type": "state",
             "state": live_bridge.current_state(),
         }
-    )
+    ):
+        await live_bridge.close()
+        return
 
     #asyncio.create_task(asyncio.to_thread(init_cbse))
 
@@ -210,73 +269,125 @@ async def tutor_ws(websocket: WebSocket):
 
     try:
         while True:
-            raw_data = await websocket.receive_text()
-            print("📩 RAW:", raw_data)
+            try:
+                raw_data = await websocket.receive_text()
+            except RuntimeError as error:
+                client_connected = False
+                print(f"Tutor WebSocket receive stopped: {error}")
+                break
             try:
                 payload = json.loads(raw_data)
             except json.JSONDecodeError:
                 continue
+            payload_type = str(payload.get("type") or "")
+            if payload_type == "live_input_audio":
+                print("Tutor WS RAW: live_input_audio")
+            else:
+                print("Tutor WS RAW:", raw_data[:300] + ("..." if len(raw_data) > 300 else ""))
 
             message = None
             if payload.get("type") == "live_input_audio" and payload.get("data"):
-                if await ensure_live_bridge():
-                    await live_bridge.send_audio_chunk(
-                        base64.b64decode(payload["data"])
-                    )
+                try:
+                    audio_chunk = base64.b64decode(payload["data"])
+                except Exception:
                     continue
-                await websocket.send_json(
-                    {
-                        "type": "live_warning",
-                        "content": "Native Gemini audio is not connected right now.",
-                    }
-                )
+                now = asyncio.get_running_loop().time()
+                if now - last_live_audio_sent_at < 0.025:
+                    continue
+                if _is_probably_silent_pcm(audio_chunk):
+                    if now - last_silent_audio_sent_at < 0.75:
+                        continue
+                    last_silent_audio_sent_at = now
+                if await ensure_live_bridge():
+                    try:
+                        await live_bridge.send_audio_chunk(audio_chunk)
+                        last_live_audio_sent_at = now
+                        continue
+                    except LiveTutorConnectionError as error:
+                        print(f"Gemini Live audio disconnected: {error}")
+                        live_connected = False
+                        live_connect_retry_after = asyncio.get_running_loop().time() + 15.0
+                if now - last_live_warning_sent_at >= 5.0:
+                    last_live_warning_sent_at = now
+                    if not await safe_send_json(
+                        {
+                            "type": "live_warning",
+                            "content": "Native Gemini audio is reconnecting. You can also type the doubt.",
+                        }
+                    ):
+                        break
                 continue
             if payload.get("type") == "live_input_video" and payload.get("data"):
                 if await ensure_live_bridge():
-                    await live_bridge.send_video_frame(
-                        base64.b64decode(payload["data"]),
-                        mime_type=str(payload.get("mime_type") or "image/jpeg"),
-                    )
+                    try:
+                        await live_bridge.send_video_frame(
+                            base64.b64decode(payload["data"]),
+                            mime_type=str(payload.get("mime_type") or "image/jpeg"),
+                        )
+                    except LiveTutorConnectionError as error:
+                        print(f"Gemini Live video disconnected: {error}")
+                        live_connected = False
+                        live_connect_retry_after = asyncio.get_running_loop().time() + 15.0
                 continue
             if payload.get("type") == "audio_stream_end":
                 if await ensure_live_bridge():
-                    await live_bridge.end_audio_stream()
+                    try:
+                        await live_bridge.end_audio_stream()
+                    except LiveTutorConnectionError as error:
+                        print(f"Gemini Live audio end failed: {error}")
+                        live_connected = False
+                        live_connect_retry_after = asyncio.get_running_loop().time() + 15.0
                 continue
             if payload.get("type") == "recorded_audio_buffer" and payload.get("data"):
                 if await ensure_live_bridge():
-                    await live_bridge.send_encoded_audio(
-                        base64.b64decode(payload["data"]),
-                        mime_type=str(payload.get("mime_type") or "audio/webm"),
-                    )
-                    await live_bridge.end_audio_stream()
+                    try:
+                        await live_bridge.send_encoded_audio(
+                            base64.b64decode(payload["data"]),
+                            mime_type=str(payload.get("mime_type") or "audio/webm"),
+                        )
+                        await live_bridge.end_audio_stream()
+                    except LiveTutorConnectionError as error:
+                        print(f"Gemini Live recorded audio disconnected: {error}")
+                        live_connected = False
+                        live_connect_retry_after = asyncio.get_running_loop().time() + 15.0
                 else:
-                    await websocket.send_json(
+                    if not await safe_send_json(
                         {
                             "type": "live_warning",
                             "content": "Native Gemini audio is not connected right now.",
                         }
-                    )
+                    ):
+                        break
                 continue
             if payload.get("type") == "control" and str(payload.get("action", "")).lower() == "stop_listening":
                 if await ensure_live_bridge():
-                    await live_bridge.end_audio_stream()
-                await websocket.send_json({"type": "listening_stopped"})
+                    try:
+                        await live_bridge.end_audio_stream()
+                    except LiveTutorConnectionError as error:
+                        print(f"Gemini Live stop listening failed: {error}")
+                        live_connected = False
+                        live_connect_retry_after = asyncio.get_running_loop().time() + 15.0
+                if not await safe_send_json({"type": "listening_stopped"}):
+                    break
                 continue
             if payload.get("type") == "interrupt":
                 cancel_stream(session_id)
                 end_stream(session_id)
-                await websocket.send_json({"type": "squelch"})
+                if not await safe_send_json({"type": "squelch"}):
+                    break
                 if live_connected:
                     with contextlib.suppress(Exception):
                         await live_bridge.close()
-                    await websocket.send_json(
+                    if not await safe_send_json(
                         {
                             "type": "live_warning",
                             "content": "Stopped live audio so you can speak.",
                         }
-                    )
+                    ):
+                        break
                     live_connected = False
-                await websocket.send_json({"type": "assistant_turn_complete", "reason": "interrupted"})
+                if not await safe_send_json({"type": "assistant_turn_complete", "reason": "interrupted"}):
+                    break
                 continue
             if payload.get("message"):
                 message = payload["message"]
@@ -306,6 +417,7 @@ async def tutor_ws(websocket: WebSocket):
             await live_bridge.send_text_turn(message, mode=mode, context=context)
 
     except WebSocketDisconnect:
+        client_connected = False
         print("Tutor WebSocket disconnected")
         end_stream(session_id)
     finally:

@@ -10,9 +10,7 @@ from contextlib import AsyncExitStack
 from typing import Awaitable, Callable
 
 from ..core.config import (
-    GEMINI_LIVE_INPUT_LANGUAGE,
     GEMINI_LIVE_MODEL,
-    GEMINI_LIVE_OUTPUT_LANGUAGE,
     GEMINI_LIVE_VOICE,
 )
 from ..services.ai_gateway import get_live_client, live_api_available
@@ -46,6 +44,10 @@ EventSink = Callable[[dict], Awaitable[None]]
 LIVE_INPUT_SAMPLE_RATE = 16000
 LIVE_OUTPUT_SAMPLE_RATE = 24000
 CLASS_SESSION_MINUTES = 45
+
+
+class LiveTutorConnectionError(RuntimeError):
+    pass
 
 
 class LiveTutorBridge:
@@ -148,13 +150,16 @@ class LiveTutorBridge:
         if self._pending_transport != "audio":
             self._reset_pending_turn(transport="audio")
 
-        async with self._send_lock:
-            await self._live_session.send_realtime_input(
-                audio=live_types.Blob(
-                    data=audio_bytes,
-                    mime_type=f"audio/pcm;rate={LIVE_INPUT_SAMPLE_RATE}",
+        try:
+            async with self._send_lock:
+                await self._live_session.send_realtime_input(
+                    audio=live_types.Blob(
+                        data=audio_bytes,
+                        mime_type=f"audio/pcm;rate={LIVE_INPUT_SAMPLE_RATE}",
+                    )
                 )
-            )
+        except Exception as error:
+            await self._handle_live_transport_error(error)
 
     async def send_encoded_audio(self, audio_bytes: bytes, mime_type: str = "audio/webm") -> None:
         if not self._live_session or not live_types:
@@ -163,36 +168,60 @@ class LiveTutorBridge:
         if self._pending_transport != "audio":
             self._reset_pending_turn(transport="audio")
 
-        async with self._send_lock:
-            await self._live_session.send_realtime_input(
-                audio=live_types.Blob(
-                    data=audio_bytes,
-                    mime_type=mime_type,
+        try:
+            async with self._send_lock:
+                await self._live_session.send_realtime_input(
+                    audio=live_types.Blob(
+                        data=audio_bytes,
+                        mime_type=mime_type,
+                    )
                 )
-            )
+        except Exception as error:
+            await self._handle_live_transport_error(error)
 
     async def send_video_frame(self, frame_bytes: bytes, mime_type: str = "image/jpeg") -> None:
         if not self._live_session or not live_types:
             return
 
         blob = live_types.Blob(data=frame_bytes, mime_type=mime_type)
-        async with self._send_lock:
-            try:
-                await self._live_session.send_realtime_input(video=blob)
-            except Exception:
-                with contextlib.suppress(Exception):
+        try:
+            async with self._send_lock:
+                try:
+                    await self._live_session.send_realtime_input(video=blob)
+                except Exception:
                     await self._live_session.send_realtime_input(image=blob)
+        except Exception as error:
+            await self._handle_live_transport_error(error)
 
     async def end_audio_stream(self) -> None:
         if not self._live_session:
             return
 
-        async with self._send_lock:
-            await self._live_session.send_realtime_input(audio_stream_end=True)
+        try:
+            async with self._send_lock:
+                await self._live_session.send_realtime_input(audio_stream_end=True)
+        except Exception as error:
+            await self._handle_live_transport_error(error)
+
+    async def _handle_live_transport_error(self, error: Exception) -> None:
+        with contextlib.suppress(Exception):
+            await self.close()
+        self._live_session = None
+        raise LiveTutorConnectionError(str(error)) from error
 
     def _build_connect_config(self, session_record):
         memory_context = session_service.build_memory_context(self.session_id)
-        topic_title = session_record.topic_title or "CBSE Mathematics"
+        topic_title = (
+            getattr(self.student_session, "current_topic", None)
+            or session_record.topic_title
+            or "CBSE Mathematics"
+        )
+        chapter_title = (
+            getattr(self.student_session, "chapter_name", None)
+            or session_record.topic_title
+            or topic_title
+            or "Mathematics Overview"
+        )
 
         source_material = self._firebase_curriculum_context(
             grade=int(getattr(session_record, "grade", 10) or 10),
@@ -219,6 +248,8 @@ class LiveTutorBridge:
             grade=session_record.grade,
             exam=(getattr(self.student_session, "exam", "cbse") or "cbse").upper(),
             is_new_chapter=not bool(getattr(session_record, "transcript", None)),
+            chapter_name=chapter_title,
+            current_topic=topic_title,
             rag_context=source_material or "No RAG context provided.",
         )
 
@@ -234,7 +265,12 @@ class LiveTutorBridge:
             "3. TEACHING FLOW: For each concept: Introduce it -> Explain the formula -> Walk through step-by-step examples -> Solve an exercise from the textbook with them.\n"
             "4. Keep each spoken turn short, slow, and interactive. Pause to ensure they are following before proceeding to the next step.\n"
             "5. Do not mention internal routing, diagnostics, or hidden nudges.\n\n"
-            f"Current chapter focus: {topic_title}\n"
+            "FOLLOW-UP DOUBTS: If the student asks a doubt or follow-up question, pause the planned lesson, "
+            "answer that doubt directly with one small example, update the whiteboard, then connect the answer "
+            "back to the current chapter/topic before continuing.\n"
+            "Speak in clear Indian English unless the student asks for another language.\n"
+            f"Current chapter focus: {chapter_title}\n"
+            f"Current topic focus: {topic_title}\n"
             f"Current classroom memory:\n{memory_context}\n\n"
             f"Curriculum grounding:\n{curriculum_grounding}"
         )
@@ -245,7 +281,6 @@ class LiveTutorBridge:
                 parts=[live_types.Part(text=system_prompt)]
             ),
             speech_config=live_types.SpeechConfig(
-                language_code=GEMINI_LIVE_OUTPUT_LANGUAGE,
                 voice_config=live_types.VoiceConfig(
                     prebuilt_voice_config=live_types.PrebuiltVoiceConfig(
                         voice_name=GEMINI_LIVE_VOICE
@@ -256,10 +291,10 @@ class LiveTutorBridge:
             output_audio_transcription=live_types.AudioTranscriptionConfig(),
             realtime_input_config=live_types.RealtimeInputConfig(
                 activity_handling=live_types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
-                turn_coverage=live_types.TurnCoverage.TURN_INCLUDES_ONLY_ACTIVITY,
+                turn_coverage=live_types.TurnCoverage.TURN_INCLUDES_ALL_INPUT,
                 automatic_activity_detection=live_types.AutomaticActivityDetection(
-                    prefix_padding_ms=20,
-                    silence_duration_ms=300,
+                    prefix_padding_ms=300,
+                    silence_duration_ms=1800,
                 )
             ),
             session_resumption=live_types.SessionResumptionConfig(handle=None),
@@ -502,6 +537,12 @@ class LiveTutorBridge:
         session_record = session_service.get_session(self.session_id)
         if session_record and session_record.topic_title and not self.student_session.current_topic:
             self.student_session.current_topic = session_record.topic_title
+        if (
+            session_record
+            and session_record.topic_title
+            and str(self.student_session.chapter_name or "").strip() in {"", "Sets"}
+        ):
+            self.student_session.chapter_name = session_record.topic_title
         if session_record and session_record.grade:
             self.student_session.grade = int(session_record.grade)
 

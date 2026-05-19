@@ -17,6 +17,12 @@ type IconProps = {
   className?: string;
 };
 
+type DiscussionTurn = {
+  id: string;
+  role: "student" | "tutor";
+  content: string;
+};
+
 function MicIcon({ className = "h-5 w-5" }: IconProps) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -63,6 +69,7 @@ function AlertIcon({ className = "h-5 w-5" }: IconProps) {
 const SILENCE_TIMEOUT_MS = 15000;
 const SILENCE_RMS_THRESHOLD = 0.004;
 const CLASS_SESSION_DURATION_SECONDS = 45 * 60;
+const LIVE_INPUT_SAMPLE_RATE = 16000;
 
 const CLASSROOM_GRADES = [10, 11, 12] as const;
 type ClassroomGrade = (typeof CLASSROOM_GRADES)[number];
@@ -142,17 +149,29 @@ export default function Classroom({ onNavigate }: Props) {
   const [nextCoolingDown, setNextCoolingDown] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
   const [timeoutMessage, setTimeoutMessage] = useState<string | null>(null);
+  const [doubtText, setDoubtText] = useState("");
+  const [discussionTurns, setDiscussionTurns] = useState<DiscussionTurn[]>([]);
   const consumedPendingRef = useRef(false);
+  const assistantDraftRef = useRef("");
+  const activeAssistantTurnIdRef = useRef<string | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const analyserCheckIntervalRef = useRef<number | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const inputProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const inputSilenceRef = useRef<GainNode | null>(null);
   const tutorSocketRef = useRef<WebSocket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaChunksRef = useRef<Blob[]>([]);
   const isMicStoppingRef = useRef(false);
   const lastAudioActivityRef = useRef<number | null>(null);
+  const inputSpeechDetectedRef = useRef(false);
+  const liveTurnEndingRef = useRef(false);
+  const liveSilenceTimerRef = useRef<number | null>(null);
+  const outputAudioContextRef = useRef<AudioContext | null>(null);
+  const outputPlaybackCursorRef = useRef(0);
+  const activePlaybackSourcesRef = useRef<AudioBufferSourceNode[]>([]);
 
   const onResponse = useCallback(
     (data: ClassResponse) => {
@@ -191,7 +210,7 @@ export default function Classroom({ onNavigate }: Props) {
     [examMode, recordResponse, recordTutorSession, setCurrentConcept, setCurrentQuestion, setCurrentTopic, setHomeworkQuestions],
   );
 
-  const { response, visibleSteps, activeStepIndex, isSpeaking, loading, error, paused, start, pauseOrResume, prime } = useTutorStream({
+  const { response, visibleSteps, activeStepIndex, isSpeaking, loading, error, paused, start, pauseOrResume, stop, prime } = useTutorStream({
     sessionId,
     examMode,
     onResponse,
@@ -256,7 +275,7 @@ export default function Classroom({ onNavigate }: Props) {
     : loading
     ? "Preparing the next step..."
     : micActive
-      ? "Listening... speak now."
+      ? "Listening live... speak naturally, then pause."
     : isSpeaking
       ? "Arvind Sir is explaining..."
       : paused
@@ -306,6 +325,33 @@ export default function Classroom({ onNavigate }: Props) {
       await start({ action, grade: selectedGrade, subject: "math" });
     } catch (error) {
       console.error("Failed to advance class topic.", error);
+    }
+  }
+
+  async function askDoubt(event?: FormEvent<HTMLFormElement>, presetQuestion?: string) {
+    event?.preventDefault();
+    const question = (presetQuestion ?? doubtText).trim();
+    if (!question || sessionExpired) return;
+
+    stop();
+    setDoubtText("");
+    setDiscussionTurns((current) => [
+      ...current,
+      {
+        id: `student-${Date.now()}`,
+        role: "student",
+        content: question,
+      },
+    ]);
+
+    try {
+      await start({
+        question,
+        grade: selectedGrade,
+        subject: "math",
+      });
+    } catch (error) {
+      console.error("Failed to ask classroom doubt.", error);
     }
   }
 
@@ -363,6 +409,69 @@ export default function Classroom({ onNavigate }: Props) {
     sendSocketPayload({ type: "audio_stream_end" });
   }, [sendSocketPayload]);
 
+  const base64ToUint8Array = (value: string) => {
+    const binary = window.atob(value);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  };
+
+  const pcm16ToFloat32 = (bytes: Uint8Array) => {
+    const sampleCount = Math.floor(bytes.byteLength / 2);
+    const floats = new Float32Array(sampleCount);
+    const dataView = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    for (let index = 0; index < sampleCount; index += 1) {
+      floats[index] = dataView.getInt16(index * 2, true) / 0x8000;
+    }
+    return floats;
+  };
+
+  const stopLiveAudioPlayback = useCallback(() => {
+    activePlaybackSourcesRef.current.forEach((source) => {
+      try {
+        source.stop();
+      } catch {}
+      try {
+        source.disconnect();
+      } catch {}
+    });
+    activePlaybackSourcesRef.current = [];
+    outputPlaybackCursorRef.current = 0;
+  }, []);
+
+  const playLiveAudioChunk = useCallback(async (base64Data: string, sampleRate: number) => {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    if (!outputAudioContextRef.current) {
+      outputAudioContextRef.current = new AudioContextClass();
+    }
+
+    const audioContext = outputAudioContextRef.current;
+    if (audioContext.state === "suspended") {
+      await audioContext.resume();
+    }
+
+    const pcmBytes = base64ToUint8Array(base64Data);
+    const float32 = pcm16ToFloat32(pcmBytes);
+    const audioBuffer = audioContext.createBuffer(1, float32.length, sampleRate);
+    audioBuffer.copyToChannel(float32, 0);
+
+    const source = audioContext.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioContext.destination);
+    activePlaybackSourcesRef.current.push(source);
+    source.onended = () => {
+      activePlaybackSourcesRef.current = activePlaybackSourcesRef.current.filter((item) => item !== source);
+    };
+
+    const startAt = Math.max(audioContext.currentTime + 0.02, outputPlaybackCursorRef.current);
+    outputPlaybackCursorRef.current = startAt + audioBuffer.duration;
+    source.start(startAt);
+  }, []);
+
   const closeTutorSocket = useCallback(() => {
     if (tutorSocketRef.current?.readyState === WebSocket.OPEN || tutorSocketRef.current?.readyState === WebSocket.CONNECTING) {
       tutorSocketRef.current.close();
@@ -374,19 +483,25 @@ export default function Classroom({ onNavigate }: Props) {
     async ({ keepSocket = true }: { keepSocket?: boolean } = {}) => {
       if (isMicStoppingRef.current) return;
       isMicStoppingRef.current = true;
+      liveTurnEndingRef.current = true;
 
       try {
-        // Clear silence detection interval
         if (analyserCheckIntervalRef.current) {
           window.clearInterval(analyserCheckIntervalRef.current);
           analyserCheckIntervalRef.current = null;
         }
+        if (liveSilenceTimerRef.current) {
+          window.clearTimeout(liveSilenceTimerRef.current);
+          liveSilenceTimerRef.current = null;
+        }
 
-        // Disconnect audio nodes
+        inputProcessorRef.current?.disconnect();
         sourceRef.current?.disconnect();
+        inputSilenceRef.current?.disconnect();
         analyserRef.current = null;
+        inputProcessorRef.current = null;
+        inputSilenceRef.current = null;
         
-        // Close audio context
         if (audioContextRef.current && audioContextRef.current.state !== "closed") {
           try {
             await audioContextRef.current.close();
@@ -395,38 +510,6 @@ export default function Classroom({ onNavigate }: Props) {
           }
         }
 
-        // Stop media recorder
-        const recorder = mediaRecorderRef.current;
-        if (recorder && recorder.state !== "inactive") {
-          await new Promise<void>((resolve) => {
-            const cleanup = () => resolve();
-            recorder.onstop = cleanup;
-            recorder.onerror = cleanup;
-            try {
-              recorder.stop();
-            } catch {
-              cleanup();
-            }
-          });
-        }
-
-        // Flush recorded audio to socket
-        const bufferedBlob =
-          mediaChunksRef.current.length > 0 ? new Blob(mediaChunksRef.current, { type: mediaRecorderRef.current?.mimeType || "audio/webm" }) : null;
-        if (bufferedBlob && bufferedBlob.size > 0) {
-          try {
-            const buffer = await bufferedBlob.arrayBuffer();
-            sendSocketPayload({
-              type: "recorded_audio_buffer",
-              data: arrayBufferToBase64(buffer),
-              mime_type: bufferedBlob.type || "audio/webm",
-            });
-          } catch (error) {
-            console.error("Failed to flush recorded audio buffer.", error);
-          }
-        }
-
-        // Stop all media tracks
         micStreamRef.current?.getTracks().forEach((track) => {
           try {
             track.stop();
@@ -435,8 +518,9 @@ export default function Classroom({ onNavigate }: Props) {
           }
         });
 
-        // Send explicit stop listening signals
-        sendStopListeningSignal();
+        if (inputSpeechDetectedRef.current) {
+          sendStopListeningSignal();
+        }
         
         if (!keepSocket) {
           closeTutorSocket();
@@ -453,8 +537,9 @@ export default function Classroom({ onNavigate }: Props) {
         micStreamRef.current = null;
         lastAudioActivityRef.current = null;
         analyserCheckIntervalRef.current = null;
+        inputSpeechDetectedRef.current = false;
+        liveTurnEndingRef.current = false;
         
-        // CRITICAL: Force UI state reset
         setMicActive(false);
         isMicStoppingRef.current = false;
       }
@@ -498,6 +583,89 @@ export default function Classroom({ onNavigate }: Props) {
           const payload = JSON.parse(event.data);
           if (payload.type === "live_warning" || payload.type === "live_error") {
             console.warn(payload.content || "Tutor audio stream warning");
+            setMicError(payload.content || "Native Gemini Live audio is not connected.");
+          }
+          if (payload.type === "live_status") {
+            setMicError(null);
+            setTimeoutMessage("Gemini Live audio connected.");
+          }
+          if (payload.type === "transcript" && payload.content) {
+            setTimeoutMessage(`Heard: ${payload.content}`);
+          }
+          if (payload.type === "squelch") {
+            stopLiveAudioPlayback();
+          }
+          if (payload.type === "live_audio" && payload.data) {
+            void playLiveAudioChunk(String(payload.data), Number(payload.sample_rate || 24000));
+          }
+          if (payload.type === "user_turn" && payload.content) {
+            setDiscussionTurns((current) => [
+              ...current,
+              {
+                id: `student-${Date.now()}`,
+                role: "student",
+                content: String(payload.content),
+              },
+            ]);
+          }
+          if (payload.type === "assistant_turn_start") {
+            assistantDraftRef.current = "";
+            activeAssistantTurnIdRef.current = `tutor-${Date.now()}`;
+            setDiscussionTurns((current) => [
+              ...current,
+              {
+                id: activeAssistantTurnIdRef.current || `tutor-${Date.now()}`,
+                role: "tutor",
+                content: "",
+              },
+            ]);
+          }
+          if (payload.type === "assistant_text" && payload.content) {
+            assistantDraftRef.current += String(payload.content);
+            const turnId = activeAssistantTurnIdRef.current;
+            setDiscussionTurns((current) =>
+              current.map((turn) =>
+                turn.id === turnId ? { ...turn, content: assistantDraftRef.current } : turn,
+              ),
+            );
+          }
+          if (payload.type === "assistant_turn_complete") {
+            const state = payload.state;
+            const spokenResponse = String(payload.spoken_response || assistantDraftRef.current || "").trim();
+            const actions = Array.isArray(payload.whiteboard_actions) ? payload.whiteboard_actions : state?.whiteboard_actions || [];
+            const board = state?.whiteboard || {
+              title: chapter,
+              subtitle: "Arvind Sir's smart blackboard",
+              chalk_lines: visibleSteps,
+              actions,
+            };
+            const steps = Array.isArray(board.chalk_lines)
+              ? board.chalk_lines
+              : actions
+                  .map((action: { content?: unknown; text?: unknown; label?: unknown }) => action.content || action.text || action.label)
+                  .filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0);
+
+            if (spokenResponse || steps.length) {
+              prime({
+                type: "teach",
+                chapter,
+                topic: chapter,
+                concept,
+                explanation: spokenResponse || "Arvind Sir answered your doubt.",
+                voice_text: spokenResponse || "Arvind Sir answered your doubt.",
+                steps,
+                whiteboard: board,
+                whiteboard_actions: actions,
+                correct: null,
+                mistake_type: null,
+                next_action: "continue",
+                session_time_left_seconds: payload.session_time_left_seconds,
+                session_duration_seconds: payload.session_duration_seconds,
+                session_expired: Boolean(payload.session_expired),
+              });
+            }
+            assistantDraftRef.current = "";
+            activeAssistantTurnIdRef.current = null;
           }
         } catch {
           console.debug("Tutor socket event:", event.data);
@@ -511,65 +679,75 @@ export default function Classroom({ onNavigate }: Props) {
       if (micActive) return;
       setMicError(null);
       
-      // Get user media
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const socket = await openTutorSocket();
+      stop();
+      stopLiveAudioPlayback();
       
-      // Create audio context
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       const audioContext = new AudioContextClass();
+      await audioContext.resume();
       
-      // Create analyser (NOT deprecated like ScriptProcessor)
       const analyser = audioContext.createAnalyser();
       analyser.fftSize = 2048;
       analyser.smoothingTimeConstant = 0.8;
-      
-      // Connect source to analyser
+
       const source = audioContext.createMediaStreamSource(stream);
       source.connect(analyser);
-      
-      // Start media recorder for final audio capture
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaChunksRef.current = [];
-      
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          mediaChunksRef.current.push(event.data);
-        }
-      };
-      
-      mediaRecorder.onerror = (error) => {
-        console.error("MediaRecorder error:", error);
-        setMicError("Microphone recording failed. Please retry.");
-        void stopMicrophone();
-      };
-      
-      mediaRecorder.start(250); // Timeslice every 250ms
 
-      // Set up silence detection using AnalyserNode (not deprecated)
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      const silence = audioContext.createGain();
+      silence.gain.value = 0;
+      inputSpeechDetectedRef.current = false;
+      liveTurnEndingRef.current = false;
       lastAudioActivityRef.current = Date.now();
       setTimeoutMessage(null);
-      
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      
-      const checkAudioActivity = () => {
-        if (!analyser) return;
-        
-        analyser.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          sum += dataArray[i];
+
+      processor.onaudioprocess = (event) => {
+        if (!tutorSocketRef.current || tutorSocketRef.current.readyState !== WebSocket.OPEN || liveTurnEndingRef.current) {
+          return;
         }
-        const average = sum / dataArray.length;
-        
-        // If there's audio activity above threshold, update timestamp
-        if (average > SILENCE_RMS_THRESHOLD * 1000) {
+
+        const inputData = event.inputBuffer.getChannelData(0);
+        let energy = 0;
+        for (let index = 0; index < inputData.length; index += 1) {
+          const sample = inputData[index] ?? 0;
+          energy += sample * sample;
+        }
+        const rms = Math.sqrt(energy / Math.max(1, inputData.length));
+        if (!inputSpeechDetectedRef.current && rms <= 0.008) {
+          return;
+        }
+
+        if (rms > 0.012) {
+          if (!inputSpeechDetectedRef.current) {
+            inputSpeechDetectedRef.current = true;
+            stop();
+            stopLiveAudioPlayback();
+          }
           lastAudioActivityRef.current = Date.now();
+          if (liveSilenceTimerRef.current) {
+            window.clearTimeout(liveSilenceTimerRef.current);
+          }
+          liveSilenceTimerRef.current = window.setTimeout(() => {
+            void stopMicrophone();
+          }, 3200);
         }
+
+        const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, LIVE_INPUT_SAMPLE_RATE);
+        const pcm = floatTo16BitPcm(downsampled);
+        tutorSocketRef.current.send(
+          JSON.stringify({
+            type: "live_input_audio",
+            data: arrayBufferToBase64(pcm),
+            sample_rate: LIVE_INPUT_SAMPLE_RATE,
+          }),
+        );
       };
-      
-      // Run silence check every 100ms
-      analyserCheckIntervalRef.current = window.setInterval(checkAudioActivity, 100);
+
+      source.connect(processor);
+      processor.connect(silence);
+      silence.connect(audioContext.destination);
 
       // Store references
       micStreamRef.current = stream;
@@ -577,7 +755,8 @@ export default function Classroom({ onNavigate }: Props) {
       audioContextRef.current = audioContext;
       sourceRef.current = source;
       analyserRef.current = analyser;
-      mediaRecorderRef.current = mediaRecorder;
+      inputProcessorRef.current = processor;
+      inputSilenceRef.current = silence;
       
       // Update UI
       setMicActive(true);
@@ -591,12 +770,13 @@ export default function Classroom({ onNavigate }: Props) {
 
   function askForHelp() {
     if (sessionExpired) return;
+    stop();
     void start({ action: "help", grade: selectedGrade, subject: "math" });
   }
 
   function handleMicPress() {
     if (sessionExpired) return;
-    if (!classStarted || loading || micActive) return;
+    if (!classStarted || micActive) return;
     void startMicrophone().catch((error) => {
       console.error("Unable to start microphone capture.", error);
       setMicError("Unable to start microphone capture.");
@@ -606,16 +786,10 @@ export default function Classroom({ onNavigate }: Props) {
   }
 
   function handleMicRelease() {
-    // CRITICAL: Always reset UI immediately on release
-    setMicActive(false);
-    
     if (!micActive) return;
-    
-    // Stop recording in background
     void stopMicrophone().catch((error) => {
       console.error("Unable to stop microphone capture.", error);
       setMicError("Unable to stop microphone capture.");
-      // Force reset even on error
       setMicActive(false);
     });
   }
@@ -738,6 +912,72 @@ export default function Classroom({ onNavigate }: Props) {
               {error && <div className="rounded-lg border border-rose-400/40 bg-rose-950/60 p-4 text-sm text-rose-100">{error}</div>}
               {micError && <div className="rounded-lg border border-amber-400/40 bg-amber-950/60 p-4 text-sm text-amber-100">{micError}</div>}
               {timeoutMessage && <div className="rounded-lg border border-amber-400/40 bg-amber-950/60 p-4 text-sm text-amber-100">{timeoutMessage}</div>}
+
+              <form onSubmit={askDoubt} className="rounded-lg border border-cyan-400/30 bg-cyan-950/25 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold tracking-normal text-cyan-100">Live Doubt</p>
+                    <p className="mt-1 text-xs leading-5 text-cyan-200/80">Ask while Arvind Sir is solving.</p>
+                  </div>
+                  {isSpeaking && (
+                    <span className="rounded-full bg-amber-400/15 px-3 py-1 text-xs font-semibold text-amber-100">
+                      Interrupt ready
+                    </span>
+                  )}
+                </div>
+                <div className="mt-3 flex items-end gap-2">
+                  <textarea
+                    value={doubtText}
+                    onChange={(event) => setDoubtText(event.target.value)}
+                    placeholder="Type your full doubt"
+                    rows={3}
+                    className="min-h-24 min-w-0 flex-1 resize-y rounded-md border border-cyan-500/40 bg-slate-950 px-3 py-2 text-sm leading-6 text-white outline-none focus:border-cyan-300"
+                  />
+                  <button
+                    type="submit"
+                    disabled={sessionExpired || !doubtText.trim()}
+                    className="rounded-md bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950 transition hover:bg-cyan-300 disabled:bg-slate-700 disabled:text-slate-400"
+                  >
+                    Ask
+                  </button>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {["Please explain this step again", "Why did we use this formula?", "I did not understand the last step"].map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => void askDoubt(undefined, prompt)}
+                      disabled={sessionExpired}
+                      className="rounded-full border border-cyan-500/30 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/10 disabled:text-slate-500"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+              </form>
+
+              {discussionTurns.length > 0 && (
+                <div className="rounded-lg border border-slate-700 bg-slate-950 p-4">
+                  <p className="text-sm font-semibold tracking-normal text-white">Doubt Discussion</p>
+                  <div className="mt-3 max-h-52 space-y-3 overflow-y-auto pr-1">
+                    {discussionTurns.slice(-6).map((turn) => (
+                      <div
+                        key={turn.id}
+                        className={`rounded-md px-3 py-2 text-sm leading-6 ${
+                          turn.role === "student"
+                            ? "bg-cyan-400/10 text-cyan-50"
+                            : "bg-slate-800 text-slate-100"
+                        }`}
+                      >
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                          {turn.role === "student" ? "Student" : "Arvind Sir"}
+                        </p>
+                        <p className="mt-1">{turn.content || "Answering..."}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {isQuestion && (
                 <form onSubmit={submitClassAnswer} className="rounded-lg border border-slate-700 bg-slate-950 p-4">
@@ -869,18 +1109,8 @@ export default function Classroom({ onNavigate }: Props) {
           <div className="mx-auto grid max-w-4xl grid-cols-3 gap-3">
             <button
               type="button"
-              onMouseDown={handleMicPress}
-              onMouseUp={handleMicRelease}
-              onMouseLeave={handleMicRelease}
-              onTouchStart={(e) => {
-                e.preventDefault();
-                handleMicPress();
-              }}
-              onTouchEnd={(e) => {
-                e.preventDefault();
-                handleMicRelease();
-              }}
-              disabled={loading || sessionExpired}
+              onClick={micActive ? handleMicRelease : handleMicPress}
+              disabled={sessionExpired}
               className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-md px-2 py-3 text-xs font-bold tracking-normal transition disabled:bg-slate-700 disabled:text-slate-400 sm:flex-row sm:gap-2 sm:px-4 sm:text-sm ${
                 micActive
                   ? "animate-pulse bg-rose-500 text-white hover:bg-rose-400"
@@ -888,7 +1118,7 @@ export default function Classroom({ onNavigate }: Props) {
               }`}
             >
               <MicIcon />
-              <span className="text-center leading-tight">{micActive ? "Listening..." : "Push to Talk"}</span>
+              <span className="text-center leading-tight">{micActive ? "End Turn" : "Live Discuss"}</span>
             </button>
             <button
               type="button"

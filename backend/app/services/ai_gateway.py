@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import contextlib
 import json
+import re
+import time
 from functools import lru_cache
 
 from ..cache.cache_manager import get_cache, set_cache
@@ -24,8 +28,18 @@ except ImportError:  # pragma: no cover - optional dependency
     ResourceExhausted = None
 
 
-TEXT_MODEL_ID = "gemini-3.1-flash-lite"
-DEPRECATED_TEXT_MODEL_SUFFIXES = ("2.0-flash", "2.0-flash-001")
+TEXT_MODEL_ID = "gemini-3.1-flash-lite-preview"
+TTS_MODEL_ID = "gemini-2.5-flash-preview-tts"
+DEPRECATED_TEXT_MODEL_SUFFIXES = (
+    "2.0-flash",
+    "2.0-flash-001",
+    "2.5-flash",
+    "2.5-pro",
+    "3.1-flash",
+    "3.1-flash-lite",
+    "3.1-pro",
+    "1.5-pro",
+)
 
 DEFAULT_TEXT_MODEL = (
     TEXT_MODEL_ID
@@ -33,6 +47,7 @@ DEFAULT_TEXT_MODEL = (
     else GEMINI_TEXT_MODEL
 )
 DEFAULT_LIVE_MODEL = GEMINI_LIVE_MODEL
+_tts_retry_after = 0.0
 
 SAFE_FALLBACK_AGENT_RESPONSE = {
     "spoken_response": "I'm sorry, I'm experiencing heavy traffic right now and need a moment to catch my breath. Let's pause for a minute.",
@@ -141,3 +156,101 @@ async def stream_response(prompt: str, model: str = DEFAULT_TEXT_MODEL):
     for word in text.split():
         yield word + " "
         await asyncio.sleep(0.01)
+
+
+def _extract_audio_bytes_from_response(response: object) -> bytes:
+    if response is None:
+        return b""
+
+    # Some SDKs expose direct bytes on response.audio.
+    direct_audio = getattr(response, "audio", None)
+    if isinstance(direct_audio, (bytes, bytearray)):
+        return bytes(direct_audio)
+
+    candidates = getattr(response, "candidates", None) or []
+    for candidate in candidates:
+        content = getattr(candidate, "content", None)
+        parts = getattr(content, "parts", None) or []
+        for part in parts:
+            inline = getattr(part, "inline_data", None) or getattr(part, "inlineData", None)
+            if inline is not None:
+                data = getattr(inline, "data", None)
+                if isinstance(data, (bytes, bytearray)):
+                    return bytes(data)
+                if isinstance(data, str):
+                    try:
+                        return base64.b64decode(data)
+                    except Exception:
+                        pass
+            audio = getattr(part, "audio", None)
+            if isinstance(audio, (bytes, bytearray)):
+                return bytes(audio)
+
+    return b""
+
+
+def _generate_audio_sync(transcript: str, voice_name: str) -> bytes:
+    global _tts_retry_after
+    if time.monotonic() < _tts_retry_after:
+        return b""
+
+    client = _new_sdk_client()
+    if client is None:
+        return b""
+
+    tts_prompt = (
+        "You are Arvind Sir, an Indian Math Tutor. "
+        f"Deliver this transcript naturally: {transcript}"
+    )
+
+    # Prefer typed config when available, fallback to plain dict.
+    config: object
+    try:
+        from google.genai import types as genai_types  # type: ignore
+
+        config = genai_types.GenerateContentConfig(
+            response_modalities=["AUDIO"],
+            speech_config=genai_types.SpeechConfig(
+                voice_config=genai_types.VoiceConfig(
+                    prebuilt_voice_config=genai_types.PrebuiltVoiceConfig(
+                        voice_name=voice_name
+                    )
+                )
+            ),
+        )
+    except Exception:
+        config = {
+            "response_modalities": ["AUDIO"],
+            "speech_config": {
+                "voice_config": {
+                    "prebuilt_voice_config": {
+                        "voice_name": voice_name,
+                    }
+                }
+            },
+        }
+
+    try:
+        response = client.models.generate_content(
+            model=TTS_MODEL_ID,
+            contents=tts_prompt,
+            config=config,
+        )
+        return _extract_audio_bytes_from_response(response)
+    except Exception as error:
+        if _is_quota_error(error):
+            retry_delay = 60.0
+            retry_match = re.search(r"retry(?: in|Delay['\"]?:\s*['\"]?)\s*(\d+(?:\.\d+)?)s", str(error), re.IGNORECASE)
+            if retry_match:
+                with contextlib.suppress(ValueError):
+                    retry_delay = max(10.0, float(retry_match.group(1)))
+            _tts_retry_after = time.monotonic() + retry_delay
+        print(f"TTS Rate Limit or Quota Exhausted: {error}. Proceeding with clean text execution.")
+        return b""
+
+
+async def generate_audio(transcript: str, voice_name: str = "Algenib") -> bytes:
+    text = str(transcript or "").strip()
+    if not text:
+        return b""
+    return await asyncio.to_thread(_generate_audio_sync, text, voice_name)

@@ -14,7 +14,7 @@ vertexai.init(
     location="global"
 )
 
-model = GenerativeModel("gemini-2.5-pro")
+model = GenerativeModel(os.getenv("GEMINI_PLANNER_MODEL", os.getenv("GEMINI_TEXT_MODEL", "gemini-3.1-pro-preview")))
 #model = GenerativeModel("gemini-1.5-flash")
 
 def call_gemini(prompt: str):
