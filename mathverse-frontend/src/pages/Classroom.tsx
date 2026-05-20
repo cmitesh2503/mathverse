@@ -102,9 +102,19 @@ const CBSE_GRADE_10_CHAPTERS = [
   { slug: "probability", title: "Probability" },
 ] as const;
 
-function tutorWsUrl(sessionId: string, grade: ClassroomGrade, examMode: ExamMode) {
+function tutorWsUrl(sessionId: string, grade: ClassroomGrade, examMode: ExamMode, topicSlug?: string) {
   const base = API_BASE_URL.replace(/^http/, "ws").replace(/\/$/, "");
-  return `${base}/ws/tutor?session_id=${encodeURIComponent(sessionId)}&grade=${grade}&subject=Mathematics&mode=class&exam=${encodeURIComponent(examMode)}`;
+  const params = new URLSearchParams({
+    session_id: sessionId,
+    grade: String(grade),
+    subject: "Mathematics",
+    mode: "class",
+    exam: examMode,
+  });
+  if (topicSlug) {
+    params.set("topic_slug", topicSlug);
+  }
+  return `${base}/ws/tutor?${params.toString()}`;
 }
 
 function downsampleBuffer(buffer: Float32Array, sourceRate: number, targetRate: number) {
@@ -295,6 +305,9 @@ export default function Classroom({ onNavigate }: Props) {
 
   const concept = response?.concept || response?.content?.concept || `${examLabel} Mathematics`;
   const chapter = response?.chapter || response?.content?.chapter || "Live Class";
+  const liveChapterSlug =
+    CBSE_GRADE_10_CHAPTERS.find((item) => item.title.toLowerCase() === String(chapter || "").toLowerCase())?.slug ||
+    selectedChapterSlug;
   const explanation = response?.explanation || response?.content?.explanation || "Class explanation will appear here.";
   const caption = response?.voice_text || response?.content?.voice_text || explanation;
   const whiteboard = response?.whiteboard || response?.content?.whiteboard;
@@ -474,10 +487,10 @@ export default function Classroom({ onNavigate }: Props) {
       action: "stop_listening",
       transcript: cleanedTranscript || undefined,
       mode: "class",
-      context: { exam: examMode, grade: selectedGrade },
+      context: { exam: examMode, grade: selectedGrade, chapter, chapter_slug: liveChapterSlug, topic: concept },
     });
     sendSocketPayload({ type: "audio_stream_end" });
-  }, [examMode, selectedGrade, sendSocketPayload]);
+  }, [chapter, concept, examMode, liveChapterSlug, selectedGrade, sendSocketPayload]);
 
   const base64ToUint8Array = (value: string) => {
     const binary = window.atob(value);
@@ -643,7 +656,7 @@ export default function Classroom({ onNavigate }: Props) {
     }
 
     return new Promise<WebSocket>((resolve, reject) => {
-      const socket = new WebSocket(tutorWsUrl(sessionId, selectedGrade, examMode));
+      const socket = new WebSocket(tutorWsUrl(sessionId, selectedGrade, examMode, liveChapterSlug));
       tutorSocketRef.current = socket;
 
       socket.onopen = () => resolve(socket);
@@ -659,7 +672,11 @@ export default function Classroom({ onNavigate }: Props) {
       socket.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data);
-          if (payload.type === "live_warning" || payload.type === "live_error") {
+          if (payload.type === "live_warning") {
+            console.warn(payload.content || "Tutor audio stream warning");
+            setTimeoutMessage(payload.content || "Live voice fallback is active.");
+          }
+          if (payload.type === "live_error") {
             console.warn(payload.content || "Tutor audio stream warning");
             setMicError(payload.content || "Native Gemini Live audio is not connected.");
           }
@@ -759,6 +776,22 @@ export default function Classroom({ onNavigate }: Props) {
       
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const socket = await openTutorSocket();
+      socket.send(
+        JSON.stringify({
+          type: "context_update",
+          mode: "class",
+          context: {
+            exam: examMode,
+            grade: selectedGrade,
+            chapter,
+            chapter_slug: liveChapterSlug,
+            topic: concept,
+          },
+          whiteboard,
+          whiteboard_actions: whiteboardActions,
+          visible_steps: visibleSteps,
+        }),
+      );
       stop();
       stopLiveAudioPlayback();
       

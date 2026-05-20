@@ -173,7 +173,6 @@ async def tutor_ws(websocket: WebSocket):
     live_connect_retry_after = 0.0
     last_live_audio_sent_at = 0.0
     last_silent_audio_sent_at = 0.0
-    last_live_warning_sent_at = 0.0
     initial_mode = (websocket.query_params.get("mode") or "").lower()
     initial_exam = (websocket.query_params.get("exam") or "").lower()
     with contextlib.suppress(Exception):
@@ -265,6 +264,12 @@ async def tutor_ws(websocket: WebSocket):
         if grade_param is not None:
             with contextlib.suppress(ValueError):
                 bootstrap_context["grade"] = int(grade_param)
+        topic_slug_param = websocket.query_params.get("topic_slug")
+        if topic_slug_param:
+            bootstrap_context["chapter_slug"] = topic_slug_param
+        if getattr(session_record, "topic_title", None):
+            bootstrap_context["chapter"] = session_record.topic_title
+            bootstrap_context["topic"] = session_record.topic_title
         await live_bridge.send_text_turn(
             "ready",
             mode=initial_mode or None,
@@ -290,6 +295,9 @@ async def tutor_ws(websocket: WebSocket):
                 print("Tutor WS RAW:", raw_data[:300] + ("..." if len(raw_data) > 300 else ""))
 
             message = None
+            if payload.get("type") == "context_update":
+                live_bridge.update_context(payload)
+                continue
             if payload.get("type") == "live_input_audio" and payload.get("data"):
                 try:
                     audio_chunk = base64.b64decode(payload["data"])
@@ -311,15 +319,6 @@ async def tutor_ws(websocket: WebSocket):
                         print(f"Gemini Live audio disconnected: {error}")
                         live_connected = False
                         live_connect_retry_after = asyncio.get_running_loop().time() + 15.0
-                if now - last_live_warning_sent_at >= 5.0:
-                    last_live_warning_sent_at = now
-                    if not await safe_send_json(
-                        {
-                            "type": "live_warning",
-                            "content": "Native Gemini audio is reconnecting. You can also type the doubt.",
-                        }
-                    ):
-                        break
                 continue
             if payload.get("type") == "live_input_video" and payload.get("data"):
                 if await ensure_live_bridge():
@@ -420,6 +419,12 @@ async def tutor_ws(websocket: WebSocket):
                 if grade_param is not None:
                     with contextlib.suppress(ValueError):
                         context["grade"] = int(grade_param)
+                topic_slug_param = websocket.query_params.get("topic_slug")
+                if topic_slug_param:
+                    context["chapter_slug"] = topic_slug_param
+                if getattr(session_record, "topic_title", None):
+                    context["chapter"] = session_record.topic_title
+                    context["topic"] = session_record.topic_title
                 if not context:
                     context = None
 

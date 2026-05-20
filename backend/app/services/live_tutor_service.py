@@ -64,6 +64,7 @@ class LiveTutorBridge:
         self._assistant_fallback = ""
         self._assistant_audio_emitted = False
         self._input_transcript = ""
+        self._board_context_lines: list[str] = []
         self._active_mode: str | None = None
         self._active_context: dict | None = None
         self._pending_transport: str | None = None
@@ -77,6 +78,55 @@ class LiveTutorBridge:
             active_phase="teaching",
         )
         self.orchestrator.sessions[session_id] = self.student_session
+
+    def update_context(self, payload: dict) -> None:
+        context = payload.get("context") if isinstance(payload.get("context"), dict) else {}
+        if context:
+            self._active_context = {**(self._active_context or {}), **context}
+            if context.get("grade") is not None:
+                with contextlib.suppress(TypeError, ValueError):
+                    self.student_session.grade = int(context["grade"])
+            if context.get("exam"):
+                self.student_session.exam = "jee" if str(context.get("exam")).lower() == "jee" else "cbse"
+            chapter = context.get("chapter") or context.get("chapter_name")
+            topic = context.get("topic") or context.get("concept")
+            if chapter:
+                self.student_session.chapter_name = str(chapter)
+            if topic:
+                self.student_session.current_topic = str(topic)
+
+        lines: list[str] = []
+        whiteboard = payload.get("whiteboard") if isinstance(payload.get("whiteboard"), dict) else {}
+        for item in payload.get("visible_steps") or []:
+            if isinstance(item, str) and item.strip():
+                lines.append(item.strip())
+        for item in whiteboard.get("chalk_lines") or []:
+            if isinstance(item, str) and item.strip():
+                lines.append(item.strip())
+        actions = payload.get("whiteboard_actions")
+        if not isinstance(actions, list):
+            actions = whiteboard.get("actions")
+        if isinstance(actions, list):
+            for action in actions:
+                if not isinstance(action, dict):
+                    continue
+                text = self._action_text(action)
+                if text:
+                    lines.append(text)
+
+        problem = str(whiteboard.get("problem") or "").strip()
+        if problem:
+            self.student_session.current_problem = {"prompt": problem}
+
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for line in lines:
+            normalized = " ".join(line.split())
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            cleaned.append(normalized[:240])
+        self._board_context_lines = cleaned[-14:]
 
     @property
     def available(self) -> bool:
@@ -143,6 +193,13 @@ class LiveTutorBridge:
     def current_state(self) -> dict:
         self._sync_student_session()
         return self._build_agent_state([])
+
+    def _board_context_text(self) -> str:
+        if not self._board_context_lines:
+            problem = getattr(self.student_session, "current_problem", {}) or {}
+            prompt = problem.get("prompt") if isinstance(problem, dict) else None
+            return str(prompt or "").strip()
+        return "\n".join(f"- {line}" for line in self._board_context_lines)
 
     async def send_audio_chunk(self, audio_bytes: bytes) -> None:
         if not self._live_session or not live_types:
@@ -223,18 +280,20 @@ class LiveTutorBridge:
             or topic_title
             or "Mathematics Overview"
         )
+        board_context = self._board_context_text()
 
         source_material = self._firebase_curriculum_context(
             grade=int(getattr(session_record, "grade", 10) or 10),
             exam=str(getattr(self.student_session, "exam", "cbse") or "cbse"),
-            chapter=topic_title,
+            chapter=chapter_title,
             topic=topic_title,
         ) or retrieve_context(topic_title, session_record.grade)
         curriculum_grounding = (
             f"Board: {session_record.board}\n"
             f"Subject: {session_record.subject}\n"
             f"Grade: {session_record.grade}\n"
-            f"Current chapter: {topic_title}"
+            f"Current chapter: {chapter_title}\n"
+            f"Current topic: {topic_title}"
         )
 
         if source_material:
@@ -269,9 +328,15 @@ class LiveTutorBridge:
             "FOLLOW-UP DOUBTS: If the student asks a doubt or follow-up question, pause the planned lesson, "
             "answer that doubt directly with one small example, update the whiteboard, then connect the answer "
             "back to the current chapter/topic before continuing.\n"
+            "For vague follow-ups like 'this step', 'that formula', or 'why did we do this', treat the question "
+            "as referring to the CURRENT BLACKBOARD CONTEXT below. If the blackboard context is insufficient, "
+            "ask one short clarification or counter-question before solving. Do not switch to Real Numbers, "
+            "Euclid's division lemma, or any other chapter unless that is the current chapter or the student "
+            "explicitly asks for it.\n"
             "Speak in clear Indian English unless the student asks for another language.\n"
             f"Current chapter focus: {chapter_title}\n"
             f"Current topic focus: {topic_title}\n"
+            f"Current blackboard context:\n{board_context or 'No visible blackboard lines were provided.'}\n\n"
             f"Current classroom memory:\n{memory_context}\n\n"
             f"Curriculum grounding:\n{curriculum_grounding}"
         )
@@ -326,6 +391,10 @@ class LiveTutorBridge:
             except (TypeError, ValueError):
                 pass
         self.student_session.exam = "jee" if str(effective_context.get("exam", self.student_session.exam)).lower() == "jee" else "cbse"
+        if effective_context.get("chapter") or effective_context.get("chapter_name"):
+            self.student_session.chapter_name = str(effective_context.get("chapter") or effective_context.get("chapter_name"))
+        if effective_context.get("topic") or effective_context.get("concept"):
+            self.student_session.current_topic = str(effective_context.get("topic") or effective_context.get("concept"))
         action = self._extract_action_from_message(message)
 
         if effective_mode == "class":
@@ -348,6 +417,15 @@ class LiveTutorBridge:
 
         if effective_mode == "class":
             topic = self._resolve_current_topic()
+            board_context = self._board_context_text()
+            if board_context:
+                nudge = (
+                    "CURRENT BLACKBOARD CONTEXT:\n"
+                    f"{board_context}\n"
+                    "Answer student doubts against this blackboard and the current chapter. "
+                    "If the question is ambiguous and the board context is not enough, ask one concise clarification. "
+                    "Do not jump to Euclid's division lemma or another chapter unless explicitly requested."
+                )
             normalized_exam = "jee" if str(self.student_session.exam or "").lower() == "jee" else "cbse"
             source_hint = (
                 "JEE PYQ patterns, solved examples, and problem solving strategies"
@@ -386,7 +464,7 @@ class LiveTutorBridge:
                 correct_answer="42",
             )
             nudge = diagnostic_result.get("hidden_nudge")
-            if effective_mode == "class":
+            if effective_mode == "class" and action in {"start", "next", "continue", "repeat", "refresh_problem", "previous_problem", "next_exercise", "next_pdf_exercise"}:
                 candidates = self._extract_problem_candidates(rag_context)
                 if candidates:
                     base_prob = candidates[self.student_session.questions_asked % len(candidates)]
@@ -410,7 +488,7 @@ class LiveTutorBridge:
             whiteboard_actions = tutor_payload.get("whiteboard_actions", [])
         else:
             # âœ… FIX 2: Explicitly order the AI Agent to solve the problem on the board
-            if effective_mode == "class":
+            if effective_mode == "class" and action in {"start", "next", "continue", "repeat", "refresh_problem", "previous_problem", "next_exercise", "next_pdf_exercise"}:
                 candidates = self._extract_problem_candidates(rag_context)
                 if candidates:
                     base_prob = candidates[self.student_session.questions_asked % len(candidates)]

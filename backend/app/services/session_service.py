@@ -167,6 +167,12 @@ class SessionService:
                 session.grade = request.grade
                 session.board = request.board
                 session.subject = request.subject
+                if request.topic_slug and request.topic_slug != session.topic_slug:
+                    topic = get_topic(request.grade, request.topic_slug)
+                    session.topic_slug = request.topic_slug
+                    session.topic_title = topic["title"] if topic else request.topic_slug.replace("_", " ").title()
+                    session.title = self._build_title(request.grade, session.topic_title)
+                    session.summary = f"{session.topic_title or 'Math lesson'} is ready to begin."
                 session.updated_at = utc_now()
             else:
                 seed_metadata: dict = {}
