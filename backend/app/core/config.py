@@ -2,9 +2,12 @@ import os
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 GEMINI_TEXT_MODEL = os.getenv("GEMINI_TEXT_MODEL", "gemini-3.1-flash-lite-preview")
-GEMINI_LIVE_MODEL = os.getenv(
-    "GEMINI_LIVE_MODEL",
-    "gemini-2.5-flash-native-audio-preview-12-2025",
+DEFAULT_GEMINI_LIVE_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
+_configured_live_model = os.getenv("GEMINI_LIVE_MODEL", DEFAULT_GEMINI_LIVE_MODEL).strip()
+GEMINI_LIVE_MODEL = (
+    _configured_live_model
+    if "live" in _configured_live_model.lower() or "native-audio" in _configured_live_model.lower()
+    else DEFAULT_GEMINI_LIVE_MODEL
 )
 GEMINI_LIVE_VOICE = os.getenv("GEMINI_LIVE_VOICE", "Sulafat")
 GEMINI_LIVE_INPUT_LANGUAGE = os.getenv("GEMINI_LIVE_INPUT_LANGUAGE", "en-IN")

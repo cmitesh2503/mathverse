@@ -36,6 +36,11 @@ export type TutorPayload = {
     question?: string;
     answer?: string;
     topic?: string;
+    chapter?: string;
+    chapter_slug?: string;
+    board_problem?: string | null;
+    board_steps?: string[];
+    whiteboard_context?: WhiteboardState;
     action?: "start" | "next" | "next_concept" | "next_topic" | "continue" | "repeat" | "homework" | "skip_homework" | "finish" | "end" | "end_day" | "help" | "unable" | "not_able" | "solve_pdf_exercises" | "solve_all_exercises" | "solve_all_pdf_exercises" | "next_exercise" | "next_pdf_exercise" | "previous_problem" | "refresh_problem";
     scope?: "all_chapters" | "current_chapter" | "chapter" | string;
     question_index?: number;
@@ -116,6 +121,8 @@ export type ClassResponse = {
   explanation: string;
   steps: string[];
   question?: string | null;
+  problem_statement?: string | null;
+  board_problem?: string | null;
   correct?: boolean | null;
   mistake_type?: string | null;
   hint?: string | null;
@@ -198,6 +205,83 @@ export type AttemptRecord = {
   pattern?: string | null;
 };
 
+export type ConceptMasteryInsights = {
+  strong_concepts: string[];
+  weak_concepts: string[];
+};
+
+export type StudentMarksheetEntry = {
+  test_id: string;
+  test_name: string;
+  test_number: number | null;
+  student_id: string;
+  student_name: string;
+  secured_marks: number;
+  max_test_marks: number;
+  percentage: number;
+  percentage_secured: string;
+  evaluated_at?: string;
+  answer_sheet_image_url?: string;
+  concept_mastery_insights: ConceptMasteryInsights;
+};
+
+export type StudentMarksheetResponse = {
+  student_id: string;
+  total_tests: number;
+  marksheet: StudentMarksheetEntry[];
+};
+
+export type StepWiseCredits = {
+  formula_and_given_data: number;
+  step_progression_lines: number;
+  final_value_and_units: number;
+};
+
+export type DetailedAnswerEntry = {
+  question_number: string;
+  section: string;
+  question_text: string;
+  max_marks: number;
+  allocated_marks: number;
+  step_wise_credits: StepWiseCredits;
+  step_by_step_audit: string;
+  remediation_advice: string;
+};
+
+export type StudentBreakdownResponse = {
+  test_id: string;
+  test_name: string;
+  test_number: number | null;
+  student_id: string;
+  student_name: string;
+  secured_marks: number;
+  max_test_marks: number;
+  percentage: number;
+  percentage_secured: string;
+  evaluated_at?: string;
+  answer_sheet_image_url?: string;
+  concept_mastery_insights: ConceptMasteryInsights;
+  detailed_answer_breakdown: DetailedAnswerEntry[];
+};
+
+export type BulkUploadPayload = {
+  test_id: string;
+  test_name: string;
+  test_number: number;
+  student_id: string;
+  student_name: string;
+  max_test_marks?: number;
+  answer_sheet: File;
+};
+
+export type TestMaterialsUploadPayload = {
+  test_id: string;
+  test_name: string;
+  test_number: number;
+  question_paper: File;
+  marking_scheme: File;
+};
+
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 const api = axios.create({
@@ -239,4 +323,48 @@ export async function sendAnswer<T = TutorResponse>(payload: TutorPayload): Prom
 export async function getAttemptHistory(studentId: string): Promise<AttemptRecord[]> {
   const { data } = await api.get<{ attempts: AttemptRecord[] }>(`/api/tutor/attempts/${encodeURIComponent(studentId)}`);
   return data.attempts || [];
+}
+
+export async function getStudentMarksheet(studentId: string): Promise<StudentMarksheetResponse> {
+  const { data } = await api.get<StudentMarksheetResponse>(`/api/evaluation/student/${encodeURIComponent(studentId)}/marksheet`);
+  return data;
+}
+
+export async function getStudentTestBreakdown(studentId: string, testId: string): Promise<StudentBreakdownResponse> {
+  const { data } = await api.get<StudentBreakdownResponse>(
+    `/api/evaluation/student/${encodeURIComponent(studentId)}/tests/${encodeURIComponent(testId)}/breakdown`,
+  );
+  return data;
+}
+
+export async function uploadAnswerSheet(payload: BulkUploadPayload): Promise<Record<string, unknown>> {
+  const formData = new FormData();
+  formData.append("test_id", payload.test_id);
+  formData.append("test_name", payload.test_name);
+  formData.append("test_number", String(payload.test_number));
+  formData.append("student_id", payload.student_id);
+  formData.append("student_name", payload.student_name);
+  if (typeof payload.max_test_marks === "number" && Number.isFinite(payload.max_test_marks)) {
+    formData.append("max_test_marks", String(payload.max_test_marks));
+  }
+  formData.append("answer_sheet", payload.answer_sheet);
+
+  const { data } = await api.post<Record<string, unknown>>("/api/evaluation/bulk-upload", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export async function uploadTestMaterials(payload: TestMaterialsUploadPayload): Promise<Record<string, unknown>> {
+  const formData = new FormData();
+  formData.append("test_id", payload.test_id);
+  formData.append("test_name", payload.test_name);
+  formData.append("test_number", String(payload.test_number));
+  formData.append("question_paper", payload.question_paper);
+  formData.append("marking_scheme", payload.marking_scheme);
+
+  const { data } = await api.post<Record<string, unknown>>("/api/evaluation/upload-test-materials", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
 }

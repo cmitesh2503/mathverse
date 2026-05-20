@@ -1261,6 +1261,108 @@ def _normalize_action(input_data: dict[str, Any]) -> str:
     return str(input_data.get("action") or "").strip().lower()
 
 
+_CURRICULUM_STEP_ACTIONS = {
+    "start",
+    "next",
+    "continue",
+    "repeat",
+    "refresh_problem",
+    "previous_problem",
+    "next_exercise",
+    "next_pdf_exercise",
+    "next_topic",
+    "next_chapter",
+    "skip_topic",
+    "skip_chapter",
+    "homework",
+    "finish",
+    "end",
+}
+
+
+def _extract_chat_question(input_data: dict[str, Any]) -> str:
+    for field in ("question", "message", "text"):
+        value = input_data.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _looks_like_question(text: str) -> bool:
+    lowered = str(text or "").strip().lower()
+    if not lowered:
+        return False
+    if "?" in lowered:
+        return True
+    return bool(
+        re.match(
+            r"^(what|why|how|when|where|which|who|can|could|would|should|is|are|do|does|did)\b",
+            lowered,
+        )
+        or any(
+            phrase in lowered
+            for phrase in (
+                "explain",
+                "i have a doubt",
+                "i don't understand",
+                "i do not understand",
+                "not clear",
+                "confused",
+                "help me understand",
+            )
+        )
+    )
+
+
+def _should_route_as_doubt(input_data: dict[str, Any]) -> tuple[bool, str]:
+    question = _extract_chat_question(input_data)
+    if not question or input_data.get("answer"):
+        return False, question
+
+    action = _normalize_action(input_data)
+    has_explicit_curriculum_action = action in _CURRICULUM_STEP_ACTIONS
+    is_explicit_doubt_action = action in {"ask", "question", "doubt", "chat", "help", "unable", "not_able"}
+
+    if is_explicit_doubt_action or _looks_like_question(question):
+        return True, question
+    if not action:
+        return True, question
+    if not has_explicit_curriculum_action and ("message" in input_data or "text" in input_data):
+        return True, question
+    return False, question
+
+
+def _seed_doubt_state_from_class_context(state, session: StudentSession | None, input_data: dict[str, Any]) -> None:
+    if session is not None:
+        for attr in ("grade", "exam", "current_topic", "chapter_name", "current_problem"):
+            value = getattr(session, attr, None)
+            if value:
+                if attr == "chapter_name":
+                    setattr(state, "chapter_label", value)
+                    if not getattr(state, "topic_title", None):
+                        setattr(state, "topic_title", value)
+                else:
+                    setattr(state, attr, value)
+
+    board_problem = str(input_data.get("board_problem") or "").strip()
+    whiteboard_context = input_data.get("whiteboard_context") if isinstance(input_data.get("whiteboard_context"), dict) else {}
+    if not board_problem and isinstance(whiteboard_context, dict):
+        board_problem = str(whiteboard_context.get("problem") or "").strip()
+
+    if board_problem:
+        state.active_problem = {"prompt": board_problem}
+        state.current_problem = {"prompt": board_problem}
+
+    board_steps = input_data.get("board_steps")
+    if isinstance(board_steps, list):
+        state.whiteboard = {
+            "problem": board_problem,
+            "chalk_lines": [str(step) for step in board_steps if str(step).strip()],
+        }
+    elif isinstance(whiteboard_context, dict) and whiteboard_context:
+        state.whiteboard = whiteboard_context
+
+
 def _class_user_message(input_data: dict[str, Any], action: str) -> str:
     if input_data.get("answer"):
         return f"My final answer is {input_data['answer']}"
@@ -1607,6 +1709,10 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         route_context["grade"] = input_data.get("grade")
     if "exam" not in route_context and req.get_exam():
         route_context["exam"] = req.get_exam()
+    if input_data.get("chapter") is not None:
+        route_context["chapter"] = input_data.get("chapter")
+    if input_data.get("chapter_slug") is not None:
+        route_context["chapter_slug"] = input_data.get("chapter_slug")
 
     if route_context.get("grade") is not None:
         try:
@@ -1847,6 +1953,9 @@ async def tutor_api(req: TutorRequest):
     try:
         mode = req.mode
         input_data = req.input
+        route_as_doubt, chat_question = _should_route_as_doubt(input_data)
+        if route_as_doubt:
+            mode = "doubt"
 
         if mode in {"class", "mock_test"}:
             return await _handle_multi_agent_class(req, input_data)
@@ -1854,8 +1963,11 @@ async def tutor_api(req: TutorRequest):
         engine = _get_legacy_engine()
         state = engine._ensure_state(req.session_id)
         state.exam = req.get_exam()
+        if route_as_doubt and req.mode == "class":
+            class_session = orchestrator.sessions.get(req.session_id)
+            _seed_doubt_state_from_class_context(state, class_session, input_data)
 
-        question = input_data.get("question")
+        question = chat_question or input_data.get("question")
         answer = input_data.get("answer")
 
         response = None

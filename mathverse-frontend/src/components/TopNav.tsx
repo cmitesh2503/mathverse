@@ -12,6 +12,7 @@ const navItems: { key: PageKey; label: string }[] = [
   { key: "solve", label: "Solve" },
   { key: "exam", label: "Exam" },
   { key: "progress", label: "Progress" },
+  { key: "report", label: "Reports" },
 ];
 
 type Props = {

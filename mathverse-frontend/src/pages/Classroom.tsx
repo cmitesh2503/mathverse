@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PageKey } from "../App";
 import { TutorAvatar } from "../components/TutorAvatar";
 import { UpgradeNotice } from "../components/UpgradeNotice";
@@ -21,6 +21,16 @@ type DiscussionTurn = {
   id: string;
   role: "student" | "tutor";
   content: string;
+};
+
+type BrowserSpeechRecognition = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: any) => void) | null;
+  onerror: ((event: any) => void) | null;
+  start: () => void;
+  stop: () => void;
 };
 
 function MicIcon({ className = "h-5 w-5" }: IconProps) {
@@ -73,6 +83,24 @@ const LIVE_INPUT_SAMPLE_RATE = 16000;
 
 const CLASSROOM_GRADES = [10, 11, 12] as const;
 type ClassroomGrade = (typeof CLASSROOM_GRADES)[number];
+
+const CBSE_GRADE_10_CHAPTERS = [
+  { slug: "real_numbers", title: "Real Numbers" },
+  { slug: "polynomials", title: "Polynomials" },
+  { slug: "pair_of_linear_equations", title: "Pair of Linear Equations in Two Variables" },
+  { slug: "quadratic_equations", title: "Quadratic Equations" },
+  { slug: "arithmetic_progressions", title: "Arithmetic Progressions" },
+  { slug: "triangles", title: "Triangles" },
+  { slug: "coordinate_geometry", title: "Coordinate Geometry" },
+  { slug: "introduction_to_trigonometry", title: "Introduction to Trigonometry" },
+  { slug: "applications_of_trigonometry", title: "Some Applications of Trigonometry" },
+  { slug: "circles", title: "Circles" },
+  { slug: "constructions", title: "Constructions" },
+  { slug: "areas_related_to_circles", title: "Areas Related to Circles" },
+  { slug: "surface_areas_and_volumes", title: "Surface Areas and Volumes" },
+  { slug: "statistics", title: "Statistics" },
+  { slug: "probability", title: "Probability" },
+] as const;
 
 function tutorWsUrl(sessionId: string, grade: ClassroomGrade, examMode: ExamMode) {
   const base = API_BASE_URL.replace(/^http/, "ws").replace(/\/$/, "");
@@ -144,6 +172,9 @@ export default function Classroom({ onNavigate }: Props) {
   const recordResponse = useTutorStore((state) => state.recordResponse);
   const [answer, setAnswer] = useState("");
   const [selectedGrade, setSelectedGrade] = useState<ClassroomGrade>(10);
+  const [selectedChapterSlug, setSelectedChapterSlug] = useState<(typeof CBSE_GRADE_10_CHAPTERS)[number]["slug"]>(
+    CBSE_GRADE_10_CHAPTERS[0].slug,
+  );
   const [classStarted, setClassStarted] = useState(false);
   const [micActive, setMicActive] = useState(false);
   const [nextCoolingDown, setNextCoolingDown] = useState(false);
@@ -169,6 +200,8 @@ export default function Classroom({ onNavigate }: Props) {
   const inputSpeechDetectedRef = useRef(false);
   const liveTurnEndingRef = useRef(false);
   const liveSilenceTimerRef = useRef<number | null>(null);
+  const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const speechTranscriptRef = useRef("");
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const outputPlaybackCursorRef = useRef(0);
   const activePlaybackSourcesRef = useRef<AudioBufferSourceNode[]>([]);
@@ -226,6 +259,15 @@ export default function Classroom({ onNavigate }: Props) {
   const gradeOptions: ClassroomGrade[] = examMode === "cbse" ? [10] : [...CLASSROOM_GRADES];
   const examLabel = examMode.toUpperCase();
   const tutorLabel = examMode === "cbse" ? "CBSE Tutor" : "JEE Tutor";
+  const selectedChapter =
+    CBSE_GRADE_10_CHAPTERS.find((chapter) => chapter.slug === selectedChapterSlug) ?? CBSE_GRADE_10_CHAPTERS[0];
+  const selectedChapterInput = useMemo(
+    () =>
+      examMode === "cbse" && selectedGrade === 10
+        ? { chapter: selectedChapter.title, chapter_slug: selectedChapter.slug }
+        : {},
+    [examMode, selectedChapter.slug, selectedChapter.title, selectedGrade],
+  );
 
   useEffect(() => {
     if (!classAllowed) return;
@@ -238,8 +280,18 @@ export default function Classroom({ onNavigate }: Props) {
       return;
     }
     if (consumedPendingRef.current) return;
-    void start({ action: "start", grade: selectedGrade, subject: "math" });
-  }, [classAllowed, classStarted, onResponse, pendingClassResponse, prime, selectedGrade, setPendingClassResponse, start]);
+    void start({ action: "start", grade: selectedGrade, subject: "math", ...selectedChapterInput });
+  }, [
+    classAllowed,
+    classStarted,
+    onResponse,
+    pendingClassResponse,
+    prime,
+    selectedChapterInput,
+    selectedGrade,
+    setPendingClassResponse,
+    start,
+  ]);
 
   const concept = response?.concept || response?.content?.concept || `${examLabel} Mathematics`;
   const chapter = response?.chapter || response?.content?.chapter || "Live Class";
@@ -303,7 +355,7 @@ export default function Classroom({ onNavigate }: Props) {
 
   async function goNext() {
     if (sessionExpired) {
-      await start({ action: "start", grade: selectedGrade, subject: "math" });
+      await start({ action: "start", grade: selectedGrade, subject: "math", ...selectedChapterInput });
       return;
     }
     if (response?.type === "homework") {
@@ -345,10 +397,21 @@ export default function Classroom({ onNavigate }: Props) {
     ]);
 
     try {
+      const boardProblem =
+        response?.problem_statement ||
+        response?.board_problem ||
+        response?.whiteboard?.problem ||
+        response?.content?.whiteboard?.problem ||
+        response?.question ||
+        response?.example ||
+        null;
       await start({
         question,
         grade: selectedGrade,
         subject: "math",
+        board_problem: boardProblem,
+        board_steps: visibleSteps,
+        whiteboard_context: whiteboard,
       });
     } catch (error) {
       console.error("Failed to ask classroom doubt.", error);
@@ -404,10 +467,17 @@ export default function Classroom({ onNavigate }: Props) {
     }
   }, []);
 
-  const sendStopListeningSignal = useCallback(() => {
-    sendSocketPayload({ type: "control", action: "stop_listening" });
+  const sendStopListeningSignal = useCallback((transcript = "") => {
+    const cleanedTranscript = transcript.trim();
+    sendSocketPayload({
+      type: "control",
+      action: "stop_listening",
+      transcript: cleanedTranscript || undefined,
+      mode: "class",
+      context: { exam: examMode, grade: selectedGrade },
+    });
     sendSocketPayload({ type: "audio_stream_end" });
-  }, [sendSocketPayload]);
+  }, [examMode, selectedGrade, sendSocketPayload]);
 
   const base64ToUint8Array = (value: string) => {
     const binary = window.atob(value);
@@ -494,6 +564,13 @@ export default function Classroom({ onNavigate }: Props) {
           window.clearTimeout(liveSilenceTimerRef.current);
           liveSilenceTimerRef.current = null;
         }
+        if (speechRecognitionRef.current) {
+          try {
+            speechRecognitionRef.current.stop();
+          } catch {}
+          speechRecognitionRef.current = null;
+          await new Promise((resolve) => window.setTimeout(resolve, 250));
+        }
 
         inputProcessorRef.current?.disconnect();
         sourceRef.current?.disconnect();
@@ -519,7 +596,7 @@ export default function Classroom({ onNavigate }: Props) {
         });
 
         if (inputSpeechDetectedRef.current) {
-          sendStopListeningSignal();
+          sendStopListeningSignal(speechTranscriptRef.current);
         }
         
         if (!keepSocket) {
@@ -535,6 +612,7 @@ export default function Classroom({ onNavigate }: Props) {
         mediaRecorderRef.current = null;
         mediaChunksRef.current = [];
         micStreamRef.current = null;
+        speechTranscriptRef.current = "";
         lastAudioActivityRef.current = null;
         analyserCheckIntervalRef.current = null;
         inputSpeechDetectedRef.current = false;
@@ -701,7 +779,36 @@ export default function Classroom({ onNavigate }: Props) {
       inputSpeechDetectedRef.current = false;
       liveTurnEndingRef.current = false;
       lastAudioActivityRef.current = Date.now();
+      speechTranscriptRef.current = "";
       setTimeoutMessage(null);
+
+      const SpeechRecognitionClass =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognitionClass) {
+        try {
+          const recognition = new SpeechRecognitionClass() as BrowserSpeechRecognition;
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = "en-IN";
+          recognition.onresult = (event: any) => {
+            let transcript = "";
+            for (let index = 0; index < event.results.length; index += 1) {
+              transcript += event.results[index][0]?.transcript || "";
+            }
+            speechTranscriptRef.current = transcript.trim();
+            if (speechTranscriptRef.current) {
+              setTimeoutMessage(`Heard: ${speechTranscriptRef.current}`);
+            }
+          };
+          recognition.onerror = () => {
+            speechRecognitionRef.current = null;
+          };
+          recognition.start();
+          speechRecognitionRef.current = recognition;
+        } catch (error) {
+          console.debug("Browser speech recognition unavailable.", error);
+        }
+      }
 
       processor.onaudioprocess = (event) => {
         if (!tutorSocketRef.current || tutorSocketRef.current.readyState !== WebSocket.OPEN || liveTurnEndingRef.current) {
@@ -839,8 +946,8 @@ export default function Classroom({ onNavigate }: Props) {
         <div className="mx-auto flex min-h-[calc(100vh-12rem)] w-full max-w-xl items-center px-4 py-8 sm:px-6">
           <div className="w-full rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Class Setup</p>
-            <h2 className="mt-2 text-2xl font-semibold text-white">Choose Your {examLabel} Grade</h2>
-            <p className="mt-2 text-sm text-slate-300">Select grade before Arvind Sir starts the session and chapter agenda.</p>
+            <h2 className="mt-2 text-2xl font-semibold text-white">Choose Your {examLabel} Class</h2>
+            <p className="mt-2 text-sm text-slate-300">Select grade and chapter before Arvind Sir starts the session.</p>
 
             <div className="mt-5 grid grid-cols-2 gap-3">
               {gradeOptions.map((grade) => (
@@ -858,6 +965,25 @@ export default function Classroom({ onNavigate }: Props) {
                 </button>
               ))}
             </div>
+
+            {examMode === "cbse" && selectedGrade === 10 && (
+              <label className="mt-5 block">
+                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Chapter</span>
+                <select
+                  value={selectedChapterSlug}
+                  onChange={(event) =>
+                    setSelectedChapterSlug(event.target.value as (typeof CBSE_GRADE_10_CHAPTERS)[number]["slug"])
+                  }
+                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 outline-none transition focus:border-cyan-300"
+                >
+                  {CBSE_GRADE_10_CHAPTERS.map((chapter, index) => (
+                    <option key={chapter.slug} value={chapter.slug}>
+                      Chapter {index + 1}: {chapter.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             <button
               type="button"

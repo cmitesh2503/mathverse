@@ -8,6 +8,7 @@ import sys
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
 
@@ -34,6 +35,9 @@ app.include_router(session.router, prefix="/session")
 app.include_router(avatar.router)
 app.include_router(evaluation.router)
 app.include_router(tutor_router, prefix="/api/tutor")
+uploads_root = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "evaluation_uploads")
+os.makedirs(uploads_root, exist_ok=True)
+app.mount("/uploads/evaluation", StaticFiles(directory=uploads_root), name="evaluation_uploads")
 
 
 @app.get("/")
@@ -176,7 +180,7 @@ async def tutor_ws(websocket: WebSocket):
         live_bridge.student_session.grade = int(session_record.grade)
     live_bridge.student_session.exam = "jee" if initial_exam == "jee" else "cbse"
     
-    # Seed lesson context before the Gemini Live connection handshake.
+    # Seed chapter name and agenda to prevent Gemini Live connection handshake crashes.
     with contextlib.suppress(Exception):
         live_bridge.student_session.chapter_name = (
             getattr(session_record, "chapter_name", None)
@@ -189,7 +193,7 @@ async def tutor_ws(websocket: WebSocket):
             or live_bridge.student_session.chapter_name
         )
     with contextlib.suppress(Exception):
-        live_bridge.student_session.agenda = getattr(session_record, 'agenda', [])
+        live_bridge.student_session.agenda = getattr(session_record, "agenda", [])
 
     async def ensure_live_bridge() -> bool:
         nonlocal live_connected, live_connect_retry_after
@@ -337,6 +341,12 @@ async def tutor_ws(websocket: WebSocket):
                         print(f"Gemini Live audio end failed: {error}")
                         live_connected = False
                         live_connect_retry_after = asyncio.get_running_loop().time() + 15.0
+                elif str(payload.get("transcript") or "").strip():
+                    await live_bridge.send_text_turn(
+                        str(payload.get("transcript")).strip(),
+                        mode=payload.get("mode") or initial_mode or None,
+                        context=payload.get("context") if isinstance(payload.get("context"), dict) else None,
+                    )
                 continue
             if payload.get("type") == "recorded_audio_buffer" and payload.get("data"):
                 if await ensure_live_bridge():
@@ -360,6 +370,7 @@ async def tutor_ws(websocket: WebSocket):
                         break
                 continue
             if payload.get("type") == "control" and str(payload.get("action", "")).lower() == "stop_listening":
+                transcript_fallback = str(payload.get("transcript") or "").strip()
                 if await ensure_live_bridge():
                     try:
                         await live_bridge.end_audio_stream()
@@ -367,6 +378,12 @@ async def tutor_ws(websocket: WebSocket):
                         print(f"Gemini Live stop listening failed: {error}")
                         live_connected = False
                         live_connect_retry_after = asyncio.get_running_loop().time() + 15.0
+                elif transcript_fallback:
+                    await live_bridge.send_text_turn(
+                        transcript_fallback,
+                        mode=payload.get("mode") or initial_mode or None,
+                        context=payload.get("context") if isinstance(payload.get("context"), dict) else None,
+                    )
                 if not await safe_send_json({"type": "listening_stopped"}):
                     break
                 continue

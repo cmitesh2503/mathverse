@@ -26,7 +26,32 @@ class Orchestrator:
         except (TypeError, ValueError):
             return fallback
 
-    def _initialize_grade_curriculum(self, session: StudentSession, grade: int) -> None:
+    def _normalize_chapter_key(self, value: object) -> str:
+        return " ".join(str(value or "").replace("_", " ").replace("-", " ").lower().split())
+
+    def _select_chapter_index(self, chapters: list[dict], preferred_chapter: object = None) -> int:
+        preferred = self._normalize_chapter_key(preferred_chapter)
+        if not preferred:
+            return 0
+
+        for index, chapter in enumerate(chapters):
+            if not isinstance(chapter, dict):
+                continue
+            candidates = [
+                chapter.get("slug"),
+                chapter.get("title"),
+                chapter.get("chapter"),
+                chapter.get("name"),
+            ]
+            for candidate in candidates:
+                normalized = self._normalize_chapter_key(candidate)
+                if not normalized:
+                    continue
+                if preferred == normalized or preferred in normalized or normalized in preferred:
+                    return index
+        return 0
+
+    def _initialize_grade_curriculum(self, session: StudentSession, grade: int, preferred_chapter: object = None) -> None:
         session.grade = grade
         exam = getattr(session, "exam", "cbse")
         chapters = list_chapters(grade, exam)
@@ -42,10 +67,11 @@ class Orchestrator:
             session.current_topic = "Introduction"
             return
 
-        first_chapter = chapters[0]
-        session.current_chapter_index = 0
-        session.chapter_name = first_chapter.get("title") or first_chapter.get("chapter") or "Chapter 1"
-        agenda = self._chapter_agenda(first_chapter, fallback=session.chapter_name)
+        chapter_index = self._select_chapter_index(chapters, preferred_chapter)
+        selected_chapter = chapters[chapter_index]
+        session.current_chapter_index = chapter_index
+        session.chapter_name = selected_chapter.get("title") or selected_chapter.get("chapter") or f"Chapter {chapter_index + 1}"
+        agenda = self._chapter_agenda(selected_chapter, fallback=session.chapter_name)
 
         session.agenda = agenda if agenda else [session.chapter_name]
         session.current_topic_index = 0
@@ -139,6 +165,7 @@ class Orchestrator:
 
         session.exam = "jee" if exam == "jee" else "cbse"
         grade = self._normalize_grade(context, getattr(session, "grade", 10))
+        preferred_chapter = (context or {}).get("chapter") or (context or {}).get("chapter_slug")
 
         action = ""
         if message_text.startswith("{") and message_text.endswith("}"):
@@ -165,7 +192,7 @@ class Orchestrator:
             action = "next_step"
 
         if action == "start":
-            self._initialize_grade_curriculum(session, grade)
+            self._initialize_grade_curriculum(session, grade, preferred_chapter)
             session.is_first_interaction = True
             session.next_system_note = None
             session.questions_asked = 0

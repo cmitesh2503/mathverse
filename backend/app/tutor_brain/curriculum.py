@@ -148,6 +148,75 @@ def get_topic(grade: int, topic_slug: Optional[str] = None, exam: str = "cbse") 
     return None
 
 
+def _normalize_match_text(value: object) -> str:
+    return " ".join(str(value or "").replace("_", " ").lower().split())
+
+
+def _topic_match_terms(chapter: dict) -> list[str]:
+    terms = [
+        chapter.get("slug"),
+        chapter.get("title"),
+        chapter.get("chapter"),
+        chapter.get("name"),
+        chapter.get("summary"),
+    ]
+    terms.extend(chapter.get("book_topics") or [])
+    for concept in chapter.get("concepts") or []:
+        if not isinstance(concept, dict):
+            continue
+        terms.extend(
+            [
+                concept.get("id"),
+                concept.get("title"),
+                concept.get("definition"),
+            ]
+        )
+    return [_normalize_match_text(term) for term in terms if str(term or "").strip()]
+
+
+def find_topic_by_message(grade: int, message: str, exam: str = "cbse") -> Optional[dict]:
+    """Return the best matching chapter/topic for free-form student text."""
+    normalized_message = _normalize_match_text(message)
+    if not normalized_message:
+        return None
+
+    chapters = list_chapters(grade, exam)
+    best_score = 0
+    best_topic: Optional[dict] = None
+
+    for chapter in chapters:
+        if not isinstance(chapter, dict):
+            continue
+
+        score = 0
+        for term in _topic_match_terms(chapter):
+            if not term:
+                continue
+            if normalized_message == term:
+                score = max(score, 100)
+            elif term in normalized_message:
+                score = max(score, 80 if len(term) >= 5 else 20)
+            elif normalized_message in term:
+                score = max(score, 60 if len(normalized_message) >= 5 else 10)
+
+        if score > best_score:
+            best_score = score
+            best_topic = chapter
+
+    return best_topic if best_score >= 20 else None
+
+
+def get_chapter_position(grade: int, topic_slug: Optional[str] = None, exam: str = "cbse") -> tuple[int, int]:
+    chapters = list_chapters(grade, exam)
+    total = len(chapters) or 1
+    if not topic_slug:
+        return 1, total
+    for index, chapter in enumerate(chapters, start=1):
+        if chapter.get("slug") == topic_slug:
+            return index, total
+    return 1, total
+
+
 def get_next_topic(grade: int, topic_slug: Optional[str] = None, exam: str = "cbse") -> Optional[dict]:
     chapters = list_chapters(grade, exam)
     if not chapters:
@@ -179,3 +248,21 @@ def get_concept(grade: int, topic_slug: str, concept_id: Optional[str] = None, e
         if concept.get("id") == concept_id:
             return concept
     return None
+
+
+def get_next_concept(
+    grade: int,
+    topic_slug: str,
+    concept_id: Optional[str] = None,
+    exam: str = "cbse",
+) -> Optional[dict]:
+    concepts = get_topic_concepts(grade, topic_slug, exam)
+    if not concepts:
+        return None
+    if not concept_id:
+        return concepts[0]
+    for index, concept in enumerate(concepts):
+        if concept.get("id") == concept_id:
+            next_index = index + 1
+            return concepts[next_index] if next_index < len(concepts) else None
+    return concepts[0]

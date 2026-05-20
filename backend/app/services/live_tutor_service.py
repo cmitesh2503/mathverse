@@ -13,7 +13,7 @@ from ..core.config import (
     GEMINI_LIVE_MODEL,
     GEMINI_LIVE_VOICE,
 )
-from ..services.ai_gateway import get_live_client, live_api_available
+from ..services.ai_gateway import generate_audio, get_live_client, live_api_available
 from ..services.cbse_exercises import build_exercise_solution
 from ..services.rag_service import retrieve_context as rag_get_context
 from ..services.retrieval_service import retrieve_context
@@ -62,6 +62,7 @@ class LiveTutorBridge:
         self._assistant_started = False
         self._assistant_transcript = ""
         self._assistant_fallback = ""
+        self._assistant_audio_emitted = False
         self._input_transcript = ""
         self._active_mode: str | None = None
         self._active_context: dict | None = None
@@ -622,6 +623,7 @@ class LiveTutorBridge:
         self._pending_transport = transport
         self._assistant_started = False
         self._assistant_transcript = ""
+        self._assistant_audio_emitted = False
         self._input_transcript = ""
 
     async def _receive_loop(self) -> None:
@@ -684,14 +686,15 @@ class LiveTutorBridge:
                 self._assistant_transcript += delta
                 await self.emit_event({"type": "assistant_text", "content": delta})
 
-        audio_data = getattr(message, "data", None)
+        audio_data, sample_rate = self._extract_live_audio(message, server_content)
         if audio_data:
             await self._ensure_assistant_started()
+            self._assistant_audio_emitted = True
             await self.emit_event(
                 {
                     "type": "live_audio",
                     "data": base64.b64encode(audio_data).decode("ascii"),
-                    "sample_rate": LIVE_OUTPUT_SAMPLE_RATE,
+                    "sample_rate": sample_rate,
                 }
             )
 
@@ -704,6 +707,37 @@ class LiveTutorBridge:
 
         self._assistant_started = True
         await self.emit_event({"type": "assistant_turn_start"})
+
+    def _extract_live_audio(self, message, server_content) -> tuple[bytes, int]:
+        direct_data = getattr(message, "data", None)
+        if isinstance(direct_data, (bytes, bytearray)):
+            return bytes(direct_data), LIVE_OUTPUT_SAMPLE_RATE
+        if isinstance(direct_data, str):
+            with contextlib.suppress(Exception):
+                return base64.b64decode(direct_data), LIVE_OUTPUT_SAMPLE_RATE
+
+        model_turn = getattr(server_content, "model_turn", None)
+        parts = getattr(model_turn, "parts", None) or []
+        for part in parts:
+            inline_data = getattr(part, "inline_data", None) or getattr(part, "inlineData", None)
+            if inline_data is None:
+                continue
+            mime_type = str(getattr(inline_data, "mime_type", "") or getattr(inline_data, "mimeType", ""))
+            if "audio" not in mime_type.lower():
+                continue
+            sample_rate = LIVE_OUTPUT_SAMPLE_RATE
+            rate_match = re.search(r"rate=(\d+)", mime_type)
+            if rate_match:
+                with contextlib.suppress(ValueError):
+                    sample_rate = int(rate_match.group(1))
+            data = getattr(inline_data, "data", None)
+            if isinstance(data, (bytes, bytearray)):
+                return bytes(data), sample_rate
+            if isinstance(data, str):
+                with contextlib.suppress(Exception):
+                    return base64.b64decode(data), sample_rate
+
+        return b"", LIVE_OUTPUT_SAMPLE_RATE
 
     async def _finalize_turn(self) -> None:
         agent_turn = None
@@ -746,6 +780,19 @@ class LiveTutorBridge:
                     }
                 )
 
+        if self._assistant_transcript.strip() and not self._assistant_audio_emitted:
+            with contextlib.suppress(Exception):
+                audio_bytes = await generate_audio(self._assistant_transcript.strip())
+                if audio_bytes:
+                    self._assistant_audio_emitted = True
+                    await self.emit_event(
+                        {
+                            "type": "live_audio",
+                            "data": base64.b64encode(audio_bytes).decode("ascii"),
+                            "sample_rate": LIVE_OUTPUT_SAMPLE_RATE,
+                        }
+                    )
+
         if self._assistant_transcript.strip():
             session_service.append_turn(
                 self.session_id,
@@ -771,6 +818,7 @@ class LiveTutorBridge:
         self._assistant_started = False
         self._assistant_transcript = ""
         self._assistant_fallback = ""
+        self._assistant_audio_emitted = False
         self._input_transcript = ""
 
     def _merge_transcript(self, current: str, incoming: str) -> str:

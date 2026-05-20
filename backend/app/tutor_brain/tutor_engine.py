@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import re
 import warnings
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any, Optional
@@ -34,6 +36,7 @@ import random
 
 retriever = None
 retriever_lock = Lock()
+AI_DOUBT_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ai-doubt")
 CLASS_DURATION_MINUTES = 45
 
 
@@ -204,6 +207,8 @@ class ClassroomState:
     completed_concepts: list[str] = field(default_factory=list)
     current_exercise_type: str | None = None
     pdf_exercise_session: dict[str, Any] = field(default_factory=dict)
+    last_doubt_question: str | None = None
+    last_doubt_plan: dict[str, Any] = field(default_factory=dict)
     
     def get_weak_area(state):
         stats = getattr(state, "stats", {})
@@ -1990,6 +1995,385 @@ class TutorEngine:
             if 40 <= len(cleaned) <= 180:
                 return cleaned
         return flat[:160].strip()
+
+    def _is_doubt_followup(self, question: str) -> bool:
+        lowered = self._sentence(question).lower()
+        if not lowered:
+            return False
+        followup_phrases = (
+            "explain in detail",
+            "give example",
+            "giving example",
+            "another example",
+            "more detail",
+            "i did not understand",
+            "didn't understand",
+            "not clear",
+            "explain again",
+            "can you explain",
+        )
+        return any(phrase in lowered for phrase in followup_phrases)
+
+    def _integers_from_text(self, text: str) -> list[int]:
+        return [int(match) for match in re.findall(r"\b\d+\b", str(text or ""))]
+
+    def _divisor_requested_after_by(self, text: str) -> int | None:
+        match = re.search(r"\bby\s+(\d+)\b", str(text or "").lower())
+        if not match:
+            return None
+        divisor = int(match.group(1))
+        return divisor if divisor > 1 else None
+
+    def _smallest_divisor(self, number: int) -> int | None:
+        if number < 2:
+            return None
+        if number % 2 == 0:
+            return 2
+        candidate = 3
+        while candidate * candidate <= number:
+            if number % candidate == 0:
+                return candidate
+            candidate += 2
+        return None
+
+    def _looks_like_factor_search(self, lowered: str) -> bool:
+        cues = (
+            "by 2 then 3",
+            "then 3 and so on",
+            "one by one",
+            "first divisor",
+            "first diviser",
+            "smallest divisor",
+            "smallest factor",
+            "which number divides",
+            "what divides",
+            "by which number",
+            "which number i can divide",
+            "which number can i divide",
+            "can divide given number",
+            "given number can divide",
+            "divide given number",
+            "divide the given number",
+            "without trying",
+        )
+        return any(cue in lowered for cue in cues) or (
+            "given" in lowered and (
+                "divisor" in lowered
+                or "diviser" in lowered
+                or "factor" in lowered
+                or "divide" in lowered
+                or "divisible number" in lowered
+            )
+        )
+
+    def _looks_like_next_multiple_search(self, lowered: str, requested_divisor: int | None) -> bool:
+        if requested_divisor is None:
+            return False
+        cues = (
+            "starting from",
+            "start from",
+            "after",
+            "at or after",
+            "next multiple",
+            "next divisible",
+            "first number divisible by",
+            "first number at",
+            "jump to",
+            "jump on",
+        )
+        return any(cue in lowered for cue in cues)
+
+    def _looks_like_divisibility_rule_question(self, lowered: str) -> bool:
+        return "divisibility rule" in lowered or "divisibility rules" in lowered
+
+    def _build_divisibility_rules_response(self, number: int | None = None) -> dict[str, Any]:
+        steps = [
+            "Divisible by 2: the last digit is even.",
+            "Divisible by 3: the sum of digits is divisible by 3.",
+            "Divisible by 5: the last digit is 0 or 5.",
+            "Divisible by 9: the sum of digits is divisible by 9.",
+            "Divisible by 10: the last digit is 0.",
+            "For 7, 11, 13 and bigger primes, use a specific test or normal division only after the quick rules fail.",
+        ]
+        explanation = (
+            "A divisibility rule is a shortcut to check whether a number can be divided exactly by another number "
+            "without doing full long division. It helps you quickly find possible divisors."
+        )
+        if number is not None:
+            digit_sum = sum(int(digit) for digit in str(abs(number)))
+            checks = []
+            checks.append(
+                f"{number} is {'divisible' if number % 2 == 0 else 'not divisible'} by 2 because its last digit is "
+                f"{str(abs(number))[-1]}."
+            )
+            checks.append(
+                f"The digit sum is {digit_sum}, so {number} is "
+                f"{'divisible' if number % 3 == 0 else 'not divisible'} by 3."
+            )
+            checks.append(
+                f"{number} is {'divisible' if str(abs(number))[-1] in {'0', '5'} else 'not divisible'} by 5."
+            )
+            explanation = f"{explanation} For your number {number}: " + " ".join(checks)
+
+        return {
+            "mistake_explanation": explanation,
+            "concept_steps": steps,
+            "shortcut": "For a big number, check 2, 3, 5, 9, and 10 mentally first.",
+            "speed_hint": "Digit-sum rules for 3 and 9 are often the fastest for large numbers.",
+        }
+
+    def _build_factor_search_response(self, number: int | None) -> dict[str, Any]:
+        steps = [
+            "Check divisibility by 2 first: the last digit must be even.",
+            "Then check divisibility by 3: add the digits; if the sum is divisible by 3, the number is divisible by 3.",
+            "Then check 5: the last digit must be 0 or 5.",
+            "After that, check prime numbers only: 7, 11, 13, 17, and so on.",
+            "Stop when the prime you are testing becomes bigger than the square root of the number.",
+        ]
+        if number is None:
+            return {
+                "mistake_explanation": (
+                    "To find the first divisor of a big number, do not try every number. "
+                    "Use divisibility rules in order: 2, then 3, then 5, then prime divisors like 7, 11, 13. "
+                    "The first one that divides exactly is the smallest divisor greater than 1."
+                ),
+                "concept_steps": steps,
+                "shortcut": "Check 2, 3, and 5 mentally before doing long division.",
+                "speed_hint": "For divisor search, test only primes after 5.",
+            }
+
+        digit_sum = sum(int(digit) for digit in str(abs(number)))
+        divisor = self._smallest_divisor(abs(number))
+        if divisor is None:
+            result = (
+                f"For {number}, no divisor greater than 1 is found up to the square root, "
+                "so it is prime."
+            )
+        elif divisor == 2:
+            result = f"For {number}, the last digit is even, so the first divisor greater than 1 is 2."
+        elif divisor == 3:
+            result = (
+                f"For {number}, the digit sum is {digit_sum}. "
+                f"Because {digit_sum} is divisible by 3, {number} is divisible by 3. "
+                f"So the first divisor greater than 1 is 3, and {number} = 3 x {abs(number) // 3}."
+            )
+        elif divisor == 5:
+            result = f"For {number}, the last digit is 0 or 5, so the first divisor greater than 1 is 5."
+        else:
+            result = (
+                f"For {number}, 2, 3, and 5 do not divide it. "
+                f"The first divisor greater than 1 is {divisor}, and {number} = {divisor} x {abs(number) // divisor}."
+            )
+
+        return {
+            "mistake_explanation": (
+                "You are asking how to quickly find the first divisor of a big number. "
+                "There is no single visual trick for every number, but there is a fast order of checks. "
+                f"{result}"
+            ),
+            "concept_steps": steps,
+            "shortcut": "Use divisibility rules first; only use division when the quick tests fail.",
+            "speed_hint": "Do not test 4, 6, 8, 9 after primes blindly; if 2 or 3 already fails, many composites are unnecessary.",
+        }
+
+    def _build_next_multiple_response(self, start_number: int | None, divisor: int | None) -> dict[str, Any]:
+        steps = [
+            "Call the starting number N and the divisor d.",
+            "Divide N by d and find the remainder r.",
+            "If r = 0, then N is already divisible by d.",
+            "If r is not 0, add d - r to N.",
+            "Formula: first number at or after N divisible by d = N + ((d - N % d) % d).",
+        ]
+        if start_number is None or divisor is None:
+            return {
+                "mistake_explanation": (
+                    "To jump directly to the next divisible number, I need two values: "
+                    "the starting number N and the divisor d. Then divide N by d once, find the remainder, "
+                    "and add the missing amount d - remainder."
+                ),
+                "concept_steps": steps,
+                "shortcut": "Next divisible number = N + ((d - N % d) % d).",
+                "speed_hint": "One remainder calculation replaces checking numbers one by one.",
+            }
+
+        remainder = start_number % divisor
+        add_amount = (divisor - remainder) % divisor
+        answer = start_number + add_amount
+        if add_amount == 0:
+            result = f"{start_number} is already divisible by {divisor}, so the answer is {start_number}."
+        else:
+            result = (
+                f"{start_number} divided by {divisor} leaves remainder {remainder}. "
+                f"Add {divisor} - {remainder} = {add_amount}. "
+                f"So the first number at or after {start_number} divisible by {divisor} is {answer}."
+            )
+        return {
+            "mistake_explanation": (
+                "This is a next-multiple problem. You do not need to try each number one by one. "
+                f"{result}"
+            ),
+            "concept_steps": steps,
+            "shortcut": "Next divisible number = N + ((d - N % d) % d).",
+            "speed_hint": "Use the remainder to jump directly to the answer.",
+        }
+
+    def _parse_ai_doubt_plan(self, text: str) -> dict[str, Any] | None:
+        raw = str(text or "").strip()
+        if not raw:
+            return None
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+        match = re.search(r"\{[\s\S]*\}", raw)
+        if not match:
+            return None
+        try:
+            payload = json.loads(match.group())
+        except Exception:
+            return None
+        explanation = self._sentence(payload.get("explanation") or payload.get("mistake_explanation"))
+        raw_steps = payload.get("steps") or payload.get("concept_steps") or []
+        steps = [self._sentence(step) for step in raw_steps if self._sentence(step)]
+        if not explanation:
+            return None
+        return {
+            "mistake_explanation": explanation,
+            "concept_steps": steps[:8],
+            "shortcut": self._sentence(payload.get("shortcut")),
+            "speed_hint": self._sentence(payload.get("speed_hint")),
+        }
+
+    def _ai_doubt_context(self, state: ClassroomState, question: str) -> str:
+        topic = getattr(state, "topic_title", None) or getattr(state, "current_topic", None) or "Current mathematics topic"
+        concept = (
+            getattr(state, "concept_title", None)
+            or getattr(state, "current_concept", None)
+            or getattr(state, "current_concept_title", None)
+            or topic
+        )
+        active_problem = getattr(state, "active_problem", None)
+        problem_text = ""
+        if isinstance(active_problem, dict):
+            problem_text = str(active_problem.get("prompt") or active_problem.get("question") or "").strip()
+        whiteboard = getattr(state, "whiteboard", None)
+        board_lines: list[str] = []
+        if isinstance(whiteboard, dict):
+            if not problem_text:
+                problem_text = str(whiteboard.get("problem") or "").strip()
+            raw_lines = whiteboard.get("chalk_lines") or whiteboard.get("solution_steps") or []
+            if isinstance(raw_lines, list):
+                board_lines = [self._sentence(line) for line in raw_lines if self._sentence(line)][:12]
+        return (
+            f"Grade: {getattr(state, 'grade', 10)}\n"
+            f"Exam: {getattr(state, 'exam', 'cbse')}\n"
+            f"Chapter/topic: {topic}\n"
+            f"Current concept: {concept}\n"
+            f"Current board problem: {problem_text or 'None'}\n"
+            f"Current blackboard lines: {' | '.join(board_lines) if board_lines else 'None'}\n"
+            f"Previous doubt: {getattr(state, 'last_doubt_question', None) or 'None'}\n"
+            f"Student question: {question}"
+        )
+
+    def _build_ai_doubt_response(self, state: ClassroomState, question: str) -> dict[str, Any] | None:
+        from app.services.ai_gateway import generate_response
+
+        prompt = f"""
+You are Arvind Sir, a precise Class 10-12 mathematics tutor.
+
+Answer the student's actual doubt directly. Do not give a generic study strategy unless the question is generic.
+If the student asks a follow-up, use the previous doubt and current board problem as context.
+If numbers are present, compute with those exact numbers.
+If the question is about a definition, rule, theorem, formula, proof, graph, construction, geometry, algebra, trigonometry, statistics, probability, or calculus, explain that specific concept.
+Keep the language simple for an Indian school student.
+
+Context:
+{self._ai_doubt_context(state, question)}
+
+Return ONLY valid JSON with this shape:
+{{
+  "explanation": "specific answer in 4-8 clear sentences",
+  "steps": ["step 1", "step 2", "step 3"],
+  "shortcut": "optional shortcut or null",
+  "speed_hint": "optional exam/time-saving hint or null"
+}}
+""".strip()
+
+        cache_key = f"ai_doubt|{getattr(state, 'grade', 10)}|{getattr(state, 'exam', 'cbse')}|{question[:500]}"
+        cached = get_cache(cache_key)
+        if isinstance(cached, dict):
+            return cached
+
+        future = AI_DOUBT_EXECUTOR.submit(generate_response, prompt)
+        try:
+            text = future.result(timeout=8)
+        except FutureTimeoutError:
+            print("AI doubt generation timed out; using local fallback.")
+            return None
+        except Exception as error:
+            print(f"AI doubt generation failed: {type(error).__name__}: {error}")
+            return None
+
+        plan = self._parse_ai_doubt_plan(text)
+        if plan:
+            set_cache(cache_key, plan)
+        return plan
+
+    def _build_cbse_doubt_response(self, question: str, state: ClassroomState | None = None, context: str = "") -> dict[str, Any]:
+        question_text = self._sentence(question)
+        lowered = question_text.lower()
+        if state is not None:
+            ai_plan = self._build_ai_doubt_response(state, question_text)
+            if ai_plan:
+                return ai_plan
+
+        numbers = self._integers_from_text(question_text)
+        requested_divisor = self._divisor_requested_after_by(question_text)
+        if self._looks_like_divisibility_rule_question(lowered):
+            number = max(numbers) if numbers else None
+            return self._build_divisibility_rules_response(number)
+
+        if self._looks_like_factor_search(lowered):
+            number = max(numbers) if numbers else None
+            return self._build_factor_search_response(number)
+
+        if self._looks_like_next_multiple_search(lowered, requested_divisor):
+            start_candidates = [number for number in numbers if number != requested_divisor]
+            start_number = max(start_candidates) if start_candidates else None
+            return self._build_next_multiple_response(start_number, requested_divisor)
+
+        if any(token in lowered for token in ("divisible", "diviser", "divisor", "divide", "factor")):
+            number = max(numbers) if numbers else None
+            return self._build_factor_search_response(number)
+
+        supporting_point = ""
+        if context:
+            flat = " ".join(str(context or "").split())
+            sentences = re.split(r"(?<=[.!?])\s+", flat)
+            for sentence in sentences:
+                cleaned = sentence.strip()
+                if 40 <= len(cleaned) <= 180:
+                    supporting_point = cleaned
+                    break
+            if not supporting_point:
+                supporting_point = flat[:160].strip()
+        explanation = (
+            f"Your doubt is: {question_text}. "
+            "Let us handle it slowly. First identify what is given, then identify what must be found, "
+            "then write the rule or formula before substituting numbers."
+        )
+        if supporting_point:
+            explanation = f"{explanation} Useful textbook point: {supporting_point}"
+
+        return {
+            "mistake_explanation": explanation,
+            "concept_steps": [
+                "Underline the exact quantity asked in the question.",
+                "Write the known values separately.",
+                "Choose the matching formula, property, or divisibility rule.",
+                "Substitute values and simplify one line at a time.",
+            ],
+            "shortcut": None,
+            "speed_hint": None,
+        }
     
     def _generate_rag_homework(self, state: ClassroomState, session_id: str, student_id: str):
         """
@@ -2059,13 +2443,19 @@ class TutorEngine:
         
     def handle_doubt(self, state, question):
         exam = _normalize_exam(getattr(state, "exam", "cbse"))
-        question = question or ""
+        question = self._sentence(question or "")
+        effective_question = question
+        if self._is_doubt_followup(question) and getattr(state, "last_doubt_question", None):
+            effective_question = f"{state.last_doubt_question}. Follow-up request: {question}"
+
         if exam == "jee":
-            pattern = self._classify_jee_pattern(question)
-            plan = self._build_jee_response({"prompt": question, "pattern": pattern}, "concept_error")
+            pattern = self._classify_jee_pattern(effective_question)
+            plan = self._build_jee_response({"prompt": effective_question, "pattern": pattern}, "concept_error")
         else:
-            context = self._get_cbse_context(question) or question
-            plan = self._run_lesson_plan(context, exam=exam)
+            plan = self._build_cbse_doubt_response(effective_question, state=state)
+
+        state.last_doubt_question = effective_question
+        state.last_doubt_plan = plan
 
         return {
             "correct": None,

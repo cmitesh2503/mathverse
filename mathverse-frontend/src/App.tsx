@@ -10,9 +10,10 @@ import Learn from "./pages/Learn";
 import Practice from "./pages/Practice";
 import Progress from "./pages/Progress";
 import Solve from "./pages/Solve";
+import StudentReport from "./pages/StudentReport";
 import TutorSession from "./pages/TutorSession";
 
-export type PageKey = "home" | "class" | "learn" | "tutor" | "practice" | "homework" | "solve" | "exam" | "progress";
+export type PageKey = "home" | "class" | "learn" | "tutor" | "practice" | "homework" | "solve" | "exam" | "progress" | "report";
 
 export default function App() {
   const [page, setPage] = useState<PageKey>("home");
@@ -29,6 +30,7 @@ export default function App() {
       {page === "solve" && <Solve onNavigate={setPage} />}
       {page === "exam" && <Exam />}
       {page === "progress" && <Progress />}
+      {page === "report" && <StudentReport onNavigate={setPage} />}
     </div>
   );
 }

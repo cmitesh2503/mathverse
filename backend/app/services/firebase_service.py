@@ -7,6 +7,7 @@ FIREBASE_KEY_PATH = os.path.join(BASE_DIR, "core", "firebase_key.json")
 FIREBASE_ENABLED = os.getenv("MATHVERSE_ENABLE_FIREBASE", "").lower() in {"1", "true", "yes"}
 
 db = None
+_local_evaluation_records: list[dict[str, Any]] = []
 
 
 def _get_db():
@@ -65,3 +66,39 @@ def get_attempts(student_id: str, limit: int = 100):
         .stream()
     )
     return [doc.to_dict() for doc in query]
+
+
+def save_evaluation_record(record: dict[str, Any]) -> None:
+    if FIREBASE_ENABLED:
+        _get_db().collection("evaluation_records").add(record)
+        return
+
+    _local_evaluation_records.append(record)
+
+
+def get_evaluation_records_by_test(test_id: str, limit: int = 1000) -> list[dict[str, Any]]:
+    if FIREBASE_ENABLED:
+        query = (
+            _get_db()
+            .collection("evaluation_records")
+            .where("test_id", "==", test_id)
+            .limit(limit)
+            .stream()
+        )
+        return [doc.to_dict() for doc in query]
+
+    return [record for record in _local_evaluation_records if record.get("test_id") == test_id][:limit]
+
+
+def get_evaluation_records_by_student(student_id: str, limit: int = 1000) -> list[dict[str, Any]]:
+    if FIREBASE_ENABLED:
+        query = (
+            _get_db()
+            .collection("evaluation_records")
+            .where("student_id", "==", student_id)
+            .limit(limit)
+            .stream()
+        )
+        return [doc.to_dict() for doc in query]
+
+    return [record for record in _local_evaluation_records if record.get("student_id") == student_id][:limit]

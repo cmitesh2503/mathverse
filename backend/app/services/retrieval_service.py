@@ -13,19 +13,26 @@ def load_chunks():
     with CHUNKS_PATH.open(encoding="utf-8") as f:
         return json.load(f)
 
-def retrieve_context(topic: str, grade: int = None, n_results: int = 5) -> str:
+def retrieve_context(topic: str, grade: int = None, n_results: int = 5, metadata_filter: dict | None = None) -> str:
     try:
         import chromadb
         chroma_client = chromadb.PersistentClient(path="./chroma_db")
         collection = chroma_client.get_or_create_collection(name="cbse_curriculum")
 
         query_embedding = embed_text(topic)
-
+        where_clause = {}
         if grade is not None:
+            where_clause["grade"] = grade
+        if metadata_filter:
+            for key, value in metadata_filter.items():
+                if value is not None and value != "":
+                    where_clause[key] = value
+
+        if where_clause:
             results = collection.query(
                 query_embeddings=[query_embedding],
                 n_results=n_results,
-                where={"grade": grade}
+                where=where_clause
             )
         else:
             results = collection.query(
