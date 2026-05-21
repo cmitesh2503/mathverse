@@ -299,7 +299,22 @@ def _prime_factors_of(n: int) -> list[int]:
     return out
 
 
-def build_exercise_solution(problem: dict[str, Any]) -> dict[str, Any]:
+def build_exercise_solution(
+    problem: dict[str, Any],
+    session_id: str | None = None,
+    current_chapter: str | None = None,
+) -> dict[str, Any]:
+    """Build exercise solution with optional session/chapter context to prevent context loss.
+    
+    Args:
+        problem: The problem dict with prompt, chapter_title, etc.
+        session_id: Optional session ID to ensure cache isolation between sessions
+        current_chapter: Optional current chapter to validate and enforce context
+    """
+    # Enforce chapter context if provided and different from problem
+    if current_chapter and str(current_chapter).strip():
+        problem = {**problem, "chapter_title": current_chapter}
+    
     prompt = _focused_prompt(problem)
     lowered = prompt.lower()
     numbers = _integers(prompt)
@@ -522,7 +537,7 @@ def build_exercise_solution(problem: dict[str, Any]) -> dict[str, Any]:
             ]
             answer = f"sqrt({radicand}) is irrational."
     else:
-        ai_solution = _build_ai_exercise_solution(problem)
+        ai_solution = _build_ai_exercise_solution(problem, session_id=session_id, current_chapter=current_chapter)
         if ai_solution:
             steps = ai_solution["steps"]
             answer = ai_solution["answer"]
@@ -545,20 +560,40 @@ def build_exercise_solution(problem: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _build_ai_exercise_solution(problem: dict[str, Any]) -> dict[str, Any] | None:
+def _build_ai_exercise_solution(
+    problem: dict[str, Any],
+    session_id: str | None = None,
+    current_chapter: str | None = None,
+) -> dict[str, Any] | None:
+    """Generate AI solution with session context to prevent cross-session contamination.
+    
+    Args:
+        problem: The problem dict
+        session_id: Session ID for cache isolation
+        current_chapter: Current chapter context to enforce in solution
+    """
     prompt = str(problem.get("prompt") or "").strip()
     if not prompt:
         return None
 
+    # Use current_chapter if provided to enforce context
+    chapter_for_solution = current_chapter or problem.get('chapter_title', '')
+    
+    # CRITICAL: Include session_id in cache key to prevent cross-session contamination
+    session_suffix = f"|{session_id}" if session_id else ""
     cache_key = (
         "cbse_pdf_solution|"
-        f"{problem.get('chapter_title', '')}|{problem.get('exercise', '')}|"
-        f"{problem.get('number', '')}|{prompt}"
+        f"{chapter_for_solution}|{problem.get('exercise', '')}|"
+        f"{problem.get('number', '')}|{prompt}{session_suffix}"
     )
+    # CRITICAL: Enforce chapter context in prompt to prevent AI from drifting to wrong topics
     request = f"""
 Solve this CBSE Class 10 Mathematics NCERT exercise problem for a whiteboard tutor.
 
-Chapter: {problem.get('chapter_title') or 'Mathematics'}
+⚠️ CRITICAL: You are solving ONLY problems from the "{chapter_for_solution}" chapter.
+⚠️ Do NOT drift to concepts from other chapters like Polynomials, Real Numbers, Triangles, etc.
+
+Chapter: {chapter_for_solution}
 Exercise: {problem.get('exercise') or ''}
 Question number: {problem.get('number') or ''}
 Question: {prompt}
@@ -573,11 +608,13 @@ Return only valid JSON with this exact shape:
 }}
 
 Rules:
+- Solve the actual question in the "{chapter_for_solution}" chapter context ONLY.
 - Solve the actual question, not a similar question.
 - Give 4 to 10 whiteboard steps.
 - Each step must include the reason for the operation, theorem, formula, or decision.
 - Use plain ASCII math: x, ^, /, sqrt(...), pi.
 - Do not include markdown, code fences, greetings, commentary, or extra keys.
+- Use only concepts and formulas from the {chapter_for_solution} chapter.
 """.strip()
 
     try:
@@ -588,9 +625,12 @@ Rules:
         steps = [str(step).strip() for step in data.get("steps", []) if str(step).strip()]
         answer = str(data.get("answer") or "").strip()
         if len(steps) >= 3 and answer:
-            return {"steps": steps[:10], "answer": answer}
+            result = {"steps": steps[:10], "answer": answer}
+            # Preserve chapter context in result
+            result["chapter_context"] = chapter_for_solution
+            return result
     except Exception as error:
-        print("AI exercise solution failed:", error)
+        print(f"AI exercise solution failed for {chapter_for_solution}:", error)
     return None
 
 

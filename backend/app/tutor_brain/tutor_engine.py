@@ -2286,6 +2286,8 @@ If the current blackboard lines are not enough to identify what the student mean
 Do not switch to Real Numbers, Euclid's division lemma, or any other chapter unless that is the current chapter/topic or the student explicitly asks for it.
 If numbers are present, compute with those exact numbers.
 If the question is about a definition, rule, theorem, formula, proof, graph, construction, geometry, algebra, trigonometry, statistics, probability, or calculus, explain that specific concept.
+Use Hindi/Hinglish for the explanation, but keep mathematics vocabulary in English.
+Do not translate terms like probability, outcome, sample space, event, formula, theorem, equation, numerator, denominator, HCF, LCM, factor, triangle, coordinate, symbols, or formulas.
 Keep the language simple for an Indian school student.
 
 Context:
@@ -3390,7 +3392,10 @@ Return ONLY valid JSON with this shape:
         problems = session.get("problems") or []
         index = min(max(int(session.get("index") or 0), 0), max(len(problems) - 1, 0))
         raw_problem = problems[index]
-        problem = build_exercise_solution(raw_problem)
+        # Pass session_id and current chapter context to prevent context loss between turns
+        session_id = getattr(state, "session_id", None)
+        current_chapter = getattr(state, "topic_title", None) or getattr(state, "chapter_name", None)
+        problem = build_exercise_solution(raw_problem, session_id=session_id, current_chapter=current_chapter)
 
         chapters = (getattr(state, "curriculum", None) or get_grade_curriculum(state.grade)).get("chapters") or []
         chapter_title = str(problem.get("chapter_title") or "")

@@ -187,6 +187,7 @@ export default function Classroom({ onNavigate }: Props) {
   );
   const [classStarted, setClassStarted] = useState(false);
   const [micActive, setMicActive] = useState(false);
+  const [liveDiscussionActive, setLiveDiscussionActive] = useState(false);
   const [nextCoolingDown, setNextCoolingDown] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
   const [timeoutMessage, setTimeoutMessage] = useState<string | null>(null);
@@ -210,6 +211,8 @@ export default function Classroom({ onNavigate }: Props) {
   const inputSpeechDetectedRef = useRef(false);
   const liveTurnEndingRef = useRef(false);
   const liveSilenceTimerRef = useRef<number | null>(null);
+  const autoListenTimerRef = useRef<number | null>(null);
+  const liveDiscussionActiveRef = useRef(false);
   const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const speechTranscriptRef = useRef("");
   const outputAudioContextRef = useRef<AudioContext | null>(null);
@@ -319,6 +322,10 @@ export default function Classroom({ onNavigate }: Props) {
   const homework = response?.homework || response?.content?.homework || response?.content?.questions || [];
   const isQuestion = response?.type === "question";
   const sessionExpired = Boolean(response?.session_expired);
+
+  useEffect(() => {
+    liveDiscussionActiveRef.current = liveDiscussionActive;
+  }, [liveDiscussionActive]);
   const sessionTimeLeftSeconds = Math.max(
     0,
     Number(response?.session_time_left_seconds ?? CLASS_SESSION_DURATION_SECONDS),
@@ -341,6 +348,8 @@ export default function Classroom({ onNavigate }: Props) {
     ? "Preparing the next step..."
     : micActive
       ? "Listening live... speak naturally, then pause."
+    : liveDiscussionActive
+      ? "Live discussion is open. I will listen again after the tutor replies."
     : isSpeaking
       ? "Arvind Sir is explaining..."
       : paused
@@ -524,6 +533,24 @@ export default function Classroom({ onNavigate }: Props) {
     outputPlaybackCursorRef.current = 0;
   }, []);
 
+  function queueAutoListen() {
+    if (!liveDiscussionActiveRef.current || sessionExpired || micActive) return;
+    if (autoListenTimerRef.current) {
+      window.clearTimeout(autoListenTimerRef.current);
+      autoListenTimerRef.current = null;
+    }
+    const delayMs = activePlaybackSourcesRef.current.length ? 500 : 700;
+    autoListenTimerRef.current = window.setTimeout(() => {
+      autoListenTimerRef.current = null;
+      if (!liveDiscussionActiveRef.current || sessionExpired || micActive) return;
+      if (activePlaybackSourcesRef.current.length) {
+        queueAutoListen();
+        return;
+      }
+      void startMicrophone();
+    }, delayMs);
+  }
+
   const playLiveAudioChunk = useCallback(async (base64Data: string, sampleRate: number) => {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioContextClass) return;
@@ -548,6 +575,9 @@ export default function Classroom({ onNavigate }: Props) {
     activePlaybackSourcesRef.current.push(source);
     source.onended = () => {
       activePlaybackSourcesRef.current = activePlaybackSourcesRef.current.filter((item) => item !== source);
+      if (!activePlaybackSourcesRef.current.length) {
+        queueAutoListen();
+      }
     };
 
     const startAt = Math.max(audioContext.currentTime + 0.02, outputPlaybackCursorRef.current);
@@ -761,6 +791,7 @@ export default function Classroom({ onNavigate }: Props) {
             }
             assistantDraftRef.current = "";
             activeAssistantTurnIdRef.current = null;
+            queueAutoListen();
           }
         } catch {
           console.debug("Tutor socket event:", event.data);
@@ -772,6 +803,10 @@ export default function Classroom({ onNavigate }: Props) {
   async function startMicrophone() {
     try {
       if (micActive) return;
+      if (autoListenTimerRef.current) {
+        window.clearTimeout(autoListenTimerRef.current);
+        autoListenTimerRef.current = null;
+      }
       setMicError(null);
       
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -914,15 +949,43 @@ export default function Classroom({ onNavigate }: Props) {
     void start({ action: "help", grade: selectedGrade, subject: "math" });
   }
 
-  function handleMicPress() {
+  function startLiveDiscussion() {
     if (sessionExpired) return;
-    if (!classStarted || micActive) return;
+    liveDiscussionActiveRef.current = true;
+    setLiveDiscussionActive(true);
     void startMicrophone().catch((error) => {
       console.error("Unable to start microphone capture.", error);
       setMicError("Unable to start microphone capture.");
+      liveDiscussionActiveRef.current = false;
+      setLiveDiscussionActive(false);
       setMicActive(false);
       void stopMicrophone({ keepSocket: false });
     });
+  }
+
+  function stopLiveDiscussion() {
+    liveDiscussionActiveRef.current = false;
+    setLiveDiscussionActive(false);
+    if (autoListenTimerRef.current) {
+      window.clearTimeout(autoListenTimerRef.current);
+      autoListenTimerRef.current = null;
+    }
+    stopLiveAudioPlayback();
+    if (micActive) {
+      void stopMicrophone({ keepSocket: false });
+    } else {
+      closeTutorSocket();
+    }
+  }
+
+  function handleMicPress() {
+    if (sessionExpired) return;
+    if (!classStarted || micActive) return;
+    if (liveDiscussionActive) {
+      stopLiveDiscussion();
+    } else {
+      startLiveDiscussion();
+    }
   }
 
   function handleMicRelease() {
@@ -956,6 +1019,11 @@ export default function Classroom({ onNavigate }: Props) {
   useEffect(() => {
     return () => {
       // Cleanup on unmount: stop everything
+      liveDiscussionActiveRef.current = false;
+      if (autoListenTimerRef.current) {
+        window.clearTimeout(autoListenTimerRef.current);
+        autoListenTimerRef.current = null;
+      }
       setMicActive(false);
       if (analyserCheckIntervalRef.current) {
         window.clearInterval(analyserCheckIntervalRef.current);
@@ -1273,11 +1341,15 @@ export default function Classroom({ onNavigate }: Props) {
               className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-md px-2 py-3 text-xs font-bold tracking-normal transition disabled:bg-slate-700 disabled:text-slate-400 sm:flex-row sm:gap-2 sm:px-4 sm:text-sm ${
                 micActive
                   ? "animate-pulse bg-rose-500 text-white hover:bg-rose-400"
+                  : liveDiscussionActive
+                    ? "border border-rose-400 bg-slate-900 text-rose-100 hover:bg-rose-950"
                   : "bg-cyan-400 text-slate-950 hover:bg-cyan-300"
               }`}
             >
               <MicIcon />
-              <span className="text-center leading-tight">{micActive ? "End Turn" : "Live Discuss"}</span>
+              <span className="text-center leading-tight">
+                {micActive ? "End Turn" : liveDiscussionActive ? "Stop Live" : "Live Discuss"}
+              </span>
             </button>
             <button
               type="button"

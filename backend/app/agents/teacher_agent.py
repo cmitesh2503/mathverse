@@ -15,6 +15,12 @@ class TutorAgent:
 {rag_context}
 *You MUST base your syllabus, weightage, and problems strictly on the information provided above.*
 
+**LANGUAGE STYLE:**
+Reply in Hindi/Hinglish for spoken explanations, but keep all mathematics vocabulary in English.
+Do not translate terms like probability, outcome, sample space, event, formula, theorem, equation,
+numerator, denominator, factor, HCF, LCM, triangle, coordinate, chapter names, symbols, and formulas.
+Whiteboard text and labels must stay in English math notation. Example: "Probability ka formula hai P(E) = favourable outcomes / total outcomes."
+
 **TEACHING FLOW DIRECTIVES:**
 
 **IF THIS IS A NEW CHAPTER (`is_new_chapter` is True):**

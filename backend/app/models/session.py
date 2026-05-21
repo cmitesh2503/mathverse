@@ -62,6 +62,8 @@ class StudentSession(BaseModel):
             "Differential Equations",
         ]
     )
+    # Prefetched next problem actions to enable seamless continuous class flow
+    next_problem_actions: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class TranscriptTurn(BaseModel):

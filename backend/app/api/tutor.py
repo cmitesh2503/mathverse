@@ -660,7 +660,8 @@ def _pdf_problem_actions_for_session(
         return None
 
     problem = problems[variation % len(problems)]
-    solved = build_exercise_solution(problem)
+    # Pass session_id and current chapter context to prevent context loss
+    solved = build_exercise_solution(problem, session_id=session.session_id, current_chapter=chapter_title)
     solved_steps = [str(step).strip() for step in solved.get("steps", []) if str(step).strip()]
     answer = str(solved.get("answer") or "").strip()
     exercise_label = str(problem.get("exercise") or "Exercise")
@@ -823,6 +824,7 @@ def _next_problem_actions_for_session(
             topic=topic,
             variation=variation,
             rag_context=rag_context,
+            session_id=session.session_id,
         )
         prompt = _problem_prompt_from_actions(candidate_actions)
         prompt_key = _problem_key(prompt or " ".join(_steps_from_actions(candidate_actions)[:2]))
@@ -837,6 +839,7 @@ def _next_problem_actions_for_session(
             topic=topic,
             variation=cursor,
             rag_context=rag_context,
+            session_id=session.session_id,
         )
         selected_key = _problem_key(
             _problem_prompt_from_actions(selected_actions) or " ".join(_steps_from_actions(selected_actions)[:2])
@@ -868,7 +871,7 @@ def _voice_chunks_from_steps(spoken_response: str, steps: list[str]) -> list[str
     return fallback if fallback else ([spoken_response] if spoken_response else [])
 
 
-def _pyq_problem_actions(topic: str, rag_context: str, variation: int = 0) -> list[dict[str, Any]]:
+def _pyq_problem_actions(topic: str, rag_context: str, variation: int = 0, session_id: str | None = None) -> list[dict[str, Any]]:
     candidates = _extract_problem_candidates(rag_context)
     topic_candidates = _best_topic_candidates(candidates, topic=topic, chapter=topic)
     pool = topic_candidates or candidates
@@ -888,13 +891,16 @@ def _pyq_problem_actions(topic: str, rag_context: str, variation: int = 0) -> li
         source_label = "PYQ Pattern"
         exercise_label = "PYQ Practice"
 
+    # Pass session_id and topic context to prevent context loss
     solved = build_exercise_solution(
         {
             "chapter_title": topic or "Mathematics",
             "exercise": exercise_label,
             "number": str(variation + 1),
             "prompt": prompt,
-        }
+        },
+        session_id=session_id,
+        current_chapter=topic,
     )
     solved_steps = [str(step).strip() for step in solved.get("steps", []) if str(step).strip()]
     answer = str(solved.get("answer") or "").strip()
@@ -909,7 +915,7 @@ def _pyq_problem_actions(topic: str, rag_context: str, variation: int = 0) -> li
     )
 
 
-def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = "") -> list[dict[str, Any]]:
+def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = "", session_id: str | None = None) -> list[dict[str, Any]]:
     lowered = (topic or "").lower()
 
     if "euclid" in lowered or "division lemma" in lowered:
@@ -1006,13 +1012,16 @@ def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = ""
         coefficient = 2 + (variation % 13)
         constant = 3 + ((variation * 3) % 19)
         prompt = f"Show that {constant} + {coefficient}sqrt({radicand}) is irrational."
+        # Pass session_id and topic context to prevent context loss
         solved = build_exercise_solution(
             {
                 "chapter_title": "Real Numbers",
                 "exercise": "Irrational Numbers",
                 "number": str(variation + 1),
                 "prompt": prompt,
-            }
+            },
+            session_id=session_id,
+            current_chapter=topic,
         )
         solved_steps = [str(step).strip() for step in solved.get("steps", []) if str(step).strip()]
         answer = str(solved.get("answer") or "").strip()
@@ -1186,7 +1195,8 @@ def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = ""
             diagram_hint="Relation matrix or arrow diagram to verify mirror pairs.",
         )
 
-    return _pyq_problem_actions(topic=topic, rag_context=rag_context, variation=variation)
+    # Fallback to PYQ problems with session context
+    return _pyq_problem_actions(topic=topic, rag_context=rag_context, variation=variation, session_id=session_id)
 
 
 def _prepare_problem_whiteboard_actions(
@@ -1194,6 +1204,7 @@ def _prepare_problem_whiteboard_actions(
     actions: list[dict[str, Any]],
     variation: int,
     rag_context: str = "",
+    session_id: str | None = None,
 ) -> list[dict[str, Any]]:
     cleaned: list[dict[str, Any]] = []
     for action in actions:
@@ -1215,8 +1226,60 @@ def _prepare_problem_whiteboard_actions(
         cleaned.append(action)
 
     if _needs_problem_board(cleaned):
-        return _topic_problem_actions(topic, variation=variation, rag_context=rag_context)
+        return _topic_problem_actions(topic, variation=variation, rag_context=rag_context, session_id=session_id)
     return cleaned
+
+
+def _peek_next_problem(session: StudentSession, *, topic: str, rag_context: str) -> list[dict[str, Any]] | None:
+    """Return the next problem actions without mutating session cursors/history.
+
+    This computes the candidate for the next cursor position and returns the actions so
+    the caller can cache or pre-render them for instant delivery.
+    """
+    try:
+        key = _topic_state_key(session)
+        cursors = dict(getattr(session, "topic_problem_cursors", {}) or {})
+        cursor = int(cursors.get(key, 0))
+        # Peek the next variation
+        variation = max(0, cursor + 1)
+        pdf_probe = _pdf_problem_actions_for_session(session, variation=variation)
+        if pdf_probe is not None:
+            return pdf_probe
+        # Use topic actions generator with session context
+        return _topic_problem_actions(topic=topic, variation=variation, rag_context=rag_context, session_id=session.session_id)
+    except Exception:
+        return None
+
+
+def _warm_problem_cache(session: StudentSession, topic: str, rag_context: str, count: int = 3) -> None:
+    """Warm the exercise solution cache for the next `count` problems to reduce latency.
+
+    Calls `build_exercise_solution` for upcoming problems using session context. Silent on errors.
+    """
+    try:
+        key = _topic_state_key(session)
+        cursors = dict(getattr(session, "topic_problem_cursors", {}) or {})
+        cursor = int(cursors.get(key, 0))
+        for i in range(1, count + 1):
+            variation = cursor + i
+            # Peek candidate problem
+            candidate = _pdf_problem_actions_for_session(session, variation=variation) or _topic_problem_actions(topic=topic, variation=variation, rag_context=rag_context, session_id=session.session_id)
+            if not candidate:
+                continue
+            prompt = _problem_prompt_from_actions(candidate)
+            problem = {
+                "chapter_title": topic or session.chapter_name,
+                "exercise": "Prefetch",
+                "number": str(variation + 1),
+                "prompt": prompt,
+            }
+            # Build solution to warm cache (non-blocking best-effort)
+            try:
+                build_exercise_solution(problem, session_id=session.session_id, current_chapter=topic)
+            except Exception:
+                continue
+    except Exception:
+        return
 
 
 def _resolve_session_topic(session: StudentSession) -> str:
@@ -1722,6 +1785,9 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
     session.exam = "jee" if str(route_context.get("exam", req.get_exam())).lower() == "jee" else "cbse"
 
     action = _normalize_action(input_data)
+    # If no explicit action provided and no question/answer, auto-continue for a seamless class
+    if not action and not input_data.get("answer") and not input_data.get("question"):
+        action = "continue"
     turn_index = int(getattr(session, "class_problem_cursor", 0))
     _ensure_class_timer(session, action)
     if _is_class_time_over(session) and action != "start":
@@ -1748,6 +1814,12 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
     )
     session.current_topic = _resolve_session_topic(session)
     rag_context = _rag_context_for_session(session, session.exam)
+    # Warm cache on class start for smoother continuous experience
+    if action == "start":
+        try:
+            _warm_problem_cache(session, topic=session.current_topic or session.chapter_name, rag_context=rag_context, count=3)
+        except Exception:
+            pass
     diagnostic_result = None
     nudge = None
     proctor_payload = None
@@ -1825,6 +1897,15 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
             rag_context=rag_context,
             action=action,
         )
+        # Prefetch the next problem actions (non-mutating peek) for faster seamless transition
+        try:
+            if not getattr(session, "next_problem_actions", None):
+                next_actions = _peek_next_problem(session, topic=session.current_topic or session.chapter_name, rag_context=rag_context)
+                if next_actions:
+                    session.next_problem_actions = next_actions
+        except Exception:
+            # Fail-safe: do not break the class flow on prefetch errors
+            pass
     else:
         if route != "proctor_agent" and tutor_payload:
             whiteboard_actions = [*whiteboard_actions, *_widget_to_actions(tutor_payload.get("widget"))]
@@ -1833,6 +1914,7 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
             actions=whiteboard_actions,
             variation=turn_index,
             rag_context=rag_context,
+            session_id=session.session_id,
         )
 
     if route != "proctor_agent" and isinstance(session.chapter_transition, dict):
