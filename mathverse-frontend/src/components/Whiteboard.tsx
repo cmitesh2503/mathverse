@@ -79,6 +79,68 @@ function formatLatex(value: string) {
     .trim();
 }
 
+function renderSVGForHint(hint: string) {
+  const text = String(hint || "").toLowerCase();
+  if (!text.trim()) {
+    return (
+      <svg viewBox="0 0 200 120" className="w-full h-40 bg-slate-800 rounded-md border border-slate-700">
+        <line x1="20" y1="100" x2="180" y2="100" stroke="#94f3c7" strokeWidth="1" />
+        <line x1="20" y1="100" x2="20" y2="10" stroke="#94f3c7" strokeWidth="1" />
+      </svg>
+    );
+  }
+
+  // Handle algebraic split hints like "a = bq + r" or "split dividend into quotient-part plus remainder"
+  if (text.includes("a = bq") || text.includes("a = bq + r") || text.includes("split dividend") || (text.includes("quotient") && text.includes("remainder"))) {
+    // Visualize a dividend split into quotient-part and remainder as a bar graph
+    return (
+      <svg viewBox="0 0 300 80" className="w-full h-40 bg-slate-800 rounded-md border border-slate-700">
+        <rect x="16" y="20" width="268" height="28" rx="4" fill="#0f172a" stroke="#334155" />
+        {/* quotient part (left) - 70% */}
+        <rect x="18" y="22" width="188" height="24" rx="3" fill="#60a5fa" />
+        {/* remainder part (right) - 30% */}
+        <rect x="206" y="22" width="80" height="24" rx="3" fill="#f97316" />
+        <text x="30" y="18" fill="#9ae6b4" fontSize="11" fontFamily="monospace">Quotient part (b × q)</text>
+        <text x="212" y="18" fill="#ffd7b5" fontSize="11" fontFamily="monospace">Remainder (r)</text>
+        <text x="150" y="64" fill="#cbd5e1" fontSize="12" fontFamily="monospace" textAnchor="middle">a = bq + r (visual split)</text>
+      </svg>
+    );
+  }
+
+  // Simple primitives: axes, circle, triangle, line, parabola
+  if (text.includes("axis") || text.includes("axes") || text.includes("coordinate") || text.includes("graph")) {
+    return (
+      <svg viewBox="0 0 200 120" className="w-full h-40 bg-slate-800 rounded-md border border-slate-700">
+        <g transform="translate(0,0)">
+          <line x1="20" y1="100" x2="180" y2="100" stroke="#94f3c7" strokeWidth="1" />
+          <line x1="20" y1="100" x2="20" y2="10" stroke="#94f3c7" strokeWidth="1" />
+          {/* sample parabola */}
+          <path d="M20 90 C60 30, 120 30, 180 50" stroke="#60a5fa" strokeWidth="2" fill="none" />
+        </g>
+      </svg>
+    );
+  }
+  if (text.includes("circle") || text.includes("circ")) {
+    return (
+      <svg viewBox="0 0 200 120" className="w-full h-40 bg-slate-800 rounded-md border border-slate-700">
+        <circle cx="100" cy="60" r="36" stroke="#f472b6" strokeWidth="2" fill="none" />
+        <line x1="100" y1="60" x2="136" y2="60" stroke="#f472b6" strokeWidth="1" />
+      </svg>
+    );
+  }
+  if (text.includes("triangle") || text.includes("constr")) {
+    return (
+      <svg viewBox="0 0 200 120" className="w-full h-40 bg-slate-800 rounded-md border border-slate-700">
+        <polygon points="40,90 160,90 100,20" stroke="#f97316" strokeWidth="2" fill="none" />
+      </svg>
+    );
+  }
+  // fallback: show hint text inside a box
+  return (
+    <div className="w-full h-40 rounded-md border border-slate-700 bg-slate-800 p-3 text-sm text-slate-300">{hint}</div>
+  );
+}
+
 function isMathLike(value: string) {
   return /[=^_\\]|x²|√|π|θ|α|β/.test(value);
 }
@@ -278,6 +340,47 @@ export function Whiteboard({
     return model;
   }, [incomingActions, onScoreUpdate]);
 
+  const diagramActions = useMemo(
+    () => incomingActions.filter((action) => {
+      const name = String(action?.action || "").toLowerCase();
+      if (["draw_shape", "draw_coordinate_axes", "plot_curve", "draw_circle", "draw_line"].includes(name)) return true;
+      const content = String(action?.content || action?.expression || "").toLowerCase();
+      return content.startsWith("diagram:");
+    }),
+    [incomingActions],
+  );
+  const conceptBoardLines = useMemo(() => {
+    const lastClearIndex = incomingActions.reduce((last, action, index) => {
+      const name = String(action?.action || "").toLowerCase();
+      return ["clear", "clear_board", "erase", "reset_board"].includes(name) ? index : last;
+    }, -1);
+    const currentActions = lastClearIndex >= 0 ? incomingActions.slice(lastClearIndex + 1) : incomingActions;
+    return currentActions
+      .filter((action) => {
+        const name = String(action?.action || "").toLowerCase();
+        return ["draw_text", "write", "write_text", "add_text", "text"].includes(name);
+      })
+      .map((action) =>
+        String(
+          action.content ||
+            action.expression ||
+            action.label ||
+            (action as WhiteboardAction & { text?: string; value?: string; message?: string }).text ||
+            (action as WhiteboardAction & { text?: string; value?: string; message?: string }).value ||
+            (action as WhiteboardAction & { text?: string; value?: string; message?: string }).message ||
+            "",
+        ).trim(),
+      )
+      .filter(Boolean)
+      .filter((line) => !line.toLowerCase().startsWith(("chapter no:", "exercise no:", "problem no:", "problem statement:", "solution:")));
+  }, [incomingActions]);
+  const isConceptBoard =
+    String(whiteboard?.mode || "").toLowerCase() === "concept" ||
+    (!boardModel.solutionSteps.length &&
+      boardModel.problemNo === "-" &&
+      boardModel.problemStatement === "-" &&
+      conceptBoardLines.length > 0);
+
   return (
     <section className="flex h-full min-h-[540px] flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-950 shadow-2xl">
       <div className="flex items-center justify-between border-b border-slate-700 bg-slate-900 px-5 py-4">
@@ -292,17 +395,89 @@ export function Whiteboard({
 
       <div ref={scrollPaneRef} className="relative flex-1 overflow-auto bg-slate-900 p-5">
         <div className="mx-auto max-w-4xl rounded-lg border-4 border-slate-700 bg-slate-950 p-4">
-          <div className="grid grid-cols-2 gap-3 text-sm text-slate-200 md:grid-cols-3">
-            <p><span className="font-semibold">Chapter no:</span> {boardModel.chapterNo}</p>
-            <p><span className="font-semibold">Chapter name:</span> {boardModel.chapterName}</p>
-            <p><span className="font-semibold">Topic name:</span> {boardModel.topicName}</p>
-            <p className="md:col-span-3"><span className="font-semibold">Exercise no:</span> {boardModel.exerciseNo}</p>
-          </div>
+          {isConceptBoard ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 border-b border-slate-700 pb-4 text-sm text-slate-200 md:grid-cols-2">
+                <p><span className="font-semibold text-emerald-200">Chapter:</span> {boardModel.chapterName !== "-" ? boardModel.chapterName : whiteboard?.title?.split("|")[0]?.trim() || "Current chapter"}</p>
+                <p><span className="font-semibold text-emerald-200">Topic:</span> {boardModel.topicName !== "-" ? boardModel.topicName : whiteboard?.title?.split("|")[1]?.trim() || "Current topic"}</p>
+              </div>
 
-          <div className="mt-4 rounded-md border-2 border-slate-600 bg-slate-900 p-4">
-            <p className="text-xl font-bold text-emerald-300">
-              Problem no: {boardModel.problemNo} : "{boardModel.problemStatement}"
-            </p>
+              <div className="space-y-3">
+                {conceptBoardLines.map((line, index) => {
+                  const lower = line.toLowerCase();
+                  const isHeading =
+                    lower.startsWith("chapter:") ||
+                    lower.startsWith("topic") ||
+                    lower.startsWith("today's flow") ||
+                    lower.startsWith("topics in this chapter") ||
+                    lower.startsWith("blackboard build");
+                  return (
+                    <div
+                      key={`${line}-${index}`}
+                      className={`rounded-md px-3 py-2 ${
+                        isHeading
+                          ? "border border-emerald-200/25 bg-emerald-200/10 text-lg font-semibold text-emerald-100"
+                          : "border border-slate-700/80 bg-slate-900 text-base leading-7 text-slate-100"
+                      }`}
+                    >
+                      <MathText>{line}</MathText>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {diagramActions.length ? (
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {diagramActions.map((action, index) => {
+                    const hintText = String(action.content || action.expression || "").replace(/^Diagram:\s*/i, "");
+                    return (
+                      <div key={`concept-diagram-${index}`} className="rounded-md border border-slate-700 bg-slate-900 p-3">
+                        {renderSVGForHint(hintText)}
+                        {hintText ? (
+                          <p className="mt-2 text-sm text-slate-400">
+                            <span className="font-semibold text-slate-100">Figure:</span>{" "}
+                            <MathText>{hintText}</MathText>
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3 text-sm text-slate-200 md:grid-cols-3">
+                <p><span className="font-semibold">Chapter no:</span> {boardModel.chapterNo}</p>
+                <p><span className="font-semibold">Chapter name:</span> {boardModel.chapterName}</p>
+                <p><span className="font-semibold">Topic name:</span> {boardModel.topicName}</p>
+                <p className="md:col-span-3"><span className="font-semibold">Exercise no:</span> {boardModel.exerciseNo}</p>
+              </div>
+
+              <div className="mt-4 rounded-md border-2 border-slate-600 bg-slate-900 p-4">
+                <p className="text-xl font-bold text-emerald-300">
+                  Problem no: {boardModel.problemNo} : "{boardModel.problemStatement}"
+                </p>
+
+                  {/* Render diagrams and figure hints if present in incoming actions */}
+                  {diagramActions.length ? (
+                    <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                      {diagramActions.map((action, index) => {
+                        const hintText = String(action.content || action.expression || "").replace(/^Diagram:\s*/i, "");
+                        return (
+                          <div key={`diagram-${index}`} className="rounded-md border border-slate-700 bg-slate-900 p-3">
+                            {renderSVGForHint(hintText)}
+                            {hintText ? (
+                              <p className="mt-2 text-sm text-slate-400">
+                                <span className="font-semibold text-slate-100">Figure hint:</span>{" "}
+                                <MathText>{hintText}</MathText>
+                              </p>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
 
             <p className="mt-4 text-base font-bold text-white">Solution</p>
             {boardModel.solutionSteps.length ? (
@@ -326,7 +501,9 @@ export function Whiteboard({
             )}
 
             {boardModel.finalAnswer ? <p className="mt-4 text-lg font-semibold text-cyan-200">{boardModel.finalAnswer}</p> : null}
-          </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </section>

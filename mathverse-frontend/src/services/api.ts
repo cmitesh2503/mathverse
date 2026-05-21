@@ -2,6 +2,7 @@ import axios from "axios";
 
 export type TutorMode = "practice" | "learn" | "doubt" | "ocr" | "homework" | "class";
 export type ExamMode = "cbse" | "jee";
+export type TeachingLanguage = "en-IN" | "hi-IN" | "gu-IN";
 
 export type WhiteboardState = {
   mode?: "concept" | "worked_example" | "student_try" | string;
@@ -51,6 +52,7 @@ export type TutorPayload = {
     exam?: ExamMode;
     student_id?: string;
     grade?: number;
+    teaching_language?: TeachingLanguage;
   };
 };
 

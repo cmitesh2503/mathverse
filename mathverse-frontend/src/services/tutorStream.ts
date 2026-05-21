@@ -1,4 +1,4 @@
-import { sendAnswer, type ClassResponse, type ExamMode, type TutorPayload } from "./api";
+import { sendAnswer, type ClassResponse, type ExamMode, type TeachingLanguage, type TutorPayload } from "./api";
 
 type StartClassPayload = {
   session_id: string;
@@ -8,6 +8,7 @@ type StartClassPayload = {
     exam?: ExamMode;
     student_id?: string;
     grade?: number;
+    teaching_language?: TeachingLanguage;
   };
 };
 

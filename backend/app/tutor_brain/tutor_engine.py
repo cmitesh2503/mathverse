@@ -2236,10 +2236,10 @@ class TutorEngine:
         if not explanation:
             return None
         return {
-            "mistake_explanation": explanation,
-            "concept_steps": steps[:8],
-            "shortcut": self._sentence(payload.get("shortcut")),
-            "speed_hint": self._sentence(payload.get("speed_hint")),
+            "mistake_explanation": explanation or "Unable to generate response. Please try rephrasing your question.",
+            "concept_steps": steps[:8] if steps else [],
+            "shortcut": self._sentence(payload.get("shortcut")) or None,
+            "speed_hint": self._sentence(payload.get("speed_hint")) or None,
         }
 
     def _ai_doubt_context(self, state: ClassroomState, question: str) -> str:
@@ -2276,50 +2276,65 @@ class TutorEngine:
     def _build_ai_doubt_response(self, state: ClassroomState, question: str) -> dict[str, Any] | None:
         from app.services.ai_gateway import generate_response
 
+        topic = getattr(state, "topic_title", None) or getattr(state, "current_topic", None) or "Current mathematics topic"
+        active_problem = getattr(state, "active_problem", None) or {}
+        problem_text = str(active_problem.get("prompt") or active_problem.get("question") or "").strip()
+        
         prompt = f"""
-You are Arvind Sir, a precise Class 10-12 mathematics tutor.
+You are Arvind Sir, an expert Class 10-12 mathematics tutor.
 
-Answer the student's actual doubt directly. Do not give a generic study strategy unless the question is generic.
-If the student asks a follow-up, use the previous doubt and current board problem as context.
-If the question is vague, first interpret it using the current blackboard lines and current chapter/topic.
-If the current blackboard lines are not enough to identify what the student means, ask one short clarification question.
-Do not switch to Real Numbers, Euclid's division lemma, or any other chapter unless that is the current chapter/topic or the student explicitly asks for it.
-If numbers are present, compute with those exact numbers.
-If the question is about a definition, rule, theorem, formula, proof, graph, construction, geometry, algebra, trigonometry, statistics, probability, or calculus, explain that specific concept.
-Use Hindi/Hinglish for the explanation, but keep mathematics vocabulary in English.
-Do not translate terms like probability, outcome, sample space, event, formula, theorem, equation, numerator, denominator, HCF, LCM, factor, triangle, coordinate, symbols, or formulas.
-Keep the language simple for an Indian school student.
+CURRENT CLASS CONTEXT:
+- Chapter/Topic: {topic}
+- Current Problem: {problem_text or 'None'}
 
-Context:
-{self._ai_doubt_context(state, question)}
+STUDENT QUESTION: {question}
 
-Return ONLY valid JSON with this shape:
+INSTRUCTIONS (FOLLOW STRICTLY):
+1. ANSWER DIRECTLY AND SPECIFICALLY about the current problem/topic. Do NOT give generic study advice.
+2. If student's question relates to the current problem, explain the concept using THAT problem as an example.
+3. If prerequisite concepts are missing, FIRST explain those concepts slowly and clearly with examples, THEN connect to current problem.
+4. ALWAYS structure your answer as:
+   - What the student asked (clarification)
+   - The prerequisite concept (if any, explained step-by-step)
+   - The specific answer with numbers/formulas
+   - Why this matters for the current problem
+5. For any calculation, show the actual numbers and steps. Do NOT give formula-only answers.
+6. Use Hindi/Hinglish for explanation but keep mathematics terms in English.
+7. Keep sentences short and simple for an Indian school student.
+8. Return ONLY valid JSON, no markdown, no code blocks.
+
+Context from blackboard: {self._ai_doubt_context(state, question)}
+
+Return ONLY JSON:
 {{
-  "explanation": "specific answer in 4-8 clear sentences",
-  "steps": ["step 1", "step 2", "step 3"],
-  "shortcut": "optional shortcut or null",
-  "speed_hint": "optional exam/time-saving hint or null"
+  "explanation": "detailed answer with prerequisite concepts explained step-by-step if needed, then the specific answer (6-10 sentences)",
+  "steps": ["step 1 with actual numbers", "step 2", "step 3"],
+  "shortcut": "optional shortcut if available",
+  "speed_hint": "optional exam time-saving hint"
 }}
 """.strip()
 
-        cache_key = f"ai_doubt|{getattr(state, 'grade', 10)}|{getattr(state, 'exam', 'cbse')}|{question[:500]}"
+        session_id = getattr(state, 'session_id', None) or getattr(state, 'session', None) or 'anon'
+        cache_key = f"ai_doubt|{session_id}|{getattr(state, 'grade', 10)}|{getattr(state, 'exam', 'cbse')}|{question[:500]}"
         cached = get_cache(cache_key)
         if isinstance(cached, dict):
             return cached
 
         future = AI_DOUBT_EXECUTOR.submit(generate_response, prompt)
         try:
-            text = future.result(timeout=8)
+            text = future.result(timeout=15)
         except FutureTimeoutError:
-            print("AI doubt generation timed out; using local fallback.")
+            print(f"[DOUBT] AI generation timed out for question: {question[:100]}")
             return None
         except Exception as error:
-            print(f"AI doubt generation failed: {type(error).__name__}: {error}")
+            print(f"[DOUBT] AI generation failed: {type(error).__name__}: {error}")
             return None
 
         plan = self._parse_ai_doubt_plan(text)
         if plan:
             set_cache(cache_key, plan)
+        else:
+            print(f"[DOUBT] Failed to parse AI response for question: {question[:100]}")
         return plan
 
     def _build_cbse_doubt_response(self, question: str, state: ClassroomState | None = None, context: str = "") -> dict[str, Any]:
@@ -2349,24 +2364,25 @@ Return ONLY valid JSON with this shape:
             number = max(numbers) if numbers else None
             return self._build_factor_search_response(number)
 
-        supporting_point = ""
-        if context:
-            flat = " ".join(str(context or "").split())
-            sentences = re.split(r"(?<=[.!?])\s+", flat)
-            for sentence in sentences:
-                cleaned = sentence.strip()
-                if 40 <= len(cleaned) <= 180:
-                    supporting_point = cleaned
-                    break
-            if not supporting_point:
-                supporting_point = flat[:160].strip()
-        explanation = (
-            f"Your doubt is: {question_text}. "
-            "Let us handle it slowly. First identify what is given, then identify what must be found, "
-            "then write the rule or formula before substituting numbers."
+        # Use current context to provide a better fallback response
+        topic = getattr(state, "topic_title", None) or getattr(state, "current_topic", None) or "this topic"
+        problem_text = ""
+        active_problem = getattr(state, "active_problem", None)
+        if isinstance(active_problem, dict):
+            problem_text = str(active_problem.get("prompt") or active_problem.get("question") or "").strip()
+        
+        # Build a contextual explanation instead of generic one
+        explanation = f"Your doubt is: {question_text}\n\n"
+        if problem_text:
+            explanation += f"Based on the current problem '{problem_text[:80]}...':\n\n"
+        explanation += (
+            "Let me explain this step-by-step:\n"
+            "1. First, identify what information we have (what is given)\n"
+            "2. Then, identify what we need to find (what is asked)\n"
+            "3. Next, recall the relevant rule, formula, or concept\n"
+            "4. Finally, apply it with the actual numbers\n\n"
+            "This approach helps you solve similar problems independently."
         )
-        if supporting_point:
-            explanation = f"{explanation} Useful textbook point: {supporting_point}"
 
         return {
             "mistake_explanation": explanation,
@@ -2461,12 +2477,21 @@ Return ONLY valid JSON with this shape:
 
         state.last_doubt_question = effective_question
         state.last_doubt_plan = plan
+        
+        # Ensure plan has required keys
+        if not plan:
+            plan = {
+                "mistake_explanation": "Unable to process your question right now. Please try again or ask a simpler question.",
+                "concept_steps": [],
+                "shortcut": None,
+                "speed_hint": None,
+            }
 
         return {
             "correct": None,
             "mistake_type": None,
-            "hint": plan.get("mistake_explanation"),
-            "explanation": plan.get("mistake_explanation"),
+            "hint": plan.get("mistake_explanation", ""),
+            "explanation": plan.get("mistake_explanation", ""),
             "steps": plan.get("concept_steps", []),
             "shortcut": plan.get("shortcut") if exam == "jee" else None,
             "speed_hint": plan.get("speed_hint") if exam == "jee" else None,

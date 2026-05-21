@@ -1,17 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ClassResponse, ExamMode, TutorPayload } from "../services/api";
+import type { ClassResponse, ExamMode, TeachingLanguage, TutorPayload } from "../services/api";
 import { startClassStream } from "../services/tutorStream";
 import { playVoiceStream, type VoiceController } from "../services/voice";
 
 type Args = {
   sessionId: string;
   examMode: ExamMode;
+  teachingLanguage: TeachingLanguage;
   onResponse?: (response: ClassResponse) => void;
 };
 
-export function useTutorStream({ sessionId, examMode, onResponse }: Args) {
+export function useTutorStream({ sessionId, examMode, teachingLanguage, onResponse }: Args) {
   const [response, setResponse] = useState<ClassResponse | null>(null);
   const [visibleSteps, setVisibleSteps] = useState<string[]>([]);
   const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null);
@@ -80,6 +81,7 @@ export function useTutorStream({ sessionId, examMode, onResponse }: Args) {
           context: {
             exam: examMode,
             grade: requestedGrade,
+            teaching_language: teachingLanguage,
           },
         });
         silentRetryRef.current = 0;
@@ -152,7 +154,7 @@ export function useTutorStream({ sessionId, examMode, onResponse }: Args) {
         }
       }
     },
-    [examMode, onResponse, sessionId, stop],
+    [examMode, onResponse, sessionId, stop, teachingLanguage],
   );
 
   const pauseOrResume = useCallback(() => {

@@ -6,7 +6,7 @@ import { TutorAvatar } from "../components/TutorAvatar";
 import { UpgradeNotice } from "../components/UpgradeNotice";
 import { Whiteboard } from "../components/Whiteboard";
 import { useTutorStream } from "../hooks/useTutorStream";
-import { API_BASE_URL, type ClassResponse, type ExamMode } from "../services/api";
+import { API_BASE_URL, type ClassResponse, type ExamMode, type TeachingLanguage } from "../services/api";
 import { canUseFeature, useTutorStore } from "../store/useTutorStore";
 
 type Props = {
@@ -80,9 +80,15 @@ const SILENCE_TIMEOUT_MS = 15000;
 const SILENCE_RMS_THRESHOLD = 0.004;
 const CLASS_SESSION_DURATION_SECONDS = 45 * 60;
 const LIVE_INPUT_SAMPLE_RATE = 16000;
+const AUTO_CONTINUE_AFTER_SPEECH_MS = 1800;
 
 const CLASSROOM_GRADES = [10, 11, 12] as const;
 type ClassroomGrade = (typeof CLASSROOM_GRADES)[number];
+const TEACHING_LANGUAGES: Array<{ value: TeachingLanguage; label: string; speechLang: string }> = [
+  { value: "en-IN", label: "English (India)", speechLang: "en-IN" },
+  { value: "hi-IN", label: "Hindi", speechLang: "hi-IN" },
+  { value: "gu-IN", label: "Gujarati", speechLang: "gu-IN" },
+];
 
 const CBSE_GRADE_10_CHAPTERS = [
   { slug: "real_numbers", title: "Real Numbers" },
@@ -182,6 +188,7 @@ export default function Classroom({ onNavigate }: Props) {
   const recordResponse = useTutorStore((state) => state.recordResponse);
   const [answer, setAnswer] = useState("");
   const [selectedGrade, setSelectedGrade] = useState<ClassroomGrade>(10);
+  const [teachingLanguage, setTeachingLanguage] = useState<TeachingLanguage>("en-IN");
   const [selectedChapterSlug, setSelectedChapterSlug] = useState<(typeof CBSE_GRADE_10_CHAPTERS)[number]["slug"]>(
     CBSE_GRADE_10_CHAPTERS[0].slug,
   );
@@ -212,6 +219,10 @@ export default function Classroom({ onNavigate }: Props) {
   const liveTurnEndingRef = useRef(false);
   const liveSilenceTimerRef = useRef<number | null>(null);
   const autoListenTimerRef = useRef<number | null>(null);
+  const autoContinueTimerRef = useRef<number | null>(null);
+  const wasSpeakingRef = useRef(false);
+  const lastAutoContinueKeyRef = useRef("");
+  const autoContinueInFlightRef = useRef(false);
   const liveDiscussionActiveRef = useRef(false);
   const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const speechTranscriptRef = useRef("");
@@ -259,6 +270,7 @@ export default function Classroom({ onNavigate }: Props) {
   const { response, visibleSteps, activeStepIndex, isSpeaking, loading, error, paused, start, pauseOrResume, stop, prime } = useTutorStream({
     sessionId,
     examMode,
+    teachingLanguage,
     onResponse,
   });
 
@@ -274,6 +286,8 @@ export default function Classroom({ onNavigate }: Props) {
   const tutorLabel = examMode === "cbse" ? "CBSE Tutor" : "JEE Tutor";
   const selectedChapter =
     CBSE_GRADE_10_CHAPTERS.find((chapter) => chapter.slug === selectedChapterSlug) ?? CBSE_GRADE_10_CHAPTERS[0];
+  const selectedTeachingLanguage =
+    TEACHING_LANGUAGES.find((language) => language.value === teachingLanguage) ?? TEACHING_LANGUAGES[0];
   const selectedChapterInput = useMemo(
     () =>
       examMode === "cbse" && selectedGrade === 10
@@ -354,7 +368,7 @@ export default function Classroom({ onNavigate }: Props) {
       ? "Arvind Sir is explaining..."
       : paused
         ? "Raised hand. Tutor paused."
-        : "Class is paused for you. Click Next when you want the next explanation.";
+        : "Class continues automatically after each explanation.";
 
   const nextLabel = sessionExpired
     ? "Start New 45-min Session"
@@ -401,6 +415,98 @@ export default function Classroom({ onNavigate }: Props) {
       console.error("Failed to advance class topic.", error);
     }
   }
+
+  useEffect(() => {
+    if (isSpeaking) {
+      wasSpeakingRef.current = true;
+      return;
+    }
+
+    if (!wasSpeakingRef.current) return;
+    wasSpeakingRef.current = false;
+
+    if (autoContinueTimerRef.current) {
+      window.clearTimeout(autoContinueTimerRef.current);
+      autoContinueTimerRef.current = null;
+    }
+
+    const canAutoContinue =
+      classAllowed &&
+      classStarted &&
+      response &&
+      response.type !== "homework" &&
+      response.type !== "question" &&
+      !sessionExpired &&
+      !paused &&
+      !micActive &&
+      !liveDiscussionActive &&
+      !loading &&
+      !nextCoolingDown;
+
+    if (!canAutoContinue) return;
+
+    const turnKey = [
+      response.chapter || response.content?.chapter || "",
+      response.topic || response.content?.topic || "",
+      response.problem_no || response.problem_statement || "",
+      visibleSteps.slice(0, 3).join("|"),
+    ].join("::");
+    if (turnKey && turnKey === lastAutoContinueKeyRef.current) return;
+    lastAutoContinueKeyRef.current = turnKey;
+
+    autoContinueTimerRef.current = window.setTimeout(() => {
+      if (
+        autoContinueInFlightRef.current ||
+        sessionExpired ||
+        paused ||
+        micActive ||
+        liveDiscussionActiveRef.current ||
+        loading ||
+        nextCoolingDown
+      ) {
+        return;
+      }
+
+      const action =
+        response.next_action === "next_exercise"
+          ? "next_exercise"
+          : response.next_action === "next_pdf_exercise"
+            ? "next_pdf_exercise"
+            : "continue";
+
+      autoContinueInFlightRef.current = true;
+      setNextCoolingDown(true);
+      window.setTimeout(() => setNextCoolingDown(false), 1200);
+      void start({ action, grade: selectedGrade, subject: "math" })
+        .catch((error) => {
+          console.error("Auto-continue failed.", error);
+        })
+        .finally(() => {
+          autoContinueInFlightRef.current = false;
+        });
+    }, AUTO_CONTINUE_AFTER_SPEECH_MS);
+
+    return () => {
+      if (autoContinueTimerRef.current) {
+        window.clearTimeout(autoContinueTimerRef.current);
+        autoContinueTimerRef.current = null;
+      }
+    };
+  }, [
+    classAllowed,
+    classStarted,
+    isSpeaking,
+    liveDiscussionActive,
+    loading,
+    micActive,
+    nextCoolingDown,
+    paused,
+    response,
+    selectedGrade,
+    sessionExpired,
+    start,
+    visibleSteps,
+  ]);
 
   async function askDoubt(event?: FormEvent<HTMLFormElement>, presetQuestion?: string) {
     event?.preventDefault();
@@ -496,10 +602,10 @@ export default function Classroom({ onNavigate }: Props) {
       action: "stop_listening",
       transcript: cleanedTranscript || undefined,
       mode: "class",
-      context: { exam: examMode, grade: selectedGrade, chapter, chapter_slug: liveChapterSlug, topic: concept },
+      context: { exam: examMode, grade: selectedGrade, teaching_language: teachingLanguage, chapter, chapter_slug: liveChapterSlug, topic: concept },
     });
     sendSocketPayload({ type: "audio_stream_end" });
-  }, [chapter, concept, examMode, liveChapterSlug, selectedGrade, sendSocketPayload]);
+  }, [chapter, concept, examMode, liveChapterSlug, selectedGrade, sendSocketPayload, teachingLanguage]);
 
   const base64ToUint8Array = (value: string) => {
     const binary = window.atob(value);
@@ -792,13 +898,29 @@ export default function Classroom({ onNavigate }: Props) {
             assistantDraftRef.current = "";
             activeAssistantTurnIdRef.current = null;
             queueAutoListen();
+
           }
-        } catch {
+          if (payload.type === "next_problem" && Array.isArray(payload.whiteboard_actions)) {
+            console.debug("Ignoring prefetched next_problem; auto-flow requests one turn at a time.");
+          }
+        } catch (e) {
           console.debug("Tutor socket event:", event.data);
         }
       };
     });
   }
+
+  useEffect(() => {
+    if (!classAllowed || !classStarted) return;
+
+    void openTutorSocket().catch((error) => {
+      console.error("Failed to open tutor websocket for class push", error);
+    });
+
+    return () => {
+      closeTutorSocket();
+    };
+  }, [classAllowed, classStarted, examMode, liveChapterSlug, openTutorSocket, closeTutorSocket, selectedGrade, sessionId]);
 
   async function startMicrophone() {
     try {
@@ -818,6 +940,7 @@ export default function Classroom({ onNavigate }: Props) {
           context: {
             exam: examMode,
             grade: selectedGrade,
+            teaching_language: teachingLanguage,
             chapter,
             chapter_slug: liveChapterSlug,
             topic: concept,
@@ -857,7 +980,7 @@ export default function Classroom({ onNavigate }: Props) {
           const recognition = new SpeechRecognitionClass() as BrowserSpeechRecognition;
           recognition.continuous = true;
           recognition.interimResults = true;
-          recognition.lang = "en-IN";
+          recognition.lang = selectedTeachingLanguage.speechLang;
           recognition.onresult = (event: any) => {
             let transcript = "";
             for (let index = 0; index < event.results.length; index += 1) {
@@ -1067,14 +1190,31 @@ export default function Classroom({ onNavigate }: Props) {
               ))}
             </div>
 
-            {examMode === "cbse" && selectedGrade === 10 && (
+            <label className="mt-5 block">
+              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Teaching language</span>
+              <select
+                value={teachingLanguage}
+                onChange={(event) => setTeachingLanguage(event.target.value as TeachingLanguage)}
+                className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 outline-none transition focus:border-cyan-300"
+              >
+                {TEACHING_LANGUAGES.map((language) => (
+                  <option key={language.value} value={language.value}>
+                    {language.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-xs leading-5 text-slate-400">
+                Hindi and Gujarati explanations keep math terms, formulas, and board labels in English.
+              </p>
+            </label>
+
+            {examMode === "cbse" && selectedGrade === 10 ? (
+              <>
               <label className="mt-5 block">
                 <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Chapter</span>
                 <select
                   value={selectedChapterSlug}
-                  onChange={(event) =>
-                    setSelectedChapterSlug(event.target.value as (typeof CBSE_GRADE_10_CHAPTERS)[number]["slug"])
-                  }
+                  onChange={(event) => setSelectedChapterSlug(String(event.target.value))}
                   className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 outline-none transition focus:border-cyan-300"
                 >
                   {CBSE_GRADE_10_CHAPTERS.map((chapter, index) => (
@@ -1084,7 +1224,8 @@ export default function Classroom({ onNavigate }: Props) {
                   ))}
                 </select>
               </label>
-            )}
+              </>
+            ) : null}
 
             <button
               type="button"
@@ -1135,6 +1276,24 @@ export default function Classroom({ onNavigate }: Props) {
                   Session Time Left: {formatClock(sessionTimeLeftSeconds)} / {formatClock(sessionDurationSeconds)}
                 </p>
               </div>
+
+              <label className="block rounded-lg border border-slate-700 bg-slate-950 p-4">
+                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Teaching language</span>
+                <select
+                  value={teachingLanguage}
+                  onChange={(event) => setTeachingLanguage(event.target.value as TeachingLanguage)}
+                  className="mt-2 w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-100 outline-none transition focus:border-cyan-300"
+                >
+                  {TEACHING_LANGUAGES.map((language) => (
+                    <option key={language.value} value={language.value}>
+                      {language.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-2 text-xs leading-5 text-slate-400">
+                  Math terms and formulas stay in English for Hindi/Gujarati.
+                </p>
+              </label>
 
               {error && <div className="rounded-lg border border-rose-400/40 bg-rose-950/60 p-4 text-sm text-rose-100">{error}</div>}
               {micError && <div className="rounded-lg border border-amber-400/40 bg-amber-950/60 p-4 text-sm text-amber-100">{micError}</div>}
