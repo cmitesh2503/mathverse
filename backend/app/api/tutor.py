@@ -105,10 +105,20 @@ def _steps_from_actions(whiteboard_actions: list[dict]) -> list[str]:
     return steps
 
 
+def _normalize_teaching_language(value: object) -> str:
+    normalized = str(value or "").strip().lower().replace("_", "-")
+    if normalized in {"hi", "hindi", "hi-in"}:
+        return "hi-IN"
+    if normalized in {"gu", "gujarati", "gu-in"}:
+        return "gu-IN"
+    return "en-IN"
+
+
 def _spoken_from_steps(
     spoken_response: str,
     steps: list[str],
     topic_title: str,
+    teaching_language: str = "en-IN",
 ) -> str:
     spoken = str(spoken_response or "").strip()
     lowered = spoken.lower()
@@ -167,22 +177,103 @@ def _spoken_from_steps(
     if spoken and not is_placeholder:
         spoken_step_count = len(re.findall(r"\bstep\s*\d+\b", lowered))
         if narrated_steps and spoken_step_count < min(4, len(narrated_steps)):
-            return (
-                f"{question_intro}{spoken} "
-                f"Now I will explain each board step with reason. {' '.join(narrated_steps[:10])}"
-            )
+            if teaching_language == "hi-IN":
+                return f"{question_intro}{spoken} Ab main board ke har step ka reason samjha raha hoon. {' '.join(narrated_steps[:10])}"
+            if teaching_language == "gu-IN":
+                return f"{question_intro}{spoken} Have hu board na darek step nu reason samjavu chhu. {' '.join(narrated_steps[:10])}"
+            return f"{question_intro}{spoken} Now I will explain each board step with reason. {' '.join(narrated_steps[:10])}"
         return f"{question_intro}{spoken}".strip()
     if compact_steps:
         if narrated_steps:
-            return (
-                f"{question_intro}Let us continue {topic_title} step by step. "
-                + " ".join(narrated_steps[:10])
-            )
+            if teaching_language == "hi-IN":
+                return f"{question_intro}Chalo {topic_title} ko step by step continue karte hain. " + " ".join(narrated_steps[:10])
+            if teaching_language == "gu-IN":
+                return f"{question_intro}Chalo {topic_title} ne step by step continue kariye. " + " ".join(narrated_steps[:10])
+            return f"{question_intro}Let us continue {topic_title} step by step. " + " ".join(narrated_steps[:10])
         return " ".join(compact_steps[:4])
-    return (
-        f"We finished the current board steps for {topic_title}. "
-        "Click Next when you are ready for the next explanation."
-    )
+    if teaching_language == "hi-IN":
+        return f"{topic_title} ke current board steps complete ho gaye. Ab next explanation continue karte hain."
+    if teaching_language == "gu-IN":
+        return f"{topic_title} na current board steps complete thaya. Have next explanation continue kariye."
+    return f"We finished the current board steps for {topic_title}. Now we will continue with the next explanation."
+
+
+def _spoken_for_concept_board(steps: list[str], topic_title: str, teaching_language: str = "en-IN") -> str:
+    lines = [str(step).strip() for step in steps if str(step).strip()]
+    chapter_name = next((line.split(":", 1)[1].strip() for line in lines if line.lower().startswith("chapter:")), "")
+    topic_line = next((line for line in lines if line.lower().startswith("topic ")), "")
+    meaning = next((line.split(":", 1)[1].strip() for line in lines if line.lower().startswith("meaning:")), "")
+    why = next((line.split(":", 1)[1].strip() for line in lines if line.lower().startswith("why it matters:")), "")
+    chapter_flow = any("today's flow" in line.lower() for line in lines)
+    chapter_topic_list = [
+        line for line in lines
+        if re.match(r"^\d+\.\s+", line.strip())
+    ][:6]
+    concept_steps = [
+        line.split(":", 1)[1].strip()
+        for line in lines
+        if line.lower().startswith("concept step ")
+    ][:4]
+
+    if chapter_flow:
+        topic_text = ", ".join(chapter_topic_list)
+        if teaching_language == "hi-IN":
+            return (
+                f"Aaj hum {chapter_name or topic_title} chapter start kar rahe hain. "
+                "Pehle main chapter ka roadmap board par likhunga, phir har topic ka concept samjhaunga, "
+                "aur uske baad NCERT exercise solve karenge. "
+                f"Is chapter ke topics hain: {topic_text}."
+            ).strip()
+        if teaching_language == "gu-IN":
+            return (
+                f"Aaje aapde {chapter_name or topic_title} chapter start kariye chhiye. "
+                "Pehla hu chapter no roadmap board par lakhish, pachi darek topic no concept samjavish, "
+                "ane tyaar baad NCERT exercise solve karishu. "
+                f"Aa chapter na topics chhe: {topic_text}."
+            ).strip()
+        return (
+            f"Today we are starting the {chapter_name or topic_title} chapter. "
+            "First I am writing the chapter roadmap on the board, then I will explain each topic concept, "
+            "and after that we will solve the NCERT exercise. "
+            f"The topics in this chapter are: {topic_text}."
+        ).strip()
+
+    if teaching_language == "hi-IN":
+        spoken_parts = [f"Ab {topic_title} samajhte hain."]
+        if topic_line:
+            spoken_parts.append(f"Board par main {topic_line} likh raha hoon.")
+        if meaning:
+            spoken_parts.append(f"Iska meaning hai: {meaning}")
+        if why:
+            spoken_parts.append(f"Intuition yeh hai: {why}")
+        if concept_steps:
+            spoken_parts.append("Ab board work dekho: " + " ".join(concept_steps))
+        spoken_parts.append("Is concept ko dhyan se pakdo; ab hum isi flow mein aage badhenge.")
+        return " ".join(spoken_parts)
+    if teaching_language == "gu-IN":
+        spoken_parts = [f"Have {topic_title} samajiye."]
+        if topic_line:
+            spoken_parts.append(f"Board par hu {topic_line} lakhish.")
+        if meaning:
+            spoken_parts.append(f"Aano meaning chhe: {meaning}")
+        if why:
+            spoken_parts.append(f"Intuition aa chhe: {why}")
+        if concept_steps:
+            spoken_parts.append("Have board work jovo: " + " ".join(concept_steps))
+        spoken_parts.append("Aa concept dhyan thi samjo; have aapde aa flow ma aagal vadhishu.")
+        return " ".join(spoken_parts)
+
+    spoken_parts = [f"Now let us understand {topic_title}."]
+    if topic_line:
+        spoken_parts.append(f"I am writing {topic_line} on the board.")
+    if meaning:
+        spoken_parts.append(f"The meaning is: {meaning}")
+    if why:
+        spoken_parts.append(f"The intuition is: {why}")
+    if concept_steps:
+        spoken_parts.append("Now look at the board work: " + " ".join(concept_steps))
+    spoken_parts.append("Hold this concept clearly; we will continue in the same flow.")
+    return " ".join(spoken_parts)
 
 
 def _steps_from_spoken_response(spoken_response: str, limit: int = 4) -> list[str]:
@@ -509,7 +600,11 @@ def _solution_actions(
     ]
     actions.append({"action": "draw_text", "content": f"Source: {source_label}"})
     if diagram_hint:
+        # Provide explicit drawing actions so the frontend can render a figure
         actions.append({"action": "draw_text", "content": f"Diagram: {diagram_hint}"})
+        # Add generic shape/graph actions; frontend will display these as visual nodes
+        actions.append({"action": "draw_shape", "content": diagram_hint})
+        actions.append({"action": "draw_coordinate_axes", "content": diagram_hint})
 
     offset = 0
     if _is_word_problem(prompt):
@@ -655,7 +750,11 @@ def _pdf_problem_actions_for_session(
     if chapter_no <= 0:
         chapter_no = matched_index
 
-    problems = load_chapter_pdf_exercises(grade, chapter_no, chapter_title)
+    try:
+        problems = load_chapter_pdf_exercises(grade, chapter_no, chapter_title)
+    except Exception as error:
+        print(f"CBSE PDF exercise loading skipped ({type(error).__name__}): {error}")
+        return None
     if not problems:
         return None
 
@@ -1567,6 +1666,173 @@ def _chapter_transition_actions(transition: dict[str, Any]) -> tuple[str, list[d
     return spoken.strip(), actions
 
 
+def _normalize_teaching_text(value: object) -> str:
+    return " ".join(str(value or "").replace("_", " ").replace("-", " ").lower().split())
+
+
+def _chapter_for_session(session: StudentSession) -> dict[str, Any]:
+    try:
+        curriculum = get_grade_curriculum(int(getattr(session, "grade", 10) or 10), getattr(session, "exam", "cbse"))
+    except Exception:
+        return {}
+
+    chapters = curriculum.get("chapters") if isinstance(curriculum, dict) else []
+    if not isinstance(chapters, list):
+        return {}
+
+    index = int(getattr(session, "current_chapter_index", 0) or 0)
+    if 0 <= index < len(chapters) and isinstance(chapters[index], dict):
+        return chapters[index]
+
+    wanted = _normalize_teaching_text(getattr(session, "chapter_name", ""))
+    for chapter in chapters:
+        if not isinstance(chapter, dict):
+            continue
+        labels = [chapter.get("slug"), chapter.get("title"), chapter.get("chapter"), chapter.get("name")]
+        if any(wanted and wanted in _normalize_teaching_text(label) for label in labels):
+            return chapter
+    return {}
+
+
+def _concept_for_chapter_topic(chapter: dict[str, Any], topic: str) -> dict[str, Any]:
+    concepts = chapter.get("concepts") if isinstance(chapter, dict) else []
+    if not isinstance(concepts, list):
+        return {}
+    wanted = _normalize_teaching_text(topic)
+    for concept in concepts:
+        if not isinstance(concept, dict):
+            continue
+        labels = [concept.get("id"), concept.get("title"), concept.get("definition")]
+        for label in labels:
+            normalized = _normalize_teaching_text(label)
+            if wanted and normalized and (wanted == normalized or wanted in normalized or normalized in wanted):
+                return concept
+    return {}
+
+
+def _topic_teaching_fallback(topic: str, chapter: dict[str, Any]) -> tuple[str, str, list[str], str]:
+    lowered = _normalize_teaching_text(topic)
+    summary = str(chapter.get("summary") or "").strip()
+    anchor = str(chapter.get("teaching_anchor") or "").strip()
+    goal = str(chapter.get("classroom_goal") or "").strip()
+
+    if "hcf" in lowered or "lcm" in lowered:
+        return (
+            "HCF is the greatest common factor; LCM is the least common multiple.",
+            "We compare prime factors: common smallest powers give HCF, highest powers give LCM.",
+            ["Example numbers: 24 = 2 x 2 x 2 x 3", "36 = 2 x 2 x 3 x 3", "Common factors give HCF; all highest powers give LCM."],
+            "Draw two prime-factor rows and circle common factors.",
+        )
+    if "decimal" in lowered and "rational" in lowered:
+        return (
+            "For p/q in lowest terms, the decimal terminates only when q has prime factors 2 and/or 5.",
+            "Reduce the fraction first, then inspect the denominator's prime factors.",
+            ["13/160 is in lowest terms.", "160 = 2 x 2 x 2 x 2 x 2 x 5.", "Only 2 and 5 appear, so decimal terminates."],
+            "Draw a denominator factor tree and highlight factors 2 and 5.",
+        )
+    if "irrational" in lowered:
+        return (
+            "An irrational number cannot be written as p/q where p and q are integers and q is not zero.",
+            "We often prove this by contradiction: assume rational, simplify, and reach an impossible result.",
+            ["Assume sqrt(2) = p/q in lowest terms.", "Squaring gives p^2 = 2q^2.", "Both p and q become even, contradiction."],
+            "Draw a contradiction flow: assume rational -> both even -> impossible.",
+        )
+    if "zero" in lowered and "polynomial" in lowered:
+        return (
+            "A zero of a polynomial is a value of x that makes the polynomial equal to 0.",
+            "We substitute or factorise to find where the expression becomes zero.",
+            ["For p(x) = x - 3, put x = 3.", "p(3) = 3 - 3 = 0.", "So 3 is a zero."],
+            "Draw a number line and mark the zero point.",
+        )
+    return (
+        anchor or f"{topic} is a core idea in this chapter.",
+        goal or summary or f"We learn the meaning, rule, and one board example for {topic}.",
+        [f"Meaning of {topic}", "Important rule/formula", "One small board example"],
+        "Draw a simple concept map: meaning -> rule -> example.",
+    )
+
+
+def _chapter_teaching_phase_actions(session: StudentSession) -> list[dict[str, Any]] | None:
+    chapter = _chapter_for_session(session)
+    chapter_title = str(chapter.get("title") or session.chapter_name or "Current Chapter").strip()
+    topics = [str(item).strip() for item in (session.agenda or []) if str(item).strip()]
+    if not topics:
+        topics = [chapter_title]
+
+    if not getattr(session, "class_intro_done", False):
+        session.class_intro_done = True
+        session.concept_teaching_index = 0
+        session.concept_teaching_complete = False
+        session.exercise_phase_started = False
+        actions: list[dict[str, Any]] = [
+            {"action": "draw_text", "content": f"Chapter: {chapter_title}"},
+            {"action": "draw_text", "content": "Today's flow: concepts first, then NCERT exercises."},
+            {"action": "draw_text", "content": "Topics in this chapter:"},
+        ]
+        for index, topic in enumerate(topics, start=1):
+            actions.append({"action": "draw_text", "content": f"{index}. {topic}"})
+        if chapter.get("summary"):
+            actions.append({"action": "draw_text", "content": f"Chapter idea: {chapter.get('summary')}"})
+        actions.append({"action": "draw_shape", "content": "Chapter roadmap with topic boxes connected left to right."})
+        return actions
+
+    if not getattr(session, "concept_teaching_complete", False):
+        index = int(getattr(session, "concept_teaching_index", 0) or 0)
+        index = max(0, min(index, len(topics) - 1))
+        topic = topics[index]
+        session.current_topic_index = index
+        session.current_topic = topic
+
+        concept = _concept_for_chapter_topic(chapter, topic)
+        fallback_definition, fallback_explanation, fallback_board_work, diagram_hint = _topic_teaching_fallback(topic, chapter)
+        definition = str(concept.get("definition") or fallback_definition).strip()
+        explanation = str(concept.get("explanation") or fallback_explanation).strip()
+        board_work = concept.get("board_work") if isinstance(concept.get("board_work"), list) else fallback_board_work
+
+        actions = [
+            {"action": "draw_text", "content": f"Chapter: {chapter_title}"},
+            {"action": "draw_text", "content": f"Topic {index + 1}/{len(topics)}: {topic}"},
+            {"action": "draw_text", "content": f"Meaning: {definition}"},
+            {"action": "draw_text", "content": f"Why it matters: {explanation}"},
+            {"action": "draw_text", "content": "Blackboard build:"},
+        ]
+        for step_index, item in enumerate(board_work[:5], start=1):
+            text = str(item or "").strip()
+            if text:
+                actions.append({"action": "draw_text", "content": f"Concept step {step_index}: {text}"})
+
+        examples = concept.get("ncert_examples") if isinstance(concept.get("ncert_examples"), list) else []
+        if examples and isinstance(examples[0], dict):
+            example = examples[0]
+            if example.get("prompt"):
+                actions.append({"action": "draw_text", "content": f"Mini example: {example.get('prompt')}"})
+            for step_index, step in enumerate((example.get("steps") or [])[:3], start=1):
+                actions.append({"action": "draw_text", "content": f"Example step {step_index}: {step}"})
+        actions.append({"action": "draw_text", "content": "Check: understand the idea before exercise practice."})
+        actions.append({"action": "draw_text", "content": f"Diagram: {diagram_hint}"})
+        actions.append({"action": "draw_shape", "content": diagram_hint})
+        if any(word in _normalize_teaching_text(topic) for word in ["coordinate", "graph", "polynomial", "zero"]):
+            actions.append({"action": "draw_coordinate_axes", "content": diagram_hint})
+
+        session.concept_teaching_index = index + 1
+        if session.concept_teaching_index >= len(topics):
+            session.concept_teaching_complete = True
+        return actions
+
+    if not getattr(session, "exercise_phase_started", False):
+        session.exercise_phase_started = True
+        session.current_topic_index = 0
+        session.current_topic = topics[0]
+        return [
+            {"action": "draw_text", "content": f"Chapter concepts complete: {chapter_title}"},
+            {"action": "draw_text", "content": "Now we start NCERT exercise solving step by step."},
+            {"action": "draw_text", "content": "Exercise flow: read problem -> identify concept -> solve on board -> final answer."},
+            {"action": "draw_shape", "content": "Flow diagram from concept notes to exercise problem solving."},
+        ]
+
+    return None
+
+
 def _exercise_nudge_from_rag(rag_context: str, variation: int) -> str | None:
     candidates = _extract_problem_candidates(rag_context)
     if not candidates:
@@ -1783,6 +2049,11 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         except (TypeError, ValueError):
             pass
     session.exam = "jee" if str(route_context.get("exam", req.get_exam())).lower() == "jee" else "cbse"
+    session.teaching_language = _normalize_teaching_language(
+        input_data.get("teaching_language")
+        or route_context.get("teaching_language")
+        or getattr(session, "teaching_language", "en-IN")
+    )
 
     action = _normalize_action(input_data)
     # If no explicit action provided and no question/answer, auto-continue for a seamless class
@@ -1890,22 +2161,33 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         spoken_response = tutor_payload.get("spoken_response", "")
         whiteboard_actions = tutor_payload.get("whiteboard_actions", [])
 
+    concept_phase_used = False
     if route != "proctor_agent" and action not in {"homework", "finish", "end"}:
-        whiteboard_actions = _next_problem_actions_for_session(
-            session,
-            topic=session.current_topic or session.chapter_name,
-            rag_context=rag_context,
-            action=action,
-        )
-        # Prefetch the next problem actions (non-mutating peek) for faster seamless transition
-        try:
-            if not getattr(session, "next_problem_actions", None):
-                next_actions = _peek_next_problem(session, topic=session.current_topic or session.chapter_name, rag_context=rag_context)
-                if next_actions:
-                    session.next_problem_actions = next_actions
-        except Exception:
-            # Fail-safe: do not break the class flow on prefetch errors
-            pass
+        explicit_exercise_action = action in {"next_exercise", "next_pdf_exercise", "refresh_problem", "previous_problem"}
+        concept_actions = None
+        if not explicit_exercise_action and not input_data.get("answer") and not input_data.get("question"):
+            concept_actions = _chapter_teaching_phase_actions(session)
+
+        if concept_actions is not None:
+            whiteboard_actions = concept_actions
+            concept_phase_used = True
+            session.next_problem_actions = []
+        else:
+            whiteboard_actions = _next_problem_actions_for_session(
+                session,
+                topic=session.current_topic or session.chapter_name,
+                rag_context=rag_context,
+                action=action,
+            )
+            # Prefetch the next problem actions (non-mutating peek) for faster seamless transition
+            try:
+                if not getattr(session, "next_problem_actions", None):
+                    next_actions = _peek_next_problem(session, topic=session.current_topic or session.chapter_name, rag_context=rag_context)
+                    if next_actions:
+                        session.next_problem_actions = next_actions
+            except Exception:
+                # Fail-safe: do not break the class flow on prefetch errors
+                pass
     else:
         if route != "proctor_agent" and tutor_payload:
             whiteboard_actions = [*whiteboard_actions, *_widget_to_actions(tutor_payload.get("widget"))]
@@ -1934,12 +2216,13 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
             *whiteboard_actions,
         ]
 
-    whiteboard_actions = _ensure_problem_headers(
-        session,
-        whiteboard_actions,
-        fallback_problem_no=str(turn_index + 1),
-    )
-    include_headers = action in {"start", "next_topic", "next_chapter", "skip_topic", "skip_chapter"} or turn_index == 0
+    if not concept_phase_used:
+        whiteboard_actions = _ensure_problem_headers(
+            session,
+            whiteboard_actions,
+            fallback_problem_no=str(turn_index + 1),
+        )
+    include_headers = concept_phase_used or action in {"start", "next_topic", "next_chapter", "skip_topic", "skip_chapter"} or turn_index == 0
     whiteboard_actions = _ensure_board_header_actions(session, whiteboard_actions, include_headers=include_headers)
     steps = _steps_from_actions(whiteboard_actions)
     if not steps:
@@ -1956,8 +2239,12 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
 
     chapter_title = session.chapter_name or session.current_topic or "Current Chapter"
     topic_title = session.current_topic or chapter_title
-    spoken_response = _spoken_from_steps(spoken_response, steps, topic_title)
-    forced_prefix = _force_problem_readout_prefix(steps)
+    spoken_response = (
+        _spoken_for_concept_board(steps, topic_title, session.teaching_language)
+        if concept_phase_used
+        else _spoken_from_steps(spoken_response, steps, topic_title, session.teaching_language)
+    )
+    forced_prefix = None if concept_phase_used else _force_problem_readout_prefix(steps)
     if forced_prefix:
         lowered_spoken = str(spoken_response or "").lower()
         prompt_anchor = forced_prefix.lower().split("let us read the problem statement:", 1)[-1][:60]
@@ -1975,8 +2262,8 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
     highlight_steps = [
         str(step).strip() for step in steps if str(step).strip().lower().startswith("step ")
     ] or steps
-    board_problem = _problem_prompt_from_actions(whiteboard_actions)
-    problem_meta = _extract_problem_metadata(whiteboard_actions)
+    board_problem = None if concept_phase_used else _problem_prompt_from_actions(whiteboard_actions)
+    problem_meta = {} if concept_phase_used else _extract_problem_metadata(whiteboard_actions)
     return {
         "type": "exam" if route == "proctor_agent" else ("teach" if route != "diagnostic_agent" else "evaluation"),
         "chapter": chapter_title,
@@ -1990,6 +2277,7 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         "whiteboard": {
             "title": f"{chapter_title} | {topic_title}",
             "subtitle": "Arvind Sir's smart blackboard",
+            "mode": "concept" if concept_phase_used else "exercise",
             "problem": board_problem or None,
             "chalk_lines": steps,
             "actions": whiteboard_actions,

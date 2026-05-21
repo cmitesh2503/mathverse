@@ -39,7 +39,7 @@ GRADE_10_PDF_CHAPTERS = {
     "introduction_to_trigonometry": 8,
     "applications_of_trigonometry": 9,
     "circles": 10,
-    "constructions": 0,
+    "constructions": 10,
     "areas_related_to_circles": 11,
     "surface_areas_and_volumes": 12,
     "statistics": 13,
@@ -604,7 +604,8 @@ Return only valid JSON with this exact shape:
     "short step with the reason included",
     "next short step with the reason included"
   ],
-  "answer": "final answer"
+    "answer": "final answer",
+    "diagram": "optional brief diagram instructions (if a figure is needed)"
 }}
 
 Rules:
@@ -612,7 +613,9 @@ Rules:
 - Solve the actual question, not a similar question.
 - Give 4 to 10 whiteboard steps.
 - Each step must include the reason for the operation, theorem, formula, or decision.
-- Use plain ASCII math: x, ^, /, sqrt(...), pi.
+ - Each step must include the reason for the operation, theorem, formula, or decision.
+ - Use math symbols where appropriate: use `√(...)` for square roots (do NOT write the word `sqrt`), `^` for powers, `π` for pi, `×` for multiplication, `÷` for division, and `/` for fractions. Prefer Unicode math symbols (√, π, ×, ÷) rather than spelled-out words.
+- If a diagram or figure is required, include a short `diagram` string in the JSON describing the figure to draw. Keep diagram instructions concise (one or two short sentences).
 - Do not include markdown, code fences, greetings, commentary, or extra keys.
 - Use only concepts and formulas from the {chapter_for_solution} chapter.
 """.strip()

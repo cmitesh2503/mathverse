@@ -50,6 +50,35 @@ class LiveTutorConnectionError(RuntimeError):
     pass
 
 
+def _normalize_teaching_language(value: object) -> str:
+    normalized = str(value or "").strip().lower().replace("_", "-")
+    if normalized in {"hi", "hindi", "hi-in"}:
+        return "hi-IN"
+    if normalized in {"gu", "gujarati", "gu-in"}:
+        return "gu-IN"
+    return "en-IN"
+
+
+def _language_instruction(language: str) -> str:
+    if language == "hi-IN":
+        return (
+            "LANGUAGE STYLE: Speak in Hindi/Hinglish. Keep every mathematics term in English: "
+            "probability, outcome, sample space, event, formula, theorem, equation, numerator, denominator, "
+            "factor, HCF, LCM, triangle, coordinate, chapter names, symbols, and formulas. "
+            "Board labels must stay in English math notation."
+        )
+    if language == "gu-IN":
+        return (
+            "LANGUAGE STYLE: Speak in Gujarati/Gujlish. Keep every mathematics term in English: "
+            "probability, outcome, sample space, event, formula, theorem, equation, numerator, denominator, "
+            "factor, HCF, LCM, triangle, coordinate, chapter names, symbols, and formulas. "
+            "Board labels must stay in English math notation."
+        )
+    return (
+        "LANGUAGE STYLE: Speak in clear Indian English. Keep board labels and all mathematics notation in English."
+    )
+
+
 class LiveTutorBridge:
     def __init__(self, session_id: str, emit_event: EventSink):
         self.session_id = session_id
@@ -88,6 +117,10 @@ class LiveTutorBridge:
                     self.student_session.grade = int(context["grade"])
             if context.get("exam"):
                 self.student_session.exam = "jee" if str(context.get("exam")).lower() == "jee" else "cbse"
+            if context.get("teaching_language") or context.get("language"):
+                self.student_session.teaching_language = _normalize_teaching_language(
+                    context.get("teaching_language") or context.get("language")
+                )
             chapter = context.get("chapter") or context.get("chapter_name")
             topic = context.get("topic") or context.get("concept")
             if chapter:
@@ -315,6 +348,8 @@ class LiveTutorBridge:
 
         agenda_list = getattr(self.student_session, "agenda", [])
         agenda_text = "\n".join(f"{i+1}. {topic}" for i, topic in enumerate(agenda_list)) if agenda_list else f"1. {topic_title}"
+        teaching_language = _normalize_teaching_language(getattr(self.student_session, "teaching_language", "en-IN"))
+        language_instruction = _language_instruction(teaching_language)
 
         system_prompt = (
             f"{resolved_system_prompt}\n\n"
@@ -333,11 +368,7 @@ class LiveTutorBridge:
             "ask one short clarification or counter-question before solving. Do not switch to Real Numbers, "
             "Euclid's division lemma, or any other chapter unless that is the current chapter or the student "
             "explicitly asks for it.\n"
-            "LANGUAGE STYLE: Reply in Hindi/Hinglish for speech, but keep all mathematics vocabulary in English. "
-            "Do not translate terms like probability, outcome, sample space, event, formula, theorem, equation, "
-            "numerator, denominator, factor, HCF, LCM, triangle, coordinate, chapter names, symbols, and formulas. "
-            "Board text and whiteboard labels must stay in English math notation. Example style: "
-            "'Probability ka formula hai P(E) = favourable outcomes / total outcomes.'\n"
+            f"{language_instruction}\n"
             f"Current chapter focus: {chapter_title}\n"
             f"Current topic focus: {topic_title}\n"
             f"Current blackboard context:\n{board_context or 'No visible blackboard lines were provided.'}\n\n"
@@ -395,6 +426,10 @@ class LiveTutorBridge:
             except (TypeError, ValueError):
                 pass
         self.student_session.exam = "jee" if str(effective_context.get("exam", self.student_session.exam)).lower() == "jee" else "cbse"
+        if effective_context.get("teaching_language") or effective_context.get("language"):
+            self.student_session.teaching_language = _normalize_teaching_language(
+                effective_context.get("teaching_language") or effective_context.get("language")
+            )
         if effective_context.get("chapter") or effective_context.get("chapter_name"):
             self.student_session.chapter_name = str(effective_context.get("chapter") or effective_context.get("chapter_name"))
         if effective_context.get("topic") or effective_context.get("concept"):

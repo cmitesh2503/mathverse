@@ -58,6 +58,10 @@ class Orchestrator:
         session.topic_problem_cursors = {}
         session.topic_problem_history = {}
         session.topic_problem_quotas = {}
+        session.class_intro_done = False
+        session.concept_teaching_index = 0
+        session.concept_teaching_complete = False
+        session.exercise_phase_started = False
 
         if not chapters:
             session.current_chapter_index = 0
@@ -197,6 +201,10 @@ class Orchestrator:
             session.next_system_note = None
             session.questions_asked = 0
             session.class_problem_cursor = 0
+            session.class_intro_done = False
+            session.concept_teaching_index = 0
+            session.concept_teaching_complete = False
+            session.exercise_phase_started = False
         elif mode_normalized == "class" and action == "next_topic":
             self._advance_to_next_topic(session)
         elif mode_normalized == "class" and action == "next_step":

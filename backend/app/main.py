@@ -156,17 +156,36 @@ async def tutor_ws(websocket: WebSocket):
     session_record = session_service.create_or_resume_session(start_request)
     session_id = session_record.session_id
     client_connected = True
+    send_lock = asyncio.Lock()
 
     async def safe_send_json(payload: dict) -> bool:
         nonlocal client_connected
         if not client_connected:
             return False
         try:
-            await websocket.send_json(payload)
+            async with send_lock:
+                await websocket.send_json(payload)
             return True
         except (WebSocketDisconnect, RuntimeError):
             client_connected = False
             return False
+
+    async def push_prefetched_class_problem() -> None:
+        from .api.tutor import orchestrator
+
+        session = orchestrator.get_or_create_session(session_id)
+        while client_connected:
+            try:
+                if session.next_problem_actions:
+                    # Keep prefetch internal. The classroom auto-flow requests one
+                    # turn at a time after the current explanation finishes.
+                    session.next_problem_actions = []
+                await asyncio.sleep(0.35)
+            except Exception as error:
+                print(f"Tutor WebSocket push failed: {error}")
+                break
+
+    asyncio.create_task(push_prefetched_class_problem())
 
     live_bridge = LiveTutorBridge(session_id, safe_send_json)
     live_connected = False

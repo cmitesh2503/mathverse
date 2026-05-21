@@ -8,6 +8,34 @@ from typing import Any
 from ..models.session import StudentSession
 from ..services.ai_gateway import generate_response
 
+
+def _normalize_teaching_language(value: object) -> str:
+    normalized = str(value or "").strip().lower().replace("_", "-")
+    if normalized in {"hi", "hindi", "hi-in"}:
+        return "hi-IN"
+    if normalized in {"gu", "gujarati", "gu-in"}:
+        return "gu-IN"
+    return "en-IN"
+
+
+def _language_instruction(language: str) -> str:
+    if language == "hi-IN":
+        return (
+            "Reply in Hindi/Hinglish for spoken_response. Keep all mathematics terms in English: "
+            "probability, outcome, sample space, event, formula, theorem, equation, numerator, denominator, "
+            "factor, HCF, LCM, triangle, coordinate, chapter names, symbols, and formulas. "
+            "Whiteboard labels must stay in English math notation."
+        )
+    if language == "gu-IN":
+        return (
+            "Reply in Gujarati/Gujlish for spoken_response. Keep all mathematics terms in English: "
+            "probability, outcome, sample space, event, formula, theorem, equation, numerator, denominator, "
+            "factor, HCF, LCM, triangle, coordinate, chapter names, symbols, and formulas. "
+            "Whiteboard labels must stay in English math notation."
+        )
+    return "Reply in clear Indian English. Whiteboard labels and all mathematics notation must stay in English."
+
+
 class TutorAgent:
     SYSTEM_PROMPT = """You are Arvind Sir, a highly professional, expert Mathematics tutor for Grade {grade} {exam} students.
 
@@ -118,6 +146,7 @@ When teaching a topic or solving a problem, you MUST follow this sequence strict
         
         exam_type = str(get_val("exam", "CBSE")).upper()
         grade_level = str(get_val("grade", "10"))
+        teaching_language = _normalize_teaching_language(get_val("teaching_language", "en-IN"))
         
         is_first_interaction = bool(get_val("is_first_interaction", False))
         is_new_chap = bool(get_val("is_new_chapter", is_first_interaction))
@@ -136,6 +165,7 @@ When teaching a topic or solving a problem, you MUST follow this sequence strict
         )
 
         system_notes: list[str] = []
+        system_notes.append(f"LANGUAGE OVERRIDE: {_language_instruction(teaching_language)}")
         if is_first_interaction:
             system_notes.append(
                 f"⚠️ CRITICAL DIRECTIVE: This is the FIRST interaction - Class is NOW STARTING. "

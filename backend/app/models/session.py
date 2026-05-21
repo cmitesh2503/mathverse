@@ -27,6 +27,7 @@ class StudentSession(BaseModel):
     current_topic: str | None = None
     current_topic_index: int = 0
     current_chapter_index: int = 0
+    teaching_language: Literal["en-IN", "hi-IN", "gu-IN"] = "en-IN"
     difficulty_level: str = "moderate"
     active_phase: SessionPhase = SessionPhase.TEACHING
     mistake_history: list[str] = Field(default_factory=list)
@@ -49,6 +50,10 @@ class StudentSession(BaseModel):
     wrong_attempts: int = 0
     questions_asked: int = 0
     class_problem_cursor: int = 0
+    class_intro_done: bool = False
+    concept_teaching_index: int = 0
+    concept_teaching_complete: bool = False
+    exercise_phase_started: bool = False
     topic_problem_cursors: dict[str, int] = Field(default_factory=dict)
     topic_problem_history: dict[str, list[str]] = Field(default_factory=dict)
     topic_problem_quotas: dict[str, int] = Field(default_factory=dict)
