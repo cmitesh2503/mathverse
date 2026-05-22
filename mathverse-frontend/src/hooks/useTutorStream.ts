@@ -109,6 +109,9 @@ export function useTutorStream({ sessionId, examMode, teachingLanguage, onRespon
 
         const totalSteps = stream.steps.length;
         const totalChunks = Math.max(1, stream.voice_chunks.length);
+        if (totalSteps > 0) {
+          setActiveStepIndex(0);
+        }
         voiceRef.current = playVoiceStream(stream.voice_chunks.join(". "), {
           chunks: stream.voice_chunks,
           rate: voiceRate,
@@ -116,15 +119,15 @@ export function useTutorStream({ sessionId, examMode, teachingLanguage, onRespon
           onStart: () => setIsSpeaking(true),
           onChunkStart: (chunkIndex) => {
             if (!totalSteps) return;
-            const mappedIndex = Math.min(
-              totalSteps - 1,
-              Math.floor((chunkIndex * totalSteps) / totalChunks),
-            );
+            const mappedIndex =
+              totalChunks === totalSteps
+                ? Math.min(totalSteps - 1, chunkIndex)
+                : Math.min(totalSteps - 1, Math.floor((chunkIndex * totalSteps) / totalChunks));
             setActiveStepIndex(mappedIndex);
           },
           onEnd: () => {
             setIsSpeaking(false);
-            setActiveStepIndex(null);
+            setActiveStepIndex(totalSteps > 0 ? totalSteps - 1 : null);
           },
         });
       } catch (err) {

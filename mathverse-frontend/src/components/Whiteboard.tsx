@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { WhiteboardAction, WhiteboardState } from "../services/api";
 
 type VisualNode = {
@@ -79,6 +79,320 @@ function formatLatex(value: string) {
     .trim();
 }
 
+function actionTextValue(action: WhiteboardAction) {
+  return String(
+    action.content ||
+      action.expression ||
+      action.label ||
+      action.text ||
+      action.value ||
+      action.message ||
+      "",
+  ).trim();
+}
+
+function isDiagramInstructionText(value: string) {
+  const lower = String(value || "").trim().toLowerCase();
+  return (
+    lower.startsWith("diagram:") ||
+    lower.startsWith("figure:") ||
+    lower.startsWith("figure/diagram:")
+  );
+}
+
+function isShortDiagramLabel(value: string) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  if (
+    lower.startsWith("what is given:") ||
+    lower.startsWith("what needs to be found:") ||
+    lower.startsWith("figure/diagram:") ||
+    lower.startsWith("figure hint:") ||
+    lower.startsWith("diagram:") ||
+    lower.startsWith("solution:") ||
+    lower.startsWith("chapter") ||
+    lower.startsWith("topic") ||
+    lower.startsWith("exercise") ||
+    lower.startsWith("problem statement:") ||
+    lower.startsWith("problem no:") ||
+    lower.startsWith("source:")
+  ) {
+    return false;
+  }
+  if (/^step\s+\d+/i.test(text)) return false;
+  if (/^source:/i.test(text)) return false;
+  if (text.length <= 20) return true;
+  return /^[A-Za-z0-9()\-_=]{1,24}$/.test(text);
+}
+
+function isDrawingStepLine(value: string) {
+  return /(draw|mark|join|label|construct|figure|diagram|tangent|chord|radius|point)/i.test(String(value || ""));
+}
+
+function toFiniteNumber(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function diagramStroke(value: string | undefined, fallback: string) {
+  const color = String(value || "").trim().toLowerCase();
+  if (!color) return fallback;
+  if (color.includes("green")) return "#34d399";
+  if (color.includes("blue") || color.includes("sky")) return "#60a5fa";
+  if (color.includes("red")) return "#f87171";
+  if (color.includes("orange")) return "#fb923c";
+  if (color.includes("pink") || color.includes("violet") || color.includes("purple")) return "#e879f9";
+  if (color.includes("yellow")) return "#facc15";
+  if (color.includes("black")) return "#e2e8f0";
+  return fallback;
+}
+
+function isDiagramTagged(action: WhiteboardAction) {
+  if (!action.metadata || typeof action.metadata !== "object") return false;
+  return Boolean((action.metadata as Record<string, unknown>).diagram);
+}
+
+function diagramPhase(action: WhiteboardAction, fallbackOrder: number) {
+  if (!action.metadata || typeof action.metadata !== "object") return fallbackOrder;
+  const raw = (action.metadata as Record<string, unknown>).diagram_phase;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallbackOrder;
+}
+
+function diagramStep(action: WhiteboardAction) {
+  if (!action.metadata || typeof action.metadata !== "object") return null;
+  const raw = (action.metadata as Record<string, unknown>).diagram_step;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function renderSVGFromPrimitives(
+  primitiveActions: WhiteboardAction[],
+  stepLines: string[],
+  activeStepIndex: number | null,
+) {
+  if (!primitiveActions.length) {
+    return (
+      <svg viewBox="0 0 260 170" className="w-full h-40 bg-slate-800 rounded-md border border-slate-700" />
+    );
+  }
+
+  const orderedActions = [...primitiveActions].sort((a, b) => diagramPhase(a, 0) - diagramPhase(b, 0));
+  const lines = stepLines.filter((line) => String(line || "").trim());
+  const clampedIndex =
+    activeStepIndex !== null && lines.length
+      ? Math.max(0, Math.min(lines.length - 1, activeStepIndex))
+      : null;
+  const currentStepNumber = (() => {
+    if (clampedIndex === null) return null;
+    const line = String(lines[clampedIndex] || "").trim();
+    const match = /^step\s+(\d+)/i.exec(line);
+    if (match) return Number(match[1]);
+    return clampedIndex + 1;
+  })();
+
+  const hasStepMappedPrimitives = orderedActions.some((action) => diagramStep(action) !== null);
+  let visibleActions: WhiteboardAction[] = [];
+  if (hasStepMappedPrimitives && currentStepNumber !== null) {
+    visibleActions = orderedActions.filter((action) => {
+      const mappedStep = diagramStep(action);
+      return mappedStep === null || mappedStep <= currentStepNumber;
+    });
+  }
+
+  if (hasStepMappedPrimitives && currentStepNumber === null) {
+    const minMapped = orderedActions
+      .map((action) => diagramStep(action))
+      .filter((value): value is number => value !== null)
+      .reduce<number | null>((acc, value) => (acc === null ? value : Math.min(acc, value)), null);
+    if (minMapped !== null) {
+      visibleActions = orderedActions.filter((action) => {
+        const mappedStep = diagramStep(action);
+        return mappedStep !== null && mappedStep <= minMapped;
+      });
+    }
+    if (!visibleActions.length) {
+      visibleActions = orderedActions.slice(0, 1);
+    }
+  }
+
+  if (!hasStepMappedPrimitives) {
+  let progress = 1;
+  if (clampedIndex !== null) {
+    const drawingLines = lines.filter((line) => isDrawingStepLine(line));
+    if (drawingLines.length) {
+      const covered = lines.slice(0, clampedIndex + 1).filter((line) => isDrawingStepLine(line)).length;
+      progress = Math.max(0.18, Math.min(1, covered / drawingLines.length));
+    } else if (lines.length) {
+      progress = Math.max(0.18, Math.min(1, (clampedIndex + 1) / lines.length));
+    }
+  }
+
+  const visibleCount = Math.max(1, Math.ceil(orderedActions.length * progress));
+    visibleActions = orderedActions.slice(0, visibleCount);
+  }
+
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+
+  const touch = (x: number, y: number) => {
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  };
+
+  visibleActions.forEach((action) => {
+    const name = String(action.action || "").toLowerCase();
+    if (name === "draw_line") {
+      touch(toFiniteNumber(action.x1), toFiniteNumber(action.y1));
+      touch(toFiniteNumber(action.x2), toFiniteNumber(action.y2));
+      return;
+    }
+    if (name === "draw_angle") {
+      const x = toFiniteNumber(action.x);
+      const y = toFiniteNumber(action.y);
+      const r = Math.max(1, toFiniteNumber(action.radius, 1));
+      touch(x - r, y - r);
+      touch(x + r, y + r);
+      return;
+    }
+    if (name === "highlight_element") {
+      touch(toFiniteNumber(action.x1), toFiniteNumber(action.y1));
+      touch(toFiniteNumber(action.x2), toFiniteNumber(action.y2));
+      return;
+    }
+    if (name === "write_text") {
+      const label = String(action.label || "");
+      if (isShortDiagramLabel(label)) {
+        touch(toFiniteNumber(action.x), toFiniteNumber(action.y));
+      }
+    }
+  });
+
+  if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+    minX = 0;
+    minY = 0;
+    maxX = 260;
+    maxY = 170;
+  }
+
+  const width = 260;
+  const height = 170;
+  const padding = 14;
+  const spanX = Math.max(1, maxX - minX);
+  const spanY = Math.max(1, maxY - minY);
+  const scale = Math.min((width - padding * 2) / spanX, (height - padding * 2) / spanY);
+  const offsetX = padding - minX * scale + ((width - padding * 2) - spanX * scale) / 2;
+  const offsetY = padding - minY * scale + ((height - padding * 2) - spanY * scale) / 2;
+  const sx = (x: number) => x * scale + offsetX;
+  const sy = (y: number) => y * scale + offsetY;
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-40 bg-slate-800 rounded-md border border-slate-700">
+      {visibleActions.map((action, index) => {
+        const name = String(action.action || "").toLowerCase();
+        if (name === "highlight_element") {
+          const x1 = sx(toFiniteNumber(action.x1));
+          const y1 = sy(toFiniteNumber(action.y1));
+          const x2 = sx(toFiniteNumber(action.x2));
+          const y2 = sy(toFiniteNumber(action.y2));
+          const left = Math.min(x1, x2);
+          const top = Math.min(y1, y2);
+          const w = Math.max(1, Math.abs(x2 - x1));
+          const h = Math.max(1, Math.abs(y2 - y1));
+          return (
+            <rect
+              key={`diagram-highlight-${index}`}
+              x={left}
+              y={top}
+              width={w}
+              height={h}
+              fill={diagramStroke(action.color, "#94a3b8")}
+              opacity={toFiniteNumber(action.opacity, 0.32)}
+              rx={2}
+            />
+          );
+        }
+
+        if (name === "draw_line") {
+          const x1 = sx(toFiniteNumber(action.x1));
+          const y1 = sy(toFiniteNumber(action.y1));
+          const x2 = sx(toFiniteNumber(action.x2));
+          const y2 = sy(toFiniteNumber(action.y2));
+          const stroke = diagramStroke(action.color, "#93c5fd");
+          const thickness = Math.max(1, toFiniteNumber(action.thickness, 2));
+          const lineLabel = String(action.label || "").trim();
+          const midX = (x1 + x2) / 2;
+          const midY = (y1 + y2) / 2;
+          return (
+            <g key={`diagram-line-${index}`}>
+              <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={stroke} strokeWidth={thickness} />
+              {isShortDiagramLabel(lineLabel) ? (
+                <text x={midX + 4} y={midY - 4} fill="#cbd5e1" fontSize="10" fontWeight={600}>
+                  {lineLabel}
+                </text>
+              ) : null}
+            </g>
+          );
+        }
+
+        if (name === "draw_angle") {
+          const cx = toFiniteNumber(action.x);
+          const cy = toFiniteNumber(action.y);
+          const radius = Math.max(1, toFiniteNumber(action.radius, 1));
+          const start = (toFiniteNumber(action.start_angle) * Math.PI) / 180;
+          const end = (toFiniteNumber(action.end_angle) * Math.PI) / 180;
+          const px1 = sx(cx + radius * Math.cos(start));
+          const py1 = sy(cy - radius * Math.sin(start));
+          const px2 = sx(cx + radius * Math.cos(end));
+          const py2 = sy(cy - radius * Math.sin(end));
+          const largeArc = Math.abs(end - start) > Math.PI ? 1 : 0;
+          const sweepFlag = end >= start ? 0 : 1;
+          const angleLabel = String(action.label || "").trim();
+          return (
+            <g key={`diagram-angle-${index}`}>
+              <path
+                d={`M ${px1} ${py1} A ${radius * scale} ${radius * scale} 0 ${largeArc} ${sweepFlag} ${px2} ${py2}`}
+                fill="none"
+                stroke={diagramStroke(action.color, "#fbbf24")}
+                strokeWidth={1.5}
+              />
+              {isShortDiagramLabel(angleLabel) ? (
+                <text x={sx(cx)} y={sy(cy)} fill="#fef3c7" fontSize="10" fontWeight={600}>
+                  {angleLabel}
+                </text>
+              ) : null}
+            </g>
+          );
+        }
+
+        if (name === "write_text") {
+          const label = String(action.label || "").trim();
+          if (!isShortDiagramLabel(label)) return null;
+          return (
+            <text
+              key={`diagram-text-${index}`}
+              x={sx(toFiniteNumber(action.x))}
+              y={sy(toFiniteNumber(action.y))}
+              fill={diagramStroke(action.color, "#e2e8f0")}
+              fontSize={Math.max(9, Math.min(13, toFiniteNumber(action.font_size, 11)))}
+              fontWeight={650}
+            >
+              {label}
+            </text>
+          );
+        }
+
+        return null;
+      })}
+    </svg>
+  );
+}
+
 function renderSVGForHint(hint: string) {
   const text = String(hint || "").toLowerCase();
   if (!text.trim()) {
@@ -117,6 +431,23 @@ function renderSVGForHint(hint: string) {
           {/* sample parabola */}
           <path d="M20 90 C60 30, 120 30, 180 50" stroke="#60a5fa" strokeWidth="2" fill="none" />
         </g>
+      </svg>
+    );
+  }
+  if (text.includes("circle") && text.includes("tangent")) {
+    return (
+      <svg viewBox="0 0 220 140" className="w-full h-40 bg-slate-800 rounded-md border border-slate-700">
+        <circle cx="95" cy="70" r="34" stroke="#f472b6" strokeWidth="2" fill="none" />
+        <line x1="155" y1="70" x2="130" y2="44" stroke="#60a5fa" strokeWidth="2" />
+        <line x1="155" y1="70" x2="130" y2="96" stroke="#60a5fa" strokeWidth="2" />
+        <line x1="95" y1="70" x2="155" y2="70" stroke="#9ae6b4" strokeWidth="1.5" />
+        <line x1="95" y1="70" x2="130" y2="44" stroke="#9ae6b4" strokeWidth="1.5" />
+        <line x1="95" y1="70" x2="130" y2="96" stroke="#9ae6b4" strokeWidth="1.5" />
+        <line x1="130" y1="44" x2="130" y2="96" stroke="#f59e0b" strokeWidth="1.5" />
+        <text x="88" y="66" fill="#e2e8f0" fontSize="10" fontWeight={700}>O</text>
+        <text x="160" y="68" fill="#e2e8f0" fontSize="10" fontWeight={700}>A</text>
+        <text x="133" y="40" fill="#e2e8f0" fontSize="10" fontWeight={700}>P</text>
+        <text x="133" y="108" fill="#e2e8f0" fontSize="10" fontWeight={700}>Q</text>
       </svg>
     );
   }
@@ -343,12 +674,44 @@ export function Whiteboard({
   const diagramActions = useMemo(
     () => incomingActions.filter((action) => {
       const name = String(action?.action || "").toLowerCase();
-      if (["draw_shape", "draw_coordinate_axes", "plot_curve", "draw_circle", "draw_line"].includes(name)) return true;
-      const content = String(action?.content || action?.expression || "").toLowerCase();
-      return content.startsWith("diagram:");
+      if (["draw_shape", "draw_coordinate_axes", "plot_curve", "draw_circle", "draw_line", "draw_angle", "highlight_element"].includes(name)) return true;
+      return isDiagramInstructionText(actionTextValue(action));
     }),
     [incomingActions],
   );
+  const diagramHintText = useMemo(() => {
+    const directHint = diagramActions
+      .map((action) => actionTextValue(action))
+      .find((text) => isDiagramInstructionText(text));
+    if (directHint) {
+      return directHint.replace(/^(Diagram|Figure)[:\s]*/i, "");
+    }
+    const drawShapeHint = diagramActions
+      .filter((action) => String(action.action || "").toLowerCase() === "draw_shape")
+      .map((action) => actionTextValue(action))
+      .find((text) => Boolean(text));
+    return drawShapeHint || "";
+  }, [diagramActions]);
+  const diagramPrimitiveActions = useMemo(() => {
+    const lastClearIndex = incomingActions.reduce((last, action, index) => {
+      const name = String(action?.action || "").toLowerCase();
+      return ["clear", "clear_board", "erase", "reset_board"].includes(name) ? index : last;
+    }, -1);
+    const currentActions = lastClearIndex >= 0 ? incomingActions.slice(lastClearIndex + 1) : incomingActions;
+    const primitives = currentActions.filter((action) =>
+      ["draw_line", "draw_angle", "highlight_element", "write_text"].includes(String(action?.action || "").toLowerCase()),
+    );
+    const taggedPrimitives = primitives.filter((action) => isDiagramTagged(action));
+    return taggedPrimitives.length ? taggedPrimitives : primitives;
+  }, [incomingActions]);
+  const hasPrimitiveGeometry = useMemo(
+    () =>
+      diagramPrimitiveActions.some((action) =>
+        ["draw_line", "draw_angle", "highlight_element"].includes(String(action.action || "").toLowerCase()),
+      ),
+    [diagramPrimitiveActions],
+  );
+  const hasDiagramVisuals = diagramActions.length > 0 || hasPrimitiveGeometry;
   const conceptBoardLines = useMemo(() => {
     const lastClearIndex = incomingActions.reduce((last, action, index) => {
       const name = String(action?.action || "").toLowerCase();
@@ -426,22 +789,19 @@ export function Whiteboard({
                 })}
               </div>
 
-              {diagramActions.length ? (
+              {hasDiagramVisuals ? (
                 <div className="grid gap-3 lg:grid-cols-2">
-                  {diagramActions.map((action, index) => {
-                    const hintText = String(action.content || action.expression || "").replace(/^Diagram:\s*/i, "");
-                    return (
-                      <div key={`concept-diagram-${index}`} className="rounded-md border border-slate-700 bg-slate-900 p-3">
-                        {renderSVGForHint(hintText)}
-                        {hintText ? (
-                          <p className="mt-2 text-sm text-slate-400">
-                            <span className="font-semibold text-slate-100">Figure:</span>{" "}
-                            <MathText>{hintText}</MathText>
-                          </p>
-                        ) : null}
-                      </div>
-                    );
-                  })}
+                  <div className="rounded-md border border-slate-700 bg-slate-900 p-3">
+                    {hasPrimitiveGeometry
+                      ? renderSVGFromPrimitives(diagramPrimitiveActions, conceptBoardLines, activeStepIndex)
+                      : renderSVGForHint(diagramHintText)}
+                    {diagramHintText ? (
+                      <p className="mt-2 text-sm text-slate-400">
+                        <span className="font-semibold text-slate-100">Figure:</span>{" "}
+                        <MathText>{diagramHintText}</MathText>
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -456,26 +816,23 @@ export function Whiteboard({
 
               <div className="mt-4 rounded-md border-2 border-slate-600 bg-slate-900 p-4">
                 <p className="text-xl font-bold text-emerald-300">
-                  Problem no: {boardModel.problemNo} : "{boardModel.problemStatement}"
+                  Problem no: {boardModel.problemNo} : &quot;{boardModel.problemStatement}&quot;
                 </p>
 
                   {/* Render diagrams and figure hints if present in incoming actions */}
-                  {diagramActions.length ? (
+                  {hasDiagramVisuals ? (
                     <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                      {diagramActions.map((action, index) => {
-                        const hintText = String(action.content || action.expression || "").replace(/^Diagram:\s*/i, "");
-                        return (
-                          <div key={`diagram-${index}`} className="rounded-md border border-slate-700 bg-slate-900 p-3">
-                            {renderSVGForHint(hintText)}
-                            {hintText ? (
-                              <p className="mt-2 text-sm text-slate-400">
-                                <span className="font-semibold text-slate-100">Figure hint:</span>{" "}
-                                <MathText>{hintText}</MathText>
-                              </p>
-                            ) : null}
-                          </div>
-                        );
-                      })}
+                      <div className="rounded-md border border-slate-700 bg-slate-900 p-3">
+                        {hasPrimitiveGeometry
+                          ? renderSVGFromPrimitives(diagramPrimitiveActions, boardModel.solutionSteps, activeStepIndex)
+                          : renderSVGForHint(diagramHintText)}
+                        {diagramHintText ? (
+                          <p className="mt-2 text-sm text-slate-400">
+                            <span className="font-semibold text-slate-100">Figure hint:</span>{" "}
+                            <MathText>{diagramHintText}</MathText>
+                          </p>
+                        ) : null}
+                      </div>
                     </div>
                   ) : null}
 

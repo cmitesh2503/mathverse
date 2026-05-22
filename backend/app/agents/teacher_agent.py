@@ -47,7 +47,8 @@ class TutorAgent:
 Reply in Hindi/Hinglish for spoken explanations, but keep all mathematics vocabulary in English.
 Do not translate terms like probability, outcome, sample space, event, formula, theorem, equation,
 numerator, denominator, factor, HCF, LCM, triangle, coordinate, chapter names, symbols, and formulas.
-Whiteboard text and labels must stay in English math notation. Example: "Probability ka formula hai P(E) = favourable outcomes / total outcomes."
+For whiteboard_actions, you MUST use actual mathematical symbols (e.g., √, π, ×, ÷, ^, °) instead of words like sqrt or pi.
+For spoken_response, you MUST spell out symbols in words so the voice engine pronounces them correctly (e.g., write "square root" instead of "sqrt", "squared" instead of "^2", "degrees" instead of "°", "pi" instead of "π").
 
 **TEACHING FLOW DIRECTIVES:**
 
@@ -85,6 +86,9 @@ Whenever a topic or word problem involves visual data, shapes, data tables, or c
    - *Labeling:* Label class intervals, cumulative frequencies, or branching fraction probabilities at each junction point.
    - *Target Highlight:* Highlight the specific modal class row or target probability node being computed.
 
+5. **NCERT Figures & Diagrams:**
+   - Whenever explaining a concept or exercise that has a figure in the NCERT book, use `{"action": "draw_shape", "content": "Detailed description of the NCERT figure"}` to show it on the blackboard.
+
 **IF THE STUDENT ASKS A DOUBT OR QUESTION:**
 1. Pause the planned lesson and answer the question directly.
 2. If the question relates to the current problem or current topic, explain it using that exact problem/topic.
@@ -94,11 +98,46 @@ Whenever a topic or word problem involves visual data, shapes, data tables, or c
 **THE PEDAGOGICAL LOOP (HOW YOU TEACH - GUIDED EXPLAINER):**
 When teaching a topic or solving a problem, you MUST follow this sequence strictly:
 
-1. **Read & Explain Goal FIRST:** If given a problem image or text, your VERY FIRST step is to read the problem statement out loud to the student and explicitly state what you are trying to solve. Do not start calculating. 
+1. **Read & Explain Goal FIRST:** If given a problem image or text, your VERY FIRST step is to read the problem statement out loud to the student and explicitly state what you are trying to solve. Say "First, let us read the question carefully: [Question]. Let me explain the solution step by step." Do not start calculating yet.
 2. **The "Why" Before The "How":** Explain the real-world intuition or coordinate geometry mechanics before executing any mathematical rules or formulas.
 3. **Step-by-Step Visualization & Construction:** Build equations and visual layouts on the board step-by-step. Let your whiteboard actions match your spoken text fluidly.
 4. **Strategic Questioning:** Explain 2-3 logical steps, then pause your mathematical output and ask a clean checking question based strictly on what is currently drawn on the board (e.g., "Looking at our drawn graph, what point does the line cut across the Y-axis?").
 5. **The "Move On" Rule:** If the student is stuck, wrong, or silent, do NOT loop. Say, "That's okay," explain the step clearly, write it on the board, and continue smoothly.
+
+**MUST DECODE PROBLEM GIVEN/REQUIRED (MANDATORY):**
+- Before producing any equations or algebraic manipulations on the whiteboard, you MUST explicitly decode the problem into two separate `write_text` whiteboard actions in this exact order:
+    1. `{"action": "write_text", "x": <num>, "y": <num>, "label": "What is given: <succinct list of givens>", "color": "black"}`
+    2. `{"action": "write_text", "x": <num>, "y": <num>, "label": "What needs to be found: <succinct target>", "color": "black"}`
+    The `What is given` and `What needs to be found` entries MUST appear before any `write_text` that contains an equation (a string with `=`) or before any `draw_line`/`draw_angle` that constructs the main geometry for the solution. Failing to include these two explicit decode actions is a protocol violation.
+
+**STRICT WHITEBOARD JSON ACTIONS SCHEMA (MANDATORY):**
+Only use the following action names and properties. Do NOT invent new top-level action names or arbitrary nested keys — the frontend will reject unknown keys.
+
+- `draw_line`: draw a line segment
+    Required properties: `action` ("draw_line"), `x1` (number), `y1` (number), `x2` (number), `y2` (number)
+    Optional properties: `color` (string), `thickness` (number), `label` (string)
+    Example: {"action":"draw_line","x1":10,"y1":20,"x2":100,"y2":20,"color":"black","thickness":2}
+
+- `draw_angle`: draw an angle arc
+    Required properties: `action` ("draw_angle"), `x` (number), `y` (number), `radius` (number), `start_angle` (number), `end_angle` (number)
+    Optional properties: `label` (string), `color` (string)
+    Example: {"action":"draw_angle","x":50,"y":60,"radius":20,"start_angle":0,"end_angle":30,"label":"θ","color":"black"}
+
+- `write_text`: place a text label on board (use for problem statements, givens, equations)
+    Required properties: `action` ("write_text"), `x` (number), `y` (number), `label` (string)
+    Optional properties: `font_size` (number), `color` (string)
+    Example: {"action":"write_text","x":120,"y":40,"label":"What is given: a=5","font_size":14,"color":"black"}
+
+- `highlight_element`: highlight a region or element on the board
+    Required properties: `action` ("highlight_element"), `x1` (number), `y1` (number), `x2` (number), `y2` (number), `color` (string)
+    Optional properties: `label` (string), `opacity` (number)
+    Example: {"action":"highlight_element","x1":10,"y1":10,"x2":100,"y2":50,"color":"green","label":"target"}
+
+ADDITIONAL RULES:
+- Maintain ordering: the decode pair (`What is given` / `What needs to be found`) MUST precede any equation-writing or geometry-building actions.
+- Do not output `draw_shape`, `draw_text` (legacy), `diagram` or any other action names unless you map them to the strict schema above.
+- If a single visual requires multiple primitive actions, emit them in the natural construction order (e.g., lines first, then angles, then labels, then highlights).
+- Always ensure coordinates are integers or floats and relative to the same board coordinate system.
 """
 
     # ... rest of your code remains exactly the same ...
@@ -285,17 +324,143 @@ When teaching a topic or solving a problem, you MUST follow this sequence strict
         return result
 
     def _sanitize_whiteboard_actions(self, actions: list[Any]) -> list[dict[str, Any]]:
+        """Validate and map incoming LLM whiteboard actions to the strict frontend schema.
+
+        Allowed canonical actions:
+        - draw_line: {action, x1, y1, x2, y2, [color], [thickness], [label]}
+        - draw_angle: {action, x, y, radius, start_angle, end_angle, [label], [color]}
+        - write_text: {action, x, y, label, [font_size], [color]}
+        - highlight_element: {action, x1, y1, x2, y2, color, [label], [opacity]}
+
+        This function maps legacy names where possible, while preserving
+        drawable figure actions needed by the current frontend.
+        """
         sanitized: list[dict[str, Any]] = []
-        for action in actions:
-            if not isinstance(action, dict): continue
-            
-            # Convert everything to 'draw_text' so the frontend can actually render it!
-            clean_action: dict[str, Any] = {"action": "draw_text"}
-            content_value = action.get("content") or action.get("text") or action.get("value")
-            if isinstance(content_value, str) and content_value.strip(): clean_action["content"] = content_value.strip()
-            
-            if "content" not in clean_action: continue
-            sanitized.append(clean_action)
+        y_cursor = 20
+        def to_number(v, default=0):
+            try:
+                return int(v) if isinstance(v, int) or (isinstance(v, str) and v.isdigit()) else float(v)
+            except Exception:
+                try:
+                    return float(v)
+                except Exception:
+                    return default
+
+        for raw in actions or []:
+            if not isinstance(raw, dict):
+                continue
+            action_name = str(raw.get("action") or raw.get("type") or "").strip().lower()
+
+            # Normalize legacy or alternative names
+            if action_name in {"draw_text", "drawtext", "text", "write_text_legacy", "diagram"}:
+                action_name = "write_text"
+            if action_name in {"draw_shape", "shape"}:
+                action_name = "draw_shape"
+            if action_name in {"drawline", "line"}:
+                action_name = "draw_line"
+            if action_name in {"drawangle", "angle"}:
+                action_name = "draw_angle"
+            if action_name in {"highlight", "highlightarea"}:
+                action_name = "highlight_element"
+
+            if action_name == "draw_shape":
+                content = raw.get("content") or raw.get("label") or raw.get("text") or raw.get("value")
+                if not isinstance(content, str) or not content.strip():
+                    continue
+                sanitized.append({"action": "draw_shape", "content": content.strip()})
+                continue
+
+            if action_name == "write_text":
+                label = raw.get("label") or raw.get("content") or raw.get("text") or raw.get("value")
+                if not isinstance(label, str) or not label.strip():
+                    continue
+                x = to_number(raw.get("x"), default=10)
+                y = to_number(raw.get("y"), default=y_cursor)
+                y_cursor += 20
+                clean = {"action": "write_text", "x": x, "y": y, "label": label.strip()}
+                if raw.get("font_size") is not None:
+                    clean["font_size"] = to_number(raw.get("font_size"), default=14)
+                if raw.get("color"):
+                    clean["color"] = str(raw.get("color"))
+                sanitized.append(clean)
+                continue
+
+            if action_name == "draw_line":
+                x1 = raw.get("x1")
+                y1 = raw.get("y1")
+                x2 = raw.get("x2")
+                y2 = raw.get("y2")
+                if None in (x1, y1, x2, y2):
+                    # try alternate keys
+                    x1 = raw.get("x") or raw.get("x_start")
+                    y1 = raw.get("y") or raw.get("y_start")
+                    x2 = raw.get("x_end") or raw.get("x2")
+                    y2 = raw.get("y_end") or raw.get("y2")
+                if None in (x1, y1, x2, y2):
+                    continue
+                clean = {
+                    "action": "draw_line",
+                    "x1": to_number(x1),
+                    "y1": to_number(y1),
+                    "x2": to_number(x2),
+                    "y2": to_number(y2),
+                }
+                if raw.get("color"):
+                    clean["color"] = str(raw.get("color"))
+                if raw.get("thickness") is not None:
+                    clean["thickness"] = to_number(raw.get("thickness"), default=1)
+                if raw.get("label"):
+                    clean["label"] = str(raw.get("label"))
+                sanitized.append(clean)
+                continue
+
+            if action_name == "draw_angle":
+                x = raw.get("x")
+                y = raw.get("y")
+                radius = raw.get("radius")
+                start_angle = raw.get("start_angle")
+                end_angle = raw.get("end_angle")
+                if None in (x, y, radius, start_angle, end_angle):
+                    continue
+                clean = {
+                    "action": "draw_angle",
+                    "x": to_number(x),
+                    "y": to_number(y),
+                    "radius": to_number(radius),
+                    "start_angle": to_number(start_angle),
+                    "end_angle": to_number(end_angle),
+                }
+                if raw.get("label"):
+                    clean["label"] = str(raw.get("label"))
+                if raw.get("color"):
+                    clean["color"] = str(raw.get("color"))
+                sanitized.append(clean)
+                continue
+
+            if action_name == "highlight_element":
+                x1 = raw.get("x1") or raw.get("x")
+                y1 = raw.get("y1") or raw.get("y")
+                x2 = raw.get("x2") or raw.get("width") or raw.get("x_end")
+                y2 = raw.get("y2") or raw.get("height") or raw.get("y_end")
+                color = raw.get("color") or raw.get("fill")
+                if None in (x1, y1, x2, y2) or not color:
+                    continue
+                clean = {
+                    "action": "highlight_element",
+                    "x1": to_number(x1),
+                    "y1": to_number(y1),
+                    "x2": to_number(x2),
+                    "y2": to_number(y2),
+                    "color": str(color),
+                }
+                if raw.get("label"):
+                    clean["label"] = str(raw.get("label"))
+                if raw.get("opacity") is not None:
+                    clean["opacity"] = to_number(raw.get("opacity"), default=0.5)
+                sanitized.append(clean)
+                continue
+
+            # Unknown actions are ignored — keep the whiteboard safe and predictable
         return sanitized
 
     def _fallback_whiteboard_actions(self, spoken_response: str) -> list[dict[str, Any]]:

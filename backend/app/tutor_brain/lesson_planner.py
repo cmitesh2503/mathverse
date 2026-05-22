@@ -118,6 +118,8 @@ async def build_lesson_plan(rag_text: str, mistake_type: str = None, exam: str =
     - If sign_error → highlight sign handling clearly
     - If calculation_error → show exact correction
     - Avoid generic explanation
+    - Use actual mathematical signs and symbols (e.g. √, π, ×, ÷, ^) in concept_steps instead of words like "sqrt".
+    - In mistake_explanation, spell out the symbols (e.g., "square root", "times") so they are pronounced correctly.
 
     Also include:
     - 1 shortcut trick

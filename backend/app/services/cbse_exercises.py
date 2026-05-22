@@ -551,13 +551,19 @@ def build_exercise_solution(
             ]
             answer = "Solution needs the chapter method shown in the steps."
 
-    return {
+    result = {
         **problem,
         "prompt": prompt,
         "steps": steps[:10],
         "answer": answer,
         "answer_type": "text",
     }
+    
+    # Include diagram if present in AI solution
+    if "ai_solution" in locals() and ai_solution and "diagram" in ai_solution:
+        result["diagram"] = ai_solution["diagram"]
+    
+    return result
 
 
 def _build_ai_exercise_solution(
@@ -582,7 +588,7 @@ def _build_ai_exercise_solution(
     # CRITICAL: Include session_id in cache key to prevent cross-session contamination
     session_suffix = f"|{session_id}" if session_id else ""
     cache_key = (
-        "cbse_pdf_solution|"
+        "cbse_pdf_solution_v2|"
         f"{chapter_for_solution}|{problem.get('exercise', '')}|"
         f"{problem.get('number', '')}|{prompt}{session_suffix}"
     )
@@ -627,8 +633,11 @@ Rules:
         data = _parse_json_object(raw)
         steps = [str(step).strip() for step in data.get("steps", []) if str(step).strip()]
         answer = str(data.get("answer") or "").strip()
-        if len(steps) >= 3 and answer:
+        diagram = str(data.get("diagram") or "").strip()
+        if len(steps) >= 2 and answer:
             result = {"steps": steps[:10], "answer": answer}
+            if diagram:
+                result["diagram"] = diagram
             # Preserve chapter context in result
             result["chapter_context"] = chapter_for_solution
             return result

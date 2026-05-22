@@ -58,5 +58,21 @@
       "teaching_anchor": "A polynomial is an algebraic expression formed using variables with whole-number powers.",
       "classroom_goal": "Students should identify the zeroes of simple polynomials and connect the zeroes with the coefficients in quadratic polynomials."
     }
+    ,
+    {
+      "slug": "surface_areas_and_volumes",
+      "title": "Surface Areas and Volumes",
+      "summary": "Surface areas and volumes of combinations of solids: cubes, cuboids, cylinders, cones and spheres.",
+      "aliases": ["surface areas", "volumes", "surface areas and volumes"],
+      "teaching_anchor": "Relate surface area and volume formulas to the geometry of 3D solids and composition of solids.",
+      "classroom_goal": "Students should compute surface areas and volumes of compound solids and apply formulas to solve real-world geometry problems.",
+      "book_topics": [
+        "Surface area of cube and cuboid",
+        "Surface area and volume of cylinder",
+        "Surface area and volume of cone",
+        "Surface area and volume of sphere",
+        "Combination of solids"
+      ]
+    }
   ]
 }

@@ -19,6 +19,11 @@ from ..services.cbse_exercises import (
 from ..services.rag_service import retrieve_context
 from ..services.firebase_service import get_attempts, save_attempt
 from ..services.ai_gateway import generate_audio
+from ..services.math_formatter import (
+    convert_text_to_display_symbols,
+    convert_display_symbols_to_speech,
+    convert_text_to_speech,
+)
 from ..tutor_brain.curriculum import get_grade_curriculum
 from .models import TutorRequest
 
@@ -33,6 +38,27 @@ diagnostic_agent = DiagnosticAgent()
 proctor_agent = ProctorAgent()
 _legacy_engine = None
 _RAG_CONTEXT_CACHE: dict[tuple[int, str, str, str], str] = {}
+
+
+def _sanitize_for_speech(text: str) -> str:
+    """
+    Convert text and symbols to natural speech.
+    Uses math_formatter for consistent symbol handling.
+    """
+    if not text:
+        return text
+    # Use the new comprehensive formatter
+    return convert_text_to_speech(text)
+
+
+def _format_for_display(text: str) -> str:
+    """
+    Convert text-based math notation to proper display symbols.
+    Example: "sqrt(x)" → "√(x)"
+    """
+    if not text:
+        return text
+    return convert_text_to_display_symbols(text)
 
 
 def _get_legacy_engine():
@@ -152,6 +178,14 @@ def _spoken_from_steps(
         ),
         "",
     )
+    figure_line = next(
+        (
+            line
+            for line in compact_steps
+            if line.lower().startswith("figure") or line.lower().startswith("diagram")
+        ),
+        "",
+    )
     ordered_step_lines = [
         line
         for line in filtered
@@ -160,6 +194,7 @@ def _spoken_from_steps(
         or line.lower().startswith("exercise:")
         or line.lower().startswith("final answer:")
         or line.lower().startswith("diagram:")
+        or line.lower().startswith("figure")
     ]
     narrated_steps = ordered_step_lines if ordered_step_lines else filtered
 
@@ -167,30 +202,32 @@ def _spoken_from_steps(
     if problem_line:
         prompt_text = problem_line.split(":", 1)[1].strip()
         problem_no_text = problem_no_line.split(":", 1)[1].strip() if problem_no_line else ""
+        # Format prompt for speech - convert symbols to spoken words
+        spoken_prompt = _sanitize_for_speech(prompt_text)
+        if len(spoken_prompt) > 220:
+            spoken_prompt = spoken_prompt[:217].rstrip() + "..."
         target = _word_problem_target(prompt_text) if prompt_text else "the required value"
+        
+        # Include figure reference in intro if present
+        figure_ref = ""
+        if figure_line:
+            figure_desc = figure_line.split(":", 1)[1].strip() if ":" in figure_line else figure_line
+            if len(figure_desc) > 120:
+                figure_desc = figure_desc[:117].rstrip() + "..."
+            figure_ref = f" Look at the figure on the board. {figure_desc} "
+        
         question_intro = (
-            f"Now we will solve Problem no {problem_no_text}. "
-            f"Let us read what is asked in the question: {prompt_text}. "
-            f"We need to find {target}. "
+            f"Now we will solve Problem no {problem_no_text}. First, let us read the question carefully: {spoken_prompt}. "
+            f"{figure_ref}"
+            f"We need to find {target}. Let me explain the solution step by step. "
         )
 
     if spoken and not is_placeholder:
-        spoken_step_count = len(re.findall(r"\bstep\s*\d+\b", lowered))
-        if narrated_steps and spoken_step_count < min(4, len(narrated_steps)):
-            if teaching_language == "hi-IN":
-                return f"{question_intro}{spoken} Ab main board ke har step ka reason samjha raha hoon. {' '.join(narrated_steps[:10])}"
-            if teaching_language == "gu-IN":
-                return f"{question_intro}{spoken} Have hu board na darek step nu reason samjavu chhu. {' '.join(narrated_steps[:10])}"
-            return f"{question_intro}{spoken} Now I will explain each board step with reason. {' '.join(narrated_steps[:10])}"
         return f"{question_intro}{spoken}".strip()
+    if narrated_steps:
+        return f"{question_intro}{' '.join(narrated_steps[:2])}".strip()
     if compact_steps:
-        if narrated_steps:
-            if teaching_language == "hi-IN":
-                return f"{question_intro}Chalo {topic_title} ko step by step continue karte hain. " + " ".join(narrated_steps[:10])
-            if teaching_language == "gu-IN":
-                return f"{question_intro}Chalo {topic_title} ne step by step continue kariye. " + " ".join(narrated_steps[:10])
-            return f"{question_intro}Let us continue {topic_title} step by step. " + " ".join(narrated_steps[:10])
-        return " ".join(compact_steps[:4])
+        return " ".join(compact_steps[:2])
     if teaching_language == "hi-IN":
         return f"{topic_title} ke current board steps complete ho gaye. Ab next explanation continue karte hain."
     if teaching_language == "gu-IN":
@@ -541,7 +578,7 @@ def _normalize_board_math_style(step: str) -> str:
     if not text:
         return text
     text = re.sub(r"\s*[×]\s*", " x ", text)
-    text = re.sub(r"\s*[x]\s*", " x ", text)
+    text = re.sub(r"(?<=\d)\s*[xX]\s*(?=\d)", " x ", text)
     text = re.sub(r"\s{2,}", " ", text).strip()
     text = text.replace("=>", "=")
     # Prefer equation-chain style when step already has math content.
@@ -576,6 +613,224 @@ def _visualize_step_sequence(steps: list[str]) -> list[str]:
     return [_normalize_board_math_style(str(step).strip()) for step in steps if str(step).strip()]
 
 
+def _is_generic_diagram_hint(hint: str) -> bool:
+    lowered = str(hint or "").strip().lower()
+    if not lowered:
+        return True
+    generic_tokens = (
+        "map known values",
+        "choose the theorem",
+        "choose the appropriate theorem",
+        "simplify to the final result",
+        "follow the chapter method",
+        "show the flow",
+    )
+    return any(token in lowered for token in generic_tokens)
+
+
+def _context_requests_diagram(prompt: str, solved_steps: list[str]) -> bool:
+    _ = solved_steps
+    prompt_text = str(prompt or "").strip().lower()
+    if not prompt_text:
+        return False
+
+    explicit_markers = (
+        "figure",
+        "fig.",
+        "diagram",
+        "draw",
+        "construct",
+        "sketch",
+        "in the figure",
+        "in fig",
+        "as shown",
+        "given below",
+    )
+    if any(marker in prompt_text for marker in explicit_markers):
+        return True
+
+    geometry_markers = (
+        "join ",
+        "mark ",
+        "tangent",
+        "chord",
+        "radius",
+        "diameter",
+        "label ",
+        "bisector",
+        "perpendicular",
+    )
+    return any(marker in prompt_text for marker in geometry_markers)
+
+
+def _extract_point_labels(text: str, limit: int = 8) -> list[str]:
+    labels: list[str] = []
+    seen: set[str] = set()
+    for token in re.findall(r"\b[A-Z]\b", str(text or "")):
+        if token in seen:
+            continue
+        seen.add(token)
+        labels.append(token)
+        if len(labels) >= limit:
+            break
+    return labels
+
+
+def _resolve_diagram_hint(prompt: str, solved_steps: list[str], diagram_hint: str | None) -> str | None:
+    explicit_hint = str(diagram_hint or "").strip()
+    if explicit_hint and not _is_generic_diagram_hint(explicit_hint):
+        return explicit_hint
+
+    if not _context_requests_diagram(prompt, solved_steps):
+        return None
+
+    context = " ".join([str(prompt or "").strip(), *[str(step).strip() for step in solved_steps if str(step).strip()]])
+    lowered = context.lower()
+    if not lowered:
+        return explicit_hint or None
+
+    if "circle" in lowered and ("tangent" in lowered or "chord" in lowered or "external point" in lowered):
+        return (
+            "Draw a circle with center O. Mark an external point A. Draw tangents AP and AQ touching the circle at P and Q. "
+            "Join OA, OP, OQ and chord PQ."
+        )
+    if "circle" in lowered:
+        return "Draw a circle and mark all given points and line segments from the question."
+    if "triangle" in lowered:
+        return "Draw the triangle with labelled vertices from the question and mark the given sides/angles."
+    if "venn" in lowered or ("union" in lowered and "intersection" in lowered):
+        return "Draw a two-set Venn diagram and label overlap and non-overlap regions."
+    if "coordinate" in lowered or "graph" in lowered or "parabola" in lowered:
+        return "Draw coordinate axes and plot the required points/curve from the question."
+
+    labels = _extract_point_labels(context)
+    if labels:
+        return f"Draw the figure from the question and label points {', '.join(labels)}."
+
+    return "Draw the required figure from the question and label all marked points."
+
+
+def _is_short_diagram_label(label: str) -> bool:
+    text = str(label or "").strip()
+    if not text:
+        return False
+    if len(text) <= 20:
+        return True
+    return bool(re.match(r"^[A-Za-z0-9()\-_=]{1,24}$", text))
+
+
+def _diagram_construction_steps(primitives: list[dict[str, Any]]) -> tuple[list[str], list[int | None]]:
+    if not primitives:
+        return [], []
+
+    steps: list[str] = []
+    primitive_step_map: list[int | None] = [None for _ in primitives]
+
+    def ensure_step(text: str) -> int:
+        for idx, existing in enumerate(steps, start=1):
+            if existing.lower() == text.lower():
+                return idx
+        steps.append(text)
+        return len(steps)
+
+    # Circle/curve outlines are often represented by many unlabeled tiny line segments.
+    unlabeled_lines = [
+        idx
+        for idx, action in enumerate(primitives)
+        if str(action.get("action") or "").strip().lower() == "draw_line"
+        and not str(action.get("label") or "").strip()
+    ]
+    if len(unlabeled_lines) >= 8:
+        outline_step = ensure_step("Draw the main outline of the figure.")
+        for idx in unlabeled_lines:
+            primitive_step_map[idx] = outline_step
+
+    for idx, action in enumerate(primitives):
+        if primitive_step_map[idx] is not None:
+            continue
+
+        name = str(action.get("action") or "").strip().lower()
+        label = str(action.get("label") or "").strip()
+        step_text: str | None = None
+
+        if name == "draw_line":
+            step_text = f"Draw segment {label}." if label else "Draw the next required segment."
+        elif name == "draw_angle":
+            step_text = f"Mark angle {label}." if label else "Mark the required angle."
+        elif name == "highlight_element":
+            if label and _is_short_diagram_label(label):
+                step_text = f"Mark point {label}."
+        elif name == "write_text":
+            if label and _is_short_diagram_label(label):
+                if re.fullmatch(r"[A-Za-z]{1,2}", label):
+                    step_text = f"Label point {label}."
+                elif re.fullmatch(r"[A-Za-z]{2,5}", label):
+                    step_text = f"Label segment {label}."
+
+        if not step_text:
+            continue
+        primitive_step_map[idx] = ensure_step(step_text)
+
+    if len(steps) > 6:
+        steps = steps[:5] + ["Complete the remaining labels and required connections."]
+        for idx, mapped in enumerate(primitive_step_map):
+            if mapped is not None and mapped > 6:
+                primitive_step_map[idx] = 6
+
+    return steps, primitive_step_map
+
+
+def _is_drawing_step_instruction(text: str) -> bool:
+    lowered = str(text or "").strip().lower()
+    if not lowered:
+        return False
+    drawing_tokens = (
+        "draw",
+        "mark",
+        "join",
+        "label",
+        "construct",
+        "sketch",
+        "plot",
+        "bisect",
+        "tangent",
+        "chord",
+        "radius",
+        "diameter",
+        "vertex",
+        "line segment",
+        "arc",
+        "perpendicular",
+        "parallel",
+    )
+    return any(token in lowered for token in drawing_tokens)
+
+
+def _tokens_from_step_text(text: str) -> set[str]:
+    tokens: set[str] = set()
+    for token in re.findall(r"\b[A-Za-z]{1,4}\b", str(text or "")):
+        upper = token.upper()
+        if upper in {"STEP", "DRAW", "MARK", "JOIN", "WITH", "FROM", "THEN", "AND", "THE", "LET"}:
+            continue
+        if len(upper) == 1 and upper not in {"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"}:
+            continue
+        tokens.add(upper)
+    for token in re.findall(r"\b[A-Z]{2,5}\b", str(text or "")):
+        tokens.add(token.upper())
+    return tokens
+
+
+def _tokens_from_primitive(action: dict[str, Any]) -> set[str]:
+    tokens: set[str] = set()
+    label = str(action.get("label") or "").strip()
+    content = str(action.get("content") or action.get("text") or "").strip()
+    if label:
+        tokens.update(_tokens_from_step_text(label))
+    if content:
+        tokens.update(_tokens_from_step_text(content))
+    return tokens
+
+
 def _solution_actions(
     *,
     exercise_label: str,
@@ -588,41 +843,133 @@ def _solution_actions(
     chapter_no: str | None = None,
     chapter_name: str | None = None,
 ) -> list[dict[str, Any]]:
-    steps = [_clean_step_text(step) for step in solved_steps if _clean_step_text(step)]
+    """
+    Generate board actions for problem solution with proper formatting.
+    - Formats math symbols in problem statement and steps
+    - Includes figure/diagram rendering instructions
+    - Provides step-by-step explanation flow
+    """
+    formatted_prompt = _format_for_display(prompt)
+    cleaned_steps = [_clean_step_text(step) for step in solved_steps if _clean_step_text(step)]
+    formatted_steps = [_format_for_display(step) for step in cleaned_steps]
+    formatted_answer = _format_for_display(answer) if answer else ""
+    resolved_diagram_hint = _resolve_diagram_hint(prompt, cleaned_steps, diagram_hint)
+    formatted_diagram = _format_for_display(resolved_diagram_hint) if resolved_diagram_hint else None
+
     actions: list[dict[str, Any]] = [
         {"action": "draw_text", "content": f"Chapter no: {chapter_no or '-'}"},
         {"action": "draw_text", "content": f"Chapter name: {chapter_name or 'Current Topic'}"},
         {"action": "draw_text", "content": f"Topic name: {chapter_name or 'Current Topic'}"},
         {"action": "draw_text", "content": f"Exercise no: {exercise_label}"},
         {"action": "draw_text", "content": f"Problem no: {problem_number}"},
-        {"action": "draw_text", "content": f"Problem statement: {prompt}"},
+        {"action": "draw_text", "content": f"Problem statement: {formatted_prompt}"},
         {"action": "draw_text", "content": "Solution:"},
+        {"action": "draw_text", "content": f"Source: {source_label}"},
     ]
-    actions.append({"action": "draw_text", "content": f"Source: {source_label}"})
-    if diagram_hint:
-        # Provide explicit drawing actions so the frontend can render a figure
-        actions.append({"action": "draw_text", "content": f"Diagram: {diagram_hint}"})
-        # Add generic shape/graph actions; frontend will display these as visual nodes
-        actions.append({"action": "draw_shape", "content": diagram_hint})
-        actions.append({"action": "draw_coordinate_axes", "content": diagram_hint})
 
-    offset = 0
-    if _is_word_problem(prompt):
-        target = _word_problem_target(prompt)
-        actions.append(
-            {
-                "action": "draw_text",
-                "content": "Step 1: Understand the word problem by converting the story into mathematical quantities.",
-            }
-        )
-        actions.append({"action": "draw_text", "content": f"Step 2: Identify what to find: {target}."})
-        offset = 2
+    diagram_primitives: list[dict[str, Any]] = []
+    construction_steps: list[str] = []
+    primitive_construction_map: list[int | None] = []
 
-    for index, step in enumerate(steps[:10], start=1):
-        actions.append({"action": "draw_text", "content": f"Step {index + offset}: {step}"})
+    if formatted_diagram:
+        try:
+            given_label = f"What is given: {formatted_prompt.split('. ')[0][:120]}"
+        except Exception:
+            given_label = "What is given: (see problem statement)"
+        target = _word_problem_target(formatted_prompt) if formatted_prompt else "the required value"
+        need_label = f"What needs to be found: {target}"
+        actions.append({"action": "write_text", "x": 10, "y": 80, "label": given_label, "metadata": {"diagram": True, "diagram_phase": 0}})
+        actions.append({"action": "write_text", "x": 10, "y": 100, "label": need_label, "metadata": {"diagram": True, "diagram_phase": 0}})
+        actions.append({"action": "draw_text", "content": f"Diagram: {formatted_diagram}", "metadata": {"diagram": True, "diagram_phase": 0}})
+        actions.append({"action": "draw_shape", "content": formatted_diagram, "metadata": {"diagram": True, "diagram_phase": 0}})
 
-    if answer:
-        actions.append({"action": "draw_text", "content": f"Final answer: {answer}"})
+        try:
+            from ..services.geometry_translator import translate_diagram_to_primitives
+
+            primitives = translate_diagram_to_primitives(formatted_diagram, model=None, max_attempts=1)
+            if primitives:
+                diagram_primitives = [dict(item) for item in primitives if isinstance(item, dict)]
+        except Exception:
+            diagram_primitives = []
+
+    if formatted_diagram and diagram_primitives:
+        if not any(_is_drawing_step_instruction(step) for step in formatted_steps[:6]):
+            construction_steps, primitive_construction_map = _diagram_construction_steps(diagram_primitives)
+
+    combined_steps = [*construction_steps, *formatted_steps]
+    if not combined_steps and formatted_answer:
+        combined_steps = ["Use the chapter method and compute step by step."]
+
+    step_entries: list[tuple[int, str]] = []
+    for index, step in enumerate(combined_steps[:14], start=1):
+        line = f"Step {index}: {step}"
+        actions.append({"action": "draw_text", "content": line})
+        step_entries.append((index, line))
+
+    if formatted_diagram and diagram_primitives:
+        drawing_step_numbers = [number for number, line in step_entries if _is_drawing_step_instruction(line)]
+        if not drawing_step_numbers and step_entries:
+            drawing_step_numbers = [step_entries[0][0]]
+        if not drawing_step_numbers:
+            drawing_step_numbers = [1]
+
+        first_drawing_step = drawing_step_numbers[0]
+        for action in actions:
+            if not isinstance(action, dict):
+                continue
+            metadata = action.get("metadata")
+            if not isinstance(metadata, dict) or not metadata.get("diagram"):
+                continue
+            metadata["diagram_step"] = first_drawing_step
+
+        drawing_steps_with_tokens: list[tuple[int, set[str]]] = [
+            (number, _tokens_from_step_text(line))
+            for number, line in step_entries
+            if number in drawing_step_numbers
+        ]
+        bucket_count = max(1, len(drawing_step_numbers))
+        primitive_total = max(1, len(diagram_primitives))
+
+        for index, primitive in enumerate(diagram_primitives, start=1):
+            primitive_copy = dict(primitive)
+            primitive_meta = primitive_copy.get("metadata")
+            if not isinstance(primitive_meta, dict):
+                primitive_meta = {}
+
+            mapped_from_construction = None
+            if primitive_construction_map and index - 1 < len(primitive_construction_map):
+                mapped_from_construction = primitive_construction_map[index - 1]
+
+            if mapped_from_construction is not None and mapped_from_construction > 0:
+                target_step = mapped_from_construction
+            else:
+                primitive_tokens = _tokens_from_primitive(primitive_copy)
+                matched_step: int | None = None
+                if primitive_tokens:
+                    for number, step_tokens in drawing_steps_with_tokens:
+                        if step_tokens and primitive_tokens.intersection(step_tokens):
+                            matched_step = number
+                            break
+                target_bucket = min(bucket_count - 1, int(((index - 1) * bucket_count) / primitive_total))
+                base_step = drawing_step_numbers[target_bucket]
+                target_step = base_step
+                if matched_step is not None and matched_step in drawing_step_numbers:
+                    matched_index = drawing_step_numbers.index(matched_step)
+                    target_step = drawing_step_numbers[max(target_bucket, matched_index)]
+
+            primitive_meta.update(
+                {
+                    "diagram": True,
+                    "diagram_phase": index,
+                    "diagram_step": target_step,
+                }
+            )
+            primitive_copy["metadata"] = primitive_meta
+            actions.append(primitive_copy)
+
+    if formatted_answer:
+        actions.append({"action": "draw_text", "content": f"Final answer: {formatted_answer}"})
+
     return actions
 
 
@@ -661,51 +1008,32 @@ def _extract_problem_metadata(actions: list[dict[str, Any]]) -> dict[str, str | 
     }
 
 
-def _chapter_number_for_session(session: StudentSession) -> str:
-    ncert_cbse10_numbers = {
-        "real_numbers": 1,
-        "polynomials": 2,
-        "pair_of_linear_equations": 3,
-        "quadratic_equations": 4,
-        "arithmetic_progressions": 5,
-        "triangles": 6,
-        "coordinate_geometry": 7,
-        "introduction_to_trigonometry": 8,
-        "applications_of_trigonometry": 9,
-        "circles": 10,
-        "constructions": 11,
-        "areas_related_to_circles": 12,
-        "surface_areas_and_volumes": 13,
-        "statistics": 14,
-        "probability": 15,
-    }
+def _normalize_chapter_key(value: object) -> str:
+    return " ".join(str(value or "").replace("_", " ").replace("-", " ").strip().lower().split())
 
+
+def _chapter_number_for_session(session: StudentSession) -> str:
     try:
         grade = int(getattr(session, "grade", 10) or 10)
         exam = "jee" if str(getattr(session, "exam", "cbse")).lower() == "jee" else "cbse"
         if grade == 10 and exam == "cbse":
-            chapter_name = str(session.chapter_name or session.current_topic or "").strip().lower()
+            chapter_name = _normalize_chapter_key(session.chapter_name or session.current_topic or "")
             curriculum = get_grade_curriculum(grade, exam)
             chapters = curriculum.get("chapters") if isinstance(curriculum, dict) else []
             if isinstance(chapters, list):
-                for chapter in chapters:
+                for idx, chapter in enumerate(chapters, start=1):
                     if not isinstance(chapter, dict):
                         continue
-                    slug = str(chapter.get("slug") or "").strip().lower()
-                    title = str(chapter.get("title") or chapter.get("chapter") or "").strip().lower()
+                    title = _normalize_chapter_key(chapter.get("title") or chapter.get("chapter") or "")
+                    slug = _normalize_chapter_key(chapter.get("slug") or "")
                     if chapter_name and (chapter_name == title or chapter_name in title or title in chapter_name):
-                        mapped = ncert_cbse10_numbers.get(slug)
-                        if mapped:
-                            return str(mapped)
-                for chapter in chapters:
+                        return str(get_pdf_chapter_number(grade, chapter, idx))
+                for idx, chapter in enumerate(chapters, start=1):
                     if not isinstance(chapter, dict):
                         continue
-                    slug = str(chapter.get("slug") or "").strip().lower()
-                    title = str(chapter.get("title") or chapter.get("chapter") or "").strip().lower()
-                    if chapter_name and (chapter_name == slug or chapter_name in slug):
-                        mapped = ncert_cbse10_numbers.get(slug)
-                        if mapped:
-                            return str(mapped)
+                    slug = _normalize_chapter_key(chapter.get("slug") or "")
+                    if chapter_name and (chapter_name == slug or chapter_name in slug or slug in chapter_name):
+                        return str(get_pdf_chapter_number(grade, chapter, idx))
 
         return str(int(getattr(session, "current_chapter_index", 0) or 0) + 1)
     except Exception:
@@ -725,7 +1053,7 @@ def _pdf_problem_actions_for_session(
     if exam != "cbse" or grade != 10:
         return None
 
-    chapter_name = str(session.chapter_name or session.current_topic or "").strip().lower()
+    chapter_name = _normalize_chapter_key(session.chapter_name or session.current_topic or "")
     curriculum = get_grade_curriculum(grade, exam)
     chapters = curriculum.get("chapters") if isinstance(curriculum, dict) else []
     if not isinstance(chapters, list) or not chapters:
@@ -736,9 +1064,16 @@ def _pdf_problem_actions_for_session(
     for idx, chapter in enumerate(chapters, start=1):
         if not isinstance(chapter, dict):
             continue
-        title = str(chapter.get("title") or chapter.get("chapter") or "").strip().lower()
-        slug = str(chapter.get("slug") or "").strip().lower()
-        if chapter_name and (chapter_name == title or chapter_name in title or title in chapter_name or chapter_name == slug):
+        title = _normalize_chapter_key(chapter.get("title") or chapter.get("chapter") or "")
+        slug = _normalize_chapter_key(chapter.get("slug") or "")
+        if chapter_name and (
+            chapter_name == title
+            or chapter_name in title
+            or title in chapter_name
+            or chapter_name == slug
+            or chapter_name in slug
+            or slug in chapter_name
+        ):
             matched_chapter = chapter
             matched_index = idx
             break
@@ -757,6 +1092,31 @@ def _pdf_problem_actions_for_session(
         return None
     if not problems:
         return None
+    
+    # Verify that the loaded PDF problems correspond to the matched chapter.
+    # Some PDF files or chapter mapping may be missing or misaligned; in that case
+    # return None so the caller can fall back to the topic-based actions.
+    try:
+        first_problem_title = str((problems[0].get("chapter_title") or "")).strip().lower()
+        matched_title = str((matched_chapter.get("title") or matched_chapter.get("chapter") or matched_chapter.get("slug") or "")).strip().lower()
+        if matched_title and first_problem_title and matched_title not in first_problem_title and first_problem_title not in matched_title:
+            msg = f"CBSE PDF chapter mismatch: requested '{matched_title}' but loaded '{first_problem_title}' (chapter_no={chapter_no})"
+            print(msg)
+            # Return a safe, frontend-visible warning action so UI shows an explanatory message
+            return [
+                {"action": "draw_text", "content": f"NCERT chapter not found or mismatch for: {chapter_title}"},
+                {"action": "draw_text", "content": "Please check curriculum JSON or PDF files for this chapter."},
+                {"action": "draw_text", "content": msg},
+            ]
+    except Exception as err:
+        # If any unexpected structure, return a safe frontend warning action
+        msg = f"CBSE PDF chapter verification error: {type(err).__name__}: {err}"
+        print(msg)
+        return [
+            {"action": "draw_text", "content": f"NCERT chapter not found: {chapter_title}"},
+            {"action": "draw_text", "content": "An error occurred while validating the chapter mapping."},
+            {"action": "draw_text", "content": msg},
+        ]
 
     problem = problems[variation % len(problems)]
     # Pass session_id and current chapter context to prevent context loss
@@ -773,6 +1133,7 @@ def _pdf_problem_actions_for_session(
         solved_steps=solved_steps,
         answer=answer,
         source_label="NCERT Chapter Exercise",
+        diagram_hint=solved.get("diagram"),
         chapter_no=str(chapter_no),
         chapter_name=chapter_title,
     )
@@ -803,9 +1164,33 @@ def _ensure_problem_headers(
     diagram_lines: list[str] = []
     final_answer_lines: list[str] = []
     raw_solution_lines: list[str] = []
+    existing_step_actions: list[dict[str, Any]] = []
+    preserved_diagram_actions: list[dict[str, Any]] = []
+
+    def _is_diagram_action(action: dict[str, Any]) -> bool:
+        action_name = str(action.get("action") or "").strip().lower()
+        if action_name in {
+            "draw_shape",
+            "draw_coordinate_axes",
+            "plot_curve",
+            "draw_circle",
+            "draw_line",
+            "draw_angle",
+            "highlight_element",
+        }:
+            return True
+        metadata = action.get("metadata")
+        if isinstance(metadata, dict) and metadata.get("diagram"):
+            return True
+        if action_name == "write_text":
+            return isinstance(metadata, dict) and metadata.get("diagram")
+        return False
+
     for action in filtered:
         text = _action_text(action)
         lowered = text.lower()
+        if _is_diagram_action(action):
+            preserved_diagram_actions.append(action)
         if not text:
             continue
         if lowered.startswith("source:"):
@@ -819,16 +1204,22 @@ def _ensure_problem_headers(
             continue
         if lowered.startswith("step "):
             raw_solution_lines.append(_clean_step_text(text))
+            existing_step_actions.append(action)
             continue
-        raw_solution_lines.append(text)
+        action_name = str(action.get("action") or "").strip().lower()
+        if action_name in {"draw_text", "write_text", "write", "text", "add_text"}:
+            raw_solution_lines.append(text)
 
     normalized_steps = [line.strip() for line in raw_solution_lines if str(line).strip()]
     normalized_steps = _prepend_tutoring_principles(problem_statement, normalized_steps)
     normalized_steps = _visualize_step_sequence(normalized_steps)
-    step_actions = [
-        {"action": "draw_text", "content": f"Step {idx}: {line}"}
-        for idx, line in enumerate(normalized_steps, start=1)
-    ]
+    if existing_step_actions:
+        step_actions = existing_step_actions
+    else:
+        step_actions = [
+            {"action": "draw_text", "content": f"Step {idx}: {line}"}
+            for idx, line in enumerate(normalized_steps, start=1)
+        ]
 
     headers = [
         {"action": "draw_text", "content": f"Chapter no: {chapter_no}"},
@@ -841,7 +1232,7 @@ def _ensure_problem_headers(
     ]
     extras = [{"action": "draw_text", "content": line} for line in [*source_lines[:1], *diagram_lines[:1]]]
     finals = [{"action": "draw_text", "content": line} for line in final_answer_lines[:1]]
-    return [*headers, *extras, *step_actions, *finals]
+    return [*headers, *extras, *preserved_diagram_actions, *step_actions, *finals]
 
 
 def _topic_state_key(session: StudentSession) -> str:
@@ -962,10 +1353,13 @@ def _voice_chunks_from_steps(spoken_response: str, steps: list[str]) -> list[str
     candidate_chunks = [
         str(step).strip()
         for step in steps
-        if str(step).strip().lower().startswith(("step ", "final answer:"))
+        if str(step).strip().lower().startswith("step ")
     ]
     if candidate_chunks:
         return candidate_chunks[:14]
+    final_only = [str(step).strip() for step in steps if str(step).strip().lower().startswith("final answer:")]
+    if final_only:
+        return final_only[:1]
     fallback = _steps_from_spoken_response(spoken_response, limit=12)
     return fallback if fallback else ([spoken_response] if spoken_response else [])
 
@@ -1010,7 +1404,7 @@ def _pyq_problem_actions(topic: str, rag_context: str, variation: int = 0, sessi
         solved_steps=solved_steps,
         answer=answer,
         source_label=source_label,
-        diagram_hint="Map known values, choose the theorem/formula, then simplify to the final result.",
+        diagram_hint=solved.get("diagram") or "Map known values, choose the theorem/formula, then simplify to the final result.",
     )
 
 
@@ -1043,7 +1437,7 @@ def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = ""
             solved_steps=solved_steps,
             answer=answer,
             source_label="Chapter Exercise",
-            diagram_hint="Use a = bq + r and split dividend into quotient-part plus remainder.",
+            diagram_hint=solved.get("diagram") or "Use a = bq + r and split dividend into quotient-part plus remainder.",
         )
 
     if "hcf" in lowered or "lcm" in lowered or "euclid algorithm" in lowered:
@@ -1071,7 +1465,7 @@ def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = ""
             solved_steps=solved_steps,
             answer=answer,
             source_label="Chapter Exercise",
-            diagram_hint="Create the Euclid remainder chain until remainder becomes zero.",
+            diagram_hint=solved.get("diagram") or "Create the Euclid remainder chain until remainder becomes zero.",
         )
 
     if "decimal expansion" in lowered:
@@ -1102,7 +1496,7 @@ def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = ""
             solved_steps=solved_steps,
             answer=answer,
             source_label="Chapter Exercise",
-            diagram_hint="Prime-factor tree of denominator: keep only 2 and 5 for terminating decimals.",
+            diagram_hint=solved.get("diagram") or "Prime-factor tree of denominator: keep only 2 and 5 for terminating decimals.",
         )
 
     if "irrational" in lowered:
@@ -1131,7 +1525,7 @@ def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = ""
             solved_steps=solved_steps,
             answer=answer,
             source_label="Chapter Exercise",
-            diagram_hint="Contradiction flow: assume rational -> derive impossible statement -> conclude irrational.",
+            diagram_hint=solved.get("diagram") or "Contradiction flow: assume rational -> derive impossible statement -> conclude irrational.",
         )
 
     if "set notation" in lowered or "representations" in lowered:
@@ -2250,6 +2644,7 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         prompt_anchor = forced_prefix.lower().split("let us read the problem statement:", 1)[-1][:60]
         if "let us read the problem statement" not in lowered_spoken and prompt_anchor.strip() not in lowered_spoken:
             spoken_response = f"{forced_prefix}{spoken_response}".strip()
+    spoken_response = _sanitize_for_speech(spoken_response)
     voice_chunks = _voice_chunks_from_steps(spoken_response, steps)
     audio_base64 = None
     if TTS_ENABLED and str(spoken_response or "").strip():
@@ -2373,13 +2768,4 @@ async def tutor_api(req: TutorRequest):
         print(f"ERROR in /tutor/ask: {type(e).__name__}: {str(e)}")
         import traceback
         traceback.print_exc()
-        return {"error": str(e), "type": type(e).__name__}
-
-
-@router.get("/attempts/{student_id}")
-def tutor_attempts(student_id: str, limit: int = 100):
-    try:
-        return {"attempts": get_attempts(student_id, limit)}
-    except Exception as error:
-        print("Attempt loading skipped:", error)
-        return {"attempts": [], "error": "Attempt history is unavailable."}
+        return {"error": "Your error message here"}

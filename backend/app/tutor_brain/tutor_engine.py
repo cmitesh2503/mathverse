@@ -40,6 +40,29 @@ AI_DOUBT_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ai-dou
 CLASS_DURATION_MINUTES = 45
 
 
+def sanitize_for_speech(text: str) -> str:
+    if not text:
+        return text
+    replacements = {
+        "√": " square root of ",
+        "sqrt": " square root of ",
+        "π": " pi ",
+        "×": " times ",
+        "÷": " divided by ",
+        "°": " degrees ",
+        "≤": " less than or equal to ",
+        "≥": " greater than or equal to ",
+        "≠": " not equal to ",
+        "≈": " approximately equal to ",
+        "~": " approximately ",
+        "^2": " squared ",
+        "^3": " cubed ",
+        "^": " to the power of ",
+    }
+    for symbol, word in replacements.items():
+        text = text.replace(symbol, word)
+    return re.sub(r"\s+", " ", text).strip()
+
 def clean_expression(expr: str) -> str:
     expr = expr.lower()
 
@@ -2801,7 +2824,7 @@ Return ONLY JSON:
         pause_ms: int = 900,
     ) -> dict[str, Any]:
         normalized_type = response_type if response_type in {"teach", "board_example", "question", "evaluation", "homework", "chapter_complete", "exercise_solution"} else "evaluation"
-        voice = voice_text or explanation
+        voice = sanitize_for_speech(voice_text or explanation)
         response = {
             "type": normalized_type,
             "chapter": chapter.get("title") if chapter else None,
@@ -3454,8 +3477,9 @@ Return ONLY JSON:
         state.class_last_step = "pdf_exercise"
 
         explanation = (
-            f"Solving {problem.get('exercise')} question {problem.get('number')} from "
-            f"{problem.get('chapter_title')}. Follow the whiteboard one step at a time."
+            f"Now we will solve {problem.get('exercise')} question {problem.get('number')} from "
+            f"{problem.get('chapter_title')}. First, let us read the question carefully: {problem.get('prompt')}. "
+            "Let me explain the solution step by step."
         )
         response = self._class_response(
             response_type="exercise_solution",
@@ -3580,4 +3604,3 @@ Return ONLY JSON:
             "questions": questions,
             "next_recommendation": "Submit answers when ready.",
         }
-

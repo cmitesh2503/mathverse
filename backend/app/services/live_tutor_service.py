@@ -65,17 +65,18 @@ def _language_instruction(language: str) -> str:
             "LANGUAGE STYLE: Speak in Hindi/Hinglish. Keep every mathematics term in English: "
             "probability, outcome, sample space, event, formula, theorem, equation, numerator, denominator, "
             "factor, HCF, LCM, triangle, coordinate, chapter names, symbols, and formulas. "
-            "Board labels must stay in English math notation."
+            "Board labels must use actual math symbols (√, π, ×). For your spoken audio, ALWAYS spell out symbols in words (e.g. 'square root' instead of 'sqrt', 'squared' instead of '^2', 'pi' instead of 'π') so the TTS engine pronounces them correctly."
         )
     if language == "gu-IN":
         return (
             "LANGUAGE STYLE: Speak in Gujarati/Gujlish. Keep every mathematics term in English: "
             "probability, outcome, sample space, event, formula, theorem, equation, numerator, denominator, "
             "factor, HCF, LCM, triangle, coordinate, chapter names, symbols, and formulas. "
-            "Board labels must stay in English math notation."
+            "Board labels must use actual math symbols (√, π, ×). For your spoken audio, ALWAYS spell out symbols in words (e.g. 'square root' instead of 'sqrt', 'squared' instead of '^2', 'pi' instead of 'π') so the TTS engine pronounces them correctly."
         )
     return (
-        "LANGUAGE STYLE: Speak in clear Indian English. Keep board labels and all mathematics notation in English."
+        "LANGUAGE STYLE: Speak in clear Indian English. Keep board labels and all mathematics notation in English using actual math symbols (√, π, ×). "
+        "For your spoken audio, ALWAYS spell out symbols in words (e.g. 'square root' instead of 'sqrt', 'squared' instead of '^2', 'pi' instead of 'π') so the TTS engine pronounces them correctly."
     )
 
 
@@ -363,6 +364,7 @@ class LiveTutorBridge:
             "FOLLOW-UP DOUBTS: If the student asks a doubt or follow-up question, pause the planned lesson, "
             "answer that doubt directly with one small example, update the whiteboard, then connect the answer "
             "back to the current chapter/topic before continuing.\n"
+            "READ PROBLEMS ALOUD FIRST: When giving an exercise or example problem, ALWAYS read the full question text clearly to the student first, then say 'Let me explain the solution step by step' before solving.\n"
             "For vague follow-ups like 'this step', 'that formula', or 'why did we do this', treat the question "
             "as referring to the CURRENT BLACKBOARD CONTEXT below. If the blackboard context is insufficient, "
             "ask one short clarification or counter-question before solving. Do not switch to Real Numbers, "
@@ -899,7 +901,7 @@ class LiveTutorBridge:
 
         if self._assistant_transcript.strip() and not self._assistant_audio_emitted:
             with contextlib.suppress(Exception):
-                audio_bytes = await generate_audio(self._assistant_transcript.strip())
+                audio_bytes = await generate_audio(_sanitize_for_speech(self._assistant_transcript.strip()))
                 if audio_bytes:
                     self._assistant_audio_emitted = True
                     await self.emit_event(
