@@ -2429,7 +2429,7 @@ def _rag_context_for_session(session: StudentSession, exam_type: str) -> str:
 
 
 async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any]) -> dict:
-    session: StudentSession = orchestrator.get_or_create_session(req.session_id)
+    session: StudentSession = await orchestrator.get_or_create_session(req.session_id)
     route_context = dict(req.context or {})
     if "grade" not in route_context and input_data.get("grade") is not None:
         route_context["grade"] = input_data.get("grade")
@@ -2459,6 +2459,7 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
     turn_index = int(getattr(session, "class_problem_cursor", 0))
     _ensure_class_timer(session, action)
     if _is_class_time_over(session) and action != "start":
+        await orchestrator.set_session(req.session_id, session)
         return _class_expired_payload(session)
 
     session.current_topic = (
@@ -2662,6 +2663,7 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
     ] or steps
     board_problem = None if concept_phase_used else _problem_prompt_from_actions(whiteboard_actions)
     problem_meta = {} if concept_phase_used else _extract_problem_metadata(whiteboard_actions)
+    await orchestrator.set_session(req.session_id, session)
     return {
         "type": "exam" if route == "proctor_agent" else ("teach" if route != "diagnostic_agent" else "evaluation"),
         "chapter": chapter_title,
@@ -2732,7 +2734,7 @@ async def tutor_api(req: TutorRequest):
         state = engine._ensure_state(req.session_id)
         state.exam = req.get_exam()
         if route_as_doubt and req.mode == "class":
-            class_session = orchestrator.sessions.get(req.session_id)
+            class_session = await orchestrator.get_session(req.session_id)
             _seed_doubt_state_from_class_context(state, class_session, input_data)
 
         question = chat_question or input_data.get("question")

@@ -120,26 +120,6 @@ def _serialize_lesson_state(snapshot):
     return dict(snapshot) if isinstance(snapshot, dict) else {}
 
 
-def _is_probably_silent_pcm(audio_bytes: bytes, *, threshold: int = 18) -> bool:
-    if len(audio_bytes) < 2:
-        return True
-
-    sample_count = min(len(audio_bytes) // 2, 800)
-    if sample_count <= 0:
-        return True
-
-    total = 0
-    peak = 0
-    for index in range(sample_count):
-        offset = index * 2
-        sample = int.from_bytes(audio_bytes[offset : offset + 2], "little", signed=True)
-        magnitude = abs(sample)
-        total += magnitude
-        peak = max(peak, magnitude)
-
-    return peak < threshold or (total / sample_count) < (threshold / 2)
-
-
 
 
 @app.websocket("/ws/tutor")
@@ -148,7 +128,7 @@ async def tutor_ws(websocket: WebSocket):
 
     from .services.session_service import session_service
     from .services.ai_gateway import live_api_available
-    from .services.live_tutor_service import LiveTutorBridge, LiveTutorConnectionError
+    from .services.live_tutor_service import LiveTutorBridge, LiveTutorConnectionError, VoiceProcessor
 
     print("Tutor WebSocket connected")
 
@@ -173,13 +153,17 @@ async def tutor_ws(websocket: WebSocket):
     async def push_prefetched_class_problem() -> None:
         from .api.tutor import orchestrator
 
-        session = orchestrator.get_or_create_session(session_id)
         while client_connected:
             try:
+                session = await orchestrator.get_session(session_id)
+                if session is None:
+                    await asyncio.sleep(0.35)
+                    continue
                 if session.next_problem_actions:
                     # Keep prefetch internal. The classroom auto-flow requests one
                     # turn at a time after the current explanation finishes.
                     session.next_problem_actions = []
+                    await orchestrator.set_session(session_id, session)
                 await asyncio.sleep(0.35)
             except Exception as error:
                 print(f"Tutor WebSocket push failed: {error}")
@@ -190,8 +174,7 @@ async def tutor_ws(websocket: WebSocket):
     live_bridge = LiveTutorBridge(session_id, safe_send_json)
     live_connected = False
     live_connect_retry_after = 0.0
-    last_live_audio_sent_at = 0.0
-    last_silent_audio_sent_at = 0.0
+    voice_processor = VoiceProcessor()
     initial_mode = (websocket.query_params.get("mode") or "").lower()
     initial_exam = (websocket.query_params.get("exam") or "").lower()
     with contextlib.suppress(Exception):
@@ -267,7 +250,7 @@ async def tutor_ws(websocket: WebSocket):
     if not await safe_send_json(
         {
             "type": "state",
-            "state": live_bridge.current_state(),
+            "state": await live_bridge.current_state(),
         }
     ):
         await live_bridge.close()
@@ -322,17 +305,11 @@ async def tutor_ws(websocket: WebSocket):
                     audio_chunk = base64.b64decode(payload["data"])
                 except Exception:
                     continue
-                now = asyncio.get_running_loop().time()
-                if now - last_live_audio_sent_at < 0.025:
+                if not voice_processor.process_chunk(audio_chunk):
                     continue
-                if _is_probably_silent_pcm(audio_chunk):
-                    if now - last_silent_audio_sent_at < 0.75:
-                        continue
-                    last_silent_audio_sent_at = now
                 if await ensure_live_bridge():
                     try:
                         await live_bridge.send_audio_chunk(audio_chunk)
-                        last_live_audio_sent_at = now
                         continue
                     except LiveTutorConnectionError as error:
                         print(f"Gemini Live audio disconnected: {error}")
@@ -466,6 +443,14 @@ async def tutor_ws(websocket: WebSocket):
             
 @app.on_event("startup")
 async def startup_event():
+    from .api.tutor import orchestrator
+
+    try:
+        ok = await orchestrator.verify_connection()
+    except Exception as error:
+        raise RuntimeError(f"Critical startup failure: Redis unreachable ({type(error).__name__}: {error})") from error
+    if not ok:
+        raise RuntimeError("Critical startup failure: Redis connection check failed.")
     print("MathVerse multi-agent backend ready.")
             
 @app.get("/homework/{student_id}")

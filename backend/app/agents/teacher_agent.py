@@ -37,6 +37,14 @@ def _language_instruction(language: str) -> str:
 
 
 class TutorAgent:
+    @staticmethod
+    def _render_system_prompt(template: str, **values: Any) -> str:
+        """Safely format known placeholders while keeping literal JSON braces intact."""
+        escaped = template.replace("{", "{{").replace("}", "}}")
+        for key in values:
+            escaped = escaped.replace(f"{{{{{key}}}}}", f"{{{key}}}")
+        return escaped.format(**values)
+
     SYSTEM_PROMPT = """You are Arvind Sir, a highly professional, expert Mathematics tutor for Grade {grade} {exam} students.
 
 **AVAILABLE KNOWLEDGE (RAG CONTEXT):**
@@ -204,7 +212,8 @@ ADDITIONAL RULES:
         chapter_title = str(get_val("chapter_name", "Mathematics Overview"))
         current_topic = str(get_val("current_topic", chapter_title) or chapter_title)
 
-        resolved_system_prompt = self.SYSTEM_PROMPT.format(
+        resolved_system_prompt = self._render_system_prompt(
+            self.SYSTEM_PROMPT,
             grade=grade_level,
             exam=exam_type,
             is_new_chapter=is_new_chap,

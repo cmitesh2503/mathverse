@@ -9,10 +9,10 @@ async def run_validation():
     
     # Test 1: Teaching Phase
     # We now properly instantiate the Pydantic model
-    orchestrator.sessions[session_id] = StudentSession(
+    await orchestrator.set_session(session_id, StudentSession(
         session_id=session_id,
         active_phase="teaching"
-    ) 
+    ))
     
     target = await orchestrator.route_message(session_id, "Can you explain circles?")
     assert target == "tutor_agent", f"Failed Teaching Route. Got: {target}"
@@ -20,7 +20,11 @@ async def run_validation():
 
     # Test 2: Practice Phase (Asking for help)
     # Update the attribute using dot notation
-    orchestrator.sessions[session_id].active_phase = "practice"
+    stored = await orchestrator.get_session(session_id)
+    if stored is None:
+        raise RuntimeError("Failed to load stored test session.")
+    stored.active_phase = "practice"
+    await orchestrator.set_session(session_id, stored)
     
     target = await orchestrator.route_message(session_id, "I need a hint for step 2")
     assert target == "tutor_agent", f"Failed Hint Route. Got: {target}"

@@ -5,6 +5,7 @@ import base64
 import contextlib
 import json
 import re
+import time
 from datetime import timedelta
 from contextlib import AsyncExitStack
 from typing import Awaitable, Callable
@@ -48,6 +49,47 @@ CLASS_SESSION_MINUTES = 45
 
 class LiveTutorConnectionError(RuntimeError):
     pass
+
+
+class VoiceProcessor:
+    """Simple VAD gate for forwarding voice chunks to the AI gateway."""
+
+    def __init__(self, *, silence_threshold: int = 18, min_stream_interval_seconds: float = 0.025):
+        self.silence_threshold = max(1, int(silence_threshold))
+        self.min_stream_interval_seconds = max(0.0, float(min_stream_interval_seconds))
+        self.vad_is_active = False
+        self._last_stream_at = 0.0
+
+    def _is_probably_silent_pcm(self, audio_bytes: bytes) -> bool:
+        if len(audio_bytes) < 2:
+            return True
+
+        sample_count = min(len(audio_bytes) // 2, 800)
+        if sample_count <= 0:
+            return True
+
+        total = 0
+        peak = 0
+        for index in range(sample_count):
+            offset = index * 2
+            sample = int.from_bytes(audio_bytes[offset : offset + 2], "little", signed=True)
+            magnitude = abs(sample)
+            total += magnitude
+            peak = max(peak, magnitude)
+
+        threshold = self.silence_threshold
+        return peak < threshold or (total / sample_count) < (threshold / 2)
+
+    def process_chunk(self, audio_bytes: bytes) -> bool:
+        self.vad_is_active = not self._is_probably_silent_pcm(audio_bytes)
+        if not self.vad_is_active:
+            return False
+
+        now = time.monotonic()
+        if now - self._last_stream_at < self.min_stream_interval_seconds:
+            return False
+        self._last_stream_at = now
+        return True
 
 
 def _normalize_teaching_language(value: object) -> str:
@@ -107,7 +149,6 @@ class LiveTutorBridge:
             session_id=session_id,
             active_phase="teaching",
         )
-        self.orchestrator.sessions[session_id] = self.student_session
 
     def update_context(self, payload: dict) -> None:
         context = payload.get("context") if isinstance(payload.get("context"), dict) else {}
@@ -224,8 +265,8 @@ class LiveTutorBridge:
         )
         await self._emit_agent_turn(agent_turn)
 
-    def current_state(self) -> dict:
-        self._sync_student_session()
+    async def current_state(self) -> dict:
+        await self._sync_student_session()
         return self._build_agent_state([])
 
     def _board_context_text(self) -> str:
@@ -338,13 +379,18 @@ class LiveTutorBridge:
                 f"{source_material}"
             )
 
-        resolved_system_prompt = self.tutor_agent.SYSTEM_PROMPT.format(
+        raw_phase = getattr(self.student_session, "active_phase", "teaching")
+        phase = str(getattr(raw_phase, "value", raw_phase) or "teaching").strip().lower()
+
+        resolved_system_prompt = self.tutor_agent._render_system_prompt(
+            self.tutor_agent.SYSTEM_PROMPT,
             grade=session_record.grade,
             exam=(getattr(self.student_session, "exam", "cbse") or "cbse").upper(),
             is_new_chapter=not bool(getattr(session_record, "transcript", None)),
             chapter_name=chapter_title,
             current_topic=topic_title,
             rag_context=source_material or "No RAG context provided.",
+            phase=phase,
         )
 
         agenda_list = getattr(self.student_session, "agenda", [])
@@ -417,7 +463,7 @@ class LiveTutorBridge:
         mode: str | None = None,
         context: dict | None = None,
     ) -> dict:
-        self._sync_student_session()
+        await self._sync_student_session()
         effective_mode = mode or self._active_mode
         effective_context = context if isinstance(context, dict) else self._active_context
         if not isinstance(effective_context, dict):
@@ -606,6 +652,7 @@ class LiveTutorBridge:
                 "whiteboard": state["whiteboard"],
             },
         )
+        await self.orchestrator.set_session(self.session_id, self.student_session)
 
         return {
             "route": route,
@@ -651,8 +698,10 @@ class LiveTutorBridge:
         self._assistant_fallback = ""
         self._input_transcript = ""
 
-    def _sync_student_session(self) -> None:
-        session = self.orchestrator.get_or_create_session(self.session_id)
+    async def _sync_student_session(self) -> None:
+        session = await self.orchestrator.get_session(self.session_id)
+        if session is None:
+            session = await self.orchestrator.set_session(self.session_id, self.student_session)
         self.student_session = session
         session_record = session_service.get_session(self.session_id)
         if session_record and session_record.topic_title and not self.student_session.current_topic:
