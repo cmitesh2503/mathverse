@@ -338,6 +338,9 @@ class TutorEngine:
         if getattr(state, "class_last_step", None) == "pdf_exercise" and self._looks_like_progress_request(lowered):
             response = self.run_class(state, {"action": "next_pdf_exercise", "grade": state.grade, "subject": "math"})
             return self._text_from_class_response(response)
+
+        if self._is_teaching_phase(state) and self._looks_like_solution_attempt(text):
+            return "Let's finish the theory first! I'll guide you through the formula."
         
         if state.stage == "STEP_TEACH":
             return self._next_teaching_step(state, text)
@@ -1183,6 +1186,30 @@ class TutorEngine:
             return letters or None
         
         return raw_message.strip().lower() or None
+
+    def _is_teaching_phase(self, state: ClassroomState) -> bool:
+        stage_value = str(getattr(state, "stage", "") or "").strip().upper()
+        class_phase = str(getattr(state, "class_phase", "") or "").strip().lower()
+        return stage_value == "TEACH" or class_phase in {"teach", "teaching"}
+
+    def _looks_like_solution_attempt(self, text: str) -> bool:
+        lowered = str(text or "").strip().lower()
+        if not lowered:
+            return False
+
+        # Ignore explicit teaching/progression intents.
+        if any(token in lowered for token in ["next", "explain", "why", "how", "hint", "teach", "theory"]):
+            return False
+
+        if re.search(r"\banswer\s*(is|=)\b", lowered):
+            return True
+        if re.search(r"\b[a-z]\s*=", lowered):
+            return True
+        if re.search(r"\d", lowered) and re.search(r"[=+\-*/^]", lowered):
+            return True
+        if re.fullmatch(r"[-+]?\d+(?:\.\d+)?(?:\s*,\s*[-+]?\d+(?:\.\d+)?)*", lowered):
+            return True
+        return False
     
     
     def _format_expected_answer(self, problem: dict[str, Any]) -> str:

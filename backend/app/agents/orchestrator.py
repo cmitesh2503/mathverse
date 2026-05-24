@@ -1,23 +1,89 @@
 from __future__ import annotations
 
 import json
+import os
+from typing import Any
+
+import redis
 
 from ..models.session import SessionPhase, StudentSession
 from ..tutor_brain.curriculum import list_chapters
 
 
+class RedisSessionStore:
+    """Dictionary-like adapter backed by Orchestrator Redis session methods."""
+
+    def __init__(self, orchestrator: "Orchestrator") -> None:
+        self._orchestrator = orchestrator
+
+    def get(self, session_id: str, default: Any = None) -> StudentSession | Any:
+        session = self._orchestrator.get_session(session_id)
+        return session if session is not None else default
+
+    def __getitem__(self, session_id: str) -> StudentSession:
+        session = self._orchestrator.get_session(session_id)
+        if session is None:
+            raise KeyError(session_id)
+        return session
+
+    def __setitem__(self, session_id: str, value: StudentSession | dict[str, Any]) -> None:
+        self._orchestrator.set_session(session_id, value)
+
+    def __contains__(self, session_id: object) -> bool:
+        if not isinstance(session_id, str):
+            return False
+        return self._orchestrator.get_session(session_id) is not None
+
+
 class Orchestrator:
     ANSWER_KEYWORDS = ("answer is", "submitted", "final")
     HELP_KEYWORDS = ("hint", "help", "stuck")
+    SESSION_TTL_SECONDS = 24 * 60 * 60
 
     def __init__(self) -> None:
-        self.sessions: dict[str, StudentSession] = {}
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        self._redis_key_prefix = os.getenv("ORCHESTRATOR_SESSION_KEY_PREFIX", "orchestrator:session:")
+        self.redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
+        self.redis_client.ping()
+
+        self._session_cache: dict[str, StudentSession] = {}
+        self.sessions = RedisSessionStore(self)
         self.active_sessions = self.sessions
 
+    def _redis_key(self, session_id: str) -> str:
+        return f"{self._redis_key_prefix}{session_id}"
+
+    def get_session(self, session_id: str) -> StudentSession | None:
+        cached = self._session_cache.get(session_id)
+        if cached is not None:
+            return cached
+
+        raw = self.redis_client.get(self._redis_key(session_id))
+        if not raw:
+            return None
+
+        payload = json.loads(raw)
+        session = StudentSession.model_validate(payload)
+        self._session_cache[session_id] = session
+        return session
+
+    def set_session(self, session_id: str, data: StudentSession | dict[str, Any]) -> StudentSession:
+        session = data if isinstance(data, StudentSession) else StudentSession.model_validate(data)
+        session.session_id = session_id
+
+        serialized = json.dumps(session.model_dump(mode="json"), ensure_ascii=False)
+        self.redis_client.set(self._redis_key(session_id), serialized, ex=self.SESSION_TTL_SECONDS)
+        self._session_cache[session_id] = session
+        return session
+
     def get_or_create_session(self, session_id: str) -> StudentSession:
-        if session_id not in self.active_sessions:
-            self.active_sessions[session_id] = StudentSession(session_id=session_id)
-        return self.active_sessions[session_id]
+        existing = self.get_session(session_id)
+        if existing is not None:
+            return existing
+
+        created = StudentSession(session_id=session_id)
+        self.set_session(session_id, created)
+        return created
 
     def _normalize_grade(self, context: dict | None, fallback: int) -> int:
         raw_grade = (context or {}).get("grade", fallback)
@@ -217,19 +283,25 @@ class Orchestrator:
             self._initialize_grade_curriculum(session, grade)
 
         if session.exam == "jee" and mode_normalized in {"mock_test", "exam"}:
+            self.set_session(session_id, session)
             return "proctor_agent"
 
         if phase == SessionPhase.TEACHING:
+            self.set_session(session_id, session)
             return "tutor_agent"
 
         if phase == SessionPhase.TESTING:
+            self.set_session(session_id, session)
             return "proctor_agent"
 
         if phase == SessionPhase.PRACTICE:
             if any(keyword in message for keyword in self.ANSWER_KEYWORDS):
+                self.set_session(session_id, session)
                 return "diagnostic_agent"
 
             if any(keyword in message for keyword in self.HELP_KEYWORDS):
+                self.set_session(session_id, session)
                 return "tutor_agent"
 
+        self.set_session(session_id, session)
         return "tutor_agent"

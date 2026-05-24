@@ -128,7 +128,13 @@ def generate_response(prompt: str, model: str = DEFAULT_TEXT_MODEL) -> str:
     try:
         client = _new_sdk_client()
         if client is not None:
-            response = client.models.generate_content(model=model_id, contents=prompt)
+            from google.genai import types
+
+            config = types.GenerateContentConfig(
+                temperature=0.0,
+                response_mime_type="application/json",
+            )
+            response = client.models.generate_content(model=model_id, contents=prompt, config=config)
             text = getattr(response, "text", None)
     except Exception as error:  # pragma: no cover - network dependent
         fallback = _handle_generation_error(error, source="GenAI SDK", prompt=prompt)
@@ -139,7 +145,10 @@ def generate_response(prompt: str, model: str = DEFAULT_TEXT_MODEL) -> str:
         try:
             if _configure_legacy_sdk():
                 legacy_model = legacy_genai.GenerativeModel(model_id)
-                response = legacy_model.generate_content(prompt)
+                response = legacy_model.generate_content(
+                    prompt,
+                    generation_config={"temperature": 0.0},
+                )
                 text = getattr(response, "text", None)
         except Exception as error:  # pragma: no cover - network dependent
             fallback = _handle_generation_error(error, source="Legacy Gemini SDK", prompt=prompt)
@@ -209,6 +218,7 @@ def _generate_audio_sync(transcript: str, voice_name: str) -> bytes:
         from google.genai import types as genai_types  # type: ignore
 
         config = genai_types.GenerateContentConfig(
+            temperature=0.0,
             response_modalities=["AUDIO"],
             speech_config=genai_types.SpeechConfig(
                 voice_config=genai_types.VoiceConfig(
@@ -220,6 +230,7 @@ def _generate_audio_sync(transcript: str, voice_name: str) -> bytes:
         )
     except Exception:
         config = {
+            "temperature": 0.0,
             "response_modalities": ["AUDIO"],
             "speech_config": {
                 "voice_config": {

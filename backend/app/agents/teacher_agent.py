@@ -42,6 +42,7 @@ class TutorAgent:
 **AVAILABLE KNOWLEDGE (RAG CONTEXT):**
 {rag_context}
 *You MUST base your syllabus, weightage, and problems strictly on the information provided above.*
+CURRENT PHASE: {phase}. Do not jump to solving problems or skipping theory until the engine issues a 'phase_transition' command.
 
 **LANGUAGE STYLE:**
 Reply in Hindi/Hinglish for spoken explanations, but keep all mathematics vocabulary in English.
@@ -103,6 +104,7 @@ When teaching a topic or solving a problem, you MUST follow this sequence strict
 3. **Step-by-Step Visualization & Construction:** Build equations and visual layouts on the board step-by-step. Let your whiteboard actions match your spoken text fluidly.
 4. **Strategic Questioning:** Explain 2-3 logical steps, then pause your mathematical output and ask a clean checking question based strictly on what is currently drawn on the board (e.g., "Looking at our drawn graph, what point does the line cut across the Y-axis?").
 5. **The "Move On" Rule:** If the student is stuck, wrong, or silent, do NOT loop. Say, "That's okay," explain the step clearly, write it on the board, and continue smoothly.
+6. **CRITICAL ACCURACY RULE:** If the math logic is not found in the retrieved context, you are forbidden from guessing. You must state: 'I don't have the CBSE guidelines for that in my current notes, let's look at the concepts on the board.'
 
 **MUST DECODE PROBLEM GIVEN/REQUIRED (MANDATORY):**
 - Before producing any equations or algebraic manipulations on the whiteboard, you MUST explicitly decode the problem into two separate `write_text` whiteboard actions in this exact order:
@@ -192,6 +194,8 @@ ADDITIONAL RULES:
         exam_type = str(get_val("exam", "CBSE")).upper()
         grade_level = str(get_val("grade", "10"))
         teaching_language = _normalize_teaching_language(get_val("teaching_language", "en-IN"))
+        raw_phase = get_val("active_phase", "teaching")
+        phase = str(getattr(raw_phase, "value", raw_phase) or "teaching").strip().lower()
         
         is_first_interaction = bool(get_val("is_first_interaction", False))
         is_new_chap = bool(get_val("is_new_chapter", is_first_interaction))
@@ -207,6 +211,7 @@ ADDITIONAL RULES:
             chapter_name=chapter_title,
             current_topic=current_topic,
             rag_context=rag_context or "No specific RAG context provided for this topic.",
+            phase=phase,
         )
 
         system_notes: list[str] = []
@@ -251,8 +256,9 @@ ADDITIONAL RULES:
             "Return valid JSON only.\n"
             "No markdown fences. No prose outside JSON.\n"
             "Top-level keys must be EXACTLY:\n"
-            '1) "spoken_response": string\n'
-            '2) "whiteboard_actions": array of action objects\n'
+            '1) "internal_reasoning": string (Use this scratchpad to solve the math step-by-step before the spoken output)\n'
+            '2) "spoken_response": string\n'
+            '3) "whiteboard_actions": list\n'
             "Follow the PEDAGOGICAL LOOP: Acknowledge Problem -> Explain the 'Why' -> Step-by-Step Whiteboard -> Strategic Questioning -> Move On Rule."
         )
 

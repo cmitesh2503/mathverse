@@ -2410,11 +2410,14 @@ def _rag_context_for_session(session: StudentSession, exam_type: str) -> str:
         print(f"Firestore curriculum grounding failed ({type(error).__name__}): {error}")
 
     try:
+        raw_phase = getattr(session, "active_phase", "teaching")
+        phase = str(getattr(raw_phase, "value", raw_phase) or "teaching").strip().lower()
         raw_context = retrieve_context(
             query=query,
             exam_type=normalized_exam,
             k=12,
             grade=grade,
+            phase=phase,
         )
         scoped_context = _scope_rag_context_to_chapter(raw_context, chapter=chapter, topic=topic)
         _RAG_CONTEXT_CACHE[cache_key] = scoped_context

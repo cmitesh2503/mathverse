@@ -1,26 +1,30 @@
 from pathlib import Path
-import warnings
+import os
+
+from ..core.config import GEMINI_API_KEY
 
 
 retriever_instances: dict[str, object] = {}
 vectorstores: dict[str, object] = {}
 rag_disabled_reason: str | None = None
+# Index path stays unchanged, but this FAISS index must be rebuilt with
+# backend/create_index.py whenever EMBEDDING_MODEL changes.
 FAISS_INDEX_PATH = Path(__file__).resolve().parents[2] / "data" / "faiss_index"
 CBSE_INDEX_NAME = "cbse_index"
 JEE_INDEX_NAME = "jee_index"
+EMBEDDING_MODEL = os.getenv("RAG_EMBEDDING_MODEL", "gemini-embedding-2-preview")
 
 
-def _embedding_class():
-    try:
-        from langchain_huggingface import HuggingFaceEmbeddings
+def _query_embeddings():
+    from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-        return HuggingFaceEmbeddings
-    except ImportError:
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message=r"The class `HuggingFaceEmbeddings` was deprecated in LangChain")
-            from langchain_community.embeddings import HuggingFaceEmbeddings
-
-        return HuggingFaceEmbeddings
+    embedding_kwargs = {
+        "model": EMBEDDING_MODEL,
+        "task_type": "RETRIEVAL_QUERY",
+    }
+    if GEMINI_API_KEY:
+        embedding_kwargs["google_api_key"] = GEMINI_API_KEY
+    return GoogleGenerativeAIEmbeddings(**embedding_kwargs)
 
 
 def _normalize_exam_type(exam_type: str | None) -> str:
@@ -51,8 +55,7 @@ def _initialize_indexes() -> None:
         if not FAISS_INDEX_PATH.exists():
             raise FileNotFoundError(f"FAISS index directory not found: {FAISS_INDEX_PATH}")
 
-        embeddings_cls = _embedding_class()
-        embeddings = embeddings_cls(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        embeddings = _query_embeddings()
 
         try:
             vectorstores["cbse"] = _load_index(embeddings, CBSE_INDEX_NAME)
@@ -66,11 +69,11 @@ def _initialize_indexes() -> None:
 
         retriever_instances["cbse"] = vectorstores["cbse"].as_retriever(
             search_type="mmr",
-            search_kwargs={"k": 10, "fetch_k": 40, "lambda_mult": 0.65},
+            search_kwargs={"k": 3, "fetch_k": 15, "lambda_mult": 0.75},
         )
         retriever_instances["jee"] = vectorstores["jee"].as_retriever(
             search_type="mmr",
-            search_kwargs={"k": 10, "fetch_k": 40, "lambda_mult": 0.65},
+            search_kwargs={"k": 3, "fetch_k": 15, "lambda_mult": 0.75},
         )
         print(f"RAG loaded from {FAISS_INDEX_PATH}")
     except Exception as error:
@@ -98,17 +101,47 @@ def _doc_metadata_grade(doc: object) -> int | None:
     return None
 
 
-def get_context(query: str, exam_type: str = "cbse", k: int = 8, grade: int | None = None) -> str:
+def _doc_matches_phase(doc: object, phase: str | None) -> bool:
+    normalized_phase = str(phase or "").strip().lower()
+    if not normalized_phase:
+        return True
+    if normalized_phase != "teaching":
+        return True
+
+    metadata = getattr(doc, "metadata", None)
+    if not isinstance(metadata, dict):
+        return False
+
+    def contains_theory(value: object) -> bool:
+        if isinstance(value, str):
+            return value.strip().lower() == "theory"
+        if isinstance(value, (list, tuple, set)):
+            return any(contains_theory(item) for item in value)
+        return False
+
+    for key in ("phase", "content_type", "chunk_type", "type", "tag", "tags", "category", "section"):
+        if contains_theory(metadata.get(key)):
+            return True
+    return False
+
+
+def get_context(
+    query: str,
+    exam_type: str = "cbse",
+    k: int = 3,
+    grade: int | None = None,
+    phase: str | None = None,
+) -> str:
     _initialize_indexes()
     normalized_exam = _normalize_exam_type(exam_type)
     store = vectorstores.get(normalized_exam, vectorstores.get("cbse"))
     if store is None:
         return ""
 
-    target_k = max(6, int(k or 8))
+    target_k = max(2, int(k or 3))
     docs = []
     try:
-        docs = store.max_marginal_relevance_search(query, k=target_k, fetch_k=max(24, target_k * 4))
+        docs = store.max_marginal_relevance_search(query, k=target_k, fetch_k=max(10, target_k * 3))
     except Exception:
         retriever = get_retriever(exam_type=normalized_exam)
         docs = retriever.invoke(query)
@@ -117,6 +150,8 @@ def get_context(query: str, exam_type: str = "cbse", k: int = 8, grade: int | No
         filtered = [doc for doc in docs if _doc_metadata_grade(doc) in {None, int(grade)}]
         if filtered:
             docs = filtered
+    if phase is not None:
+        docs = [doc for doc in docs if _doc_matches_phase(doc, phase)]
 
     return "\n\n".join(
         (doc.page_content or "").strip()
@@ -125,9 +160,15 @@ def get_context(query: str, exam_type: str = "cbse", k: int = 8, grade: int | No
     )
 
 
-def retrieve_context(query: str, exam_type: str = "cbse", k: int = 8, grade: int | None = None) -> str:
+def retrieve_context(
+    query: str,
+    exam_type: str = "cbse",
+    k: int = 8,
+    grade: int | None = None,
+    phase: str | None = None,
+) -> str:
     try:
-        return get_context(query=query, exam_type=exam_type, k=k, grade=grade)
+        return get_context(query=query, exam_type=exam_type, k=k, grade=grade, phase=phase)
     except Exception as error:
         # Fail open so tutoring can continue even when local embedding/index deps are unavailable.
         if not rag_disabled_reason:
