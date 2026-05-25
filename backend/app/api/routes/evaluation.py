@@ -5,7 +5,6 @@ import uuid
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
-from PyPDF2 import PdfReader
 
 from ...agents.chapter_test_agent import chapter_test_agent
 from ...services.bulk_evaluator import evaluate_submission
@@ -14,7 +13,7 @@ from ...services.firebase_service import (
     get_evaluation_records_by_student,
     save_evaluation_record,
 )
-from ...services.retrieval_service import embed_text, retrieve_context
+from ...services.rag_service import embed_text, retrieve_context
 from ...services.session_service import session_service
 
 
@@ -54,6 +53,11 @@ def _save_test_material_file(*, test_id: str, source_filename: str | None, file_
 
 
 def _extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
+    try:
+        from PyPDF2 import PdfReader
+    except ImportError as error:
+        raise HTTPException(status_code=503, detail="PyPDF2 is required for PDF evaluation upload.") from error
+
     reader = PdfReader(BytesIO(pdf_bytes))
     pages = []
     for page in reader.pages:

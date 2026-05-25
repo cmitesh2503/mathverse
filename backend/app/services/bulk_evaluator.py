@@ -5,7 +5,7 @@ import re
 from typing import Any
 
 from .evaluation_service import build_bulk_evaluation_prompt, normalize_bulk_evaluation_payload
-from .retrieval_service import retrieve_context
+from .rag_service import retrieve_context
 
 try:
     from google import genai as google_genai

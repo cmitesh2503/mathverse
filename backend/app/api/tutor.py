@@ -2469,6 +2469,7 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         or ("JEE Mathematics" if session.exam == "jee" else "CBSE Mathematics")
     )
     session.active_phase = "practice" if input_data.get("answer") else "teaching"
+    session.current_phase = str(getattr(session.active_phase, "value", session.active_phase) or "teaching").lower()
 
     if input_data.get("question"):
         session.current_problem = {"prompt": input_data["question"]}

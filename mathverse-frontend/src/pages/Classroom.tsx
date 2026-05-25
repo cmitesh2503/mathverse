@@ -229,6 +229,12 @@ export default function Classroom({ onNavigate }: Props) {
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const outputPlaybackCursorRef = useRef(0);
   const activePlaybackSourcesRef = useRef<AudioBufferSourceNode[]>([]);
+  const latestClassSnapshotRef = useRef<{ chapter: string; concept: string; visibleSteps: string[] }>({
+    chapter: "Live Class",
+    concept: "Mathematics",
+    visibleSteps: [],
+  });
+  const queueAutoListenRef = useRef<() => void>(() => {});
 
   const onResponse = useCallback(
     (data: ClassResponse) => {
@@ -336,6 +342,10 @@ export default function Classroom({ onNavigate }: Props) {
   const homework = response?.homework || response?.content?.homework || response?.content?.questions || [];
   const isQuestion = response?.type === "question";
   const sessionExpired = Boolean(response?.session_expired);
+
+  useEffect(() => {
+    latestClassSnapshotRef.current = { chapter, concept, visibleSteps };
+  }, [chapter, concept, visibleSteps]);
 
   useEffect(() => {
     liveDiscussionActiveRef.current = liveDiscussionActive;
@@ -656,6 +666,7 @@ export default function Classroom({ onNavigate }: Props) {
       void startMicrophone();
     }, delayMs);
   }
+  queueAutoListenRef.current = queueAutoListen;
 
   const playLiveAudioChunk = useCallback(async (base64Data: string, sampleRate: number) => {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -682,7 +693,7 @@ export default function Classroom({ onNavigate }: Props) {
     source.onended = () => {
       activePlaybackSourcesRef.current = activePlaybackSourcesRef.current.filter((item) => item !== source);
       if (!activePlaybackSourcesRef.current.length) {
-        queueAutoListen();
+        queueAutoListenRef.current();
       }
     };
 
@@ -774,7 +785,7 @@ export default function Classroom({ onNavigate }: Props) {
     [closeTutorSocket, sendSocketPayload, sendStopListeningSignal],
   );
 
-  function openTutorSocket() {
+  const openTutorSocket = useCallback(() => {
     if (tutorSocketRef.current?.readyState === WebSocket.OPEN) {
       return Promise.resolve(tutorSocketRef.current);
     }
@@ -864,10 +875,11 @@ export default function Classroom({ onNavigate }: Props) {
             const state = payload.state;
             const spokenResponse = String(payload.spoken_response || assistantDraftRef.current || "").trim();
             const actions = Array.isArray(payload.whiteboard_actions) ? payload.whiteboard_actions : state?.whiteboard_actions || [];
+            const { chapter: currentChapter, concept: currentConcept, visibleSteps: currentVisibleSteps } = latestClassSnapshotRef.current;
             const board = state?.whiteboard || {
-              title: chapter,
+              title: currentChapter,
               subtitle: "Arvind Sir's smart blackboard",
-              chalk_lines: visibleSteps,
+              chalk_lines: currentVisibleSteps,
               actions,
             };
             const steps = Array.isArray(board.chalk_lines)
@@ -879,9 +891,9 @@ export default function Classroom({ onNavigate }: Props) {
             if (spokenResponse || steps.length) {
               prime({
                 type: "teach",
-                chapter,
-                topic: chapter,
-                concept,
+                chapter: currentChapter,
+                topic: currentChapter,
+                concept: currentConcept,
                 explanation: spokenResponse || "Arvind Sir answered your doubt.",
                 voice_text: spokenResponse || "Arvind Sir answered your doubt.",
                 steps,
@@ -897,30 +909,33 @@ export default function Classroom({ onNavigate }: Props) {
             }
             assistantDraftRef.current = "";
             activeAssistantTurnIdRef.current = null;
-            queueAutoListen();
+            queueAutoListenRef.current();
 
           }
           if (payload.type === "next_problem" && Array.isArray(payload.whiteboard_actions)) {
             console.debug("Ignoring prefetched next_problem; auto-flow requests one turn at a time.");
           }
-        } catch (e) {
+        } catch {
           console.debug("Tutor socket event:", event.data);
         }
       };
     });
-  }
+  }, [examMode, liveChapterSlug, playLiveAudioChunk, prime, selectedGrade, sessionId, stopLiveAudioPlayback]);
 
   useEffect(() => {
     if (!classAllowed || !classStarted) return;
+    let cancelled = false;
 
     void openTutorSocket().catch((error) => {
+      if (cancelled) return;
       console.error("Failed to open tutor websocket for class push", error);
     });
 
     return () => {
+      cancelled = true;
       closeTutorSocket();
     };
-  }, [classAllowed, classStarted, examMode, liveChapterSlug, openTutorSocket, closeTutorSocket, selectedGrade, sessionId]);
+  }, [classAllowed, classStarted, closeTutorSocket, openTutorSocket]);
 
   async function startMicrophone() {
     try {

@@ -7,6 +7,7 @@ from typing import Any
 
 from ..models.session import StudentSession
 from ..services.ai_gateway import generate_response
+from ..services.rag_service import retrieve_context
 
 
 def _normalize_teaching_language(value: object) -> str:
@@ -37,6 +38,91 @@ def _language_instruction(language: str) -> str:
 
 
 class TutorAgent:
+    DEFAULT_CONFIGURATION: dict[str, Any] = {
+        "default_exam": "cbse",
+        "default_grade": 10,
+        "default_phase": "teaching",
+        "default_chapter_label": "Mathematics Overview",
+        "default_topic_label": "Mathematics",
+        "default_difficulty_level": "moderate",
+        "default_session_id": "live-session",
+        "default_teaching_language": "en-IN",
+        "default_rag_k": 8,
+        "missing_rag_context_label": "No specific RAG context provided for this topic.",
+    }
+
+    def __init__(self, configuration: dict[str, Any] | None = None) -> None:
+        merged = dict(self.DEFAULT_CONFIGURATION)
+        if isinstance(configuration, dict):
+            merged.update(configuration)
+        self.configuration = merged
+
+    def _config(self, key: str, fallback: Any = None) -> Any:
+        if key in self.configuration:
+            return self.configuration[key]
+        return fallback
+
+    def _session_value(self, session: Any, attr: str, default: Any = None) -> Any:
+        if isinstance(session, dict):
+            return session.get(attr, default)
+        return getattr(session, attr, default)
+
+    @staticmethod
+    def _coerce_int(value: Any, default: int) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _resolve_current_chapter(self, session: Any) -> str:
+        raw = self._session_value(session, "current_chapter")
+        if not str(raw or "").strip():
+            raw = self._session_value(session, "chapter_name")
+        return str(raw or "").strip()
+
+    def _resolve_current_phase(self, session: Any) -> str:
+        raw = self._session_value(session, "current_phase")
+        if raw is None:
+            raw = self._session_value(session, "active_phase", self._config("default_phase", "teaching"))
+        resolved = str(getattr(raw, "value", raw) or "").strip().lower()
+        if resolved:
+            return resolved
+        return str(self._config("default_phase", "teaching")).strip().lower() or "teaching"
+
+    def _resolve_current_lesson_topic(self, session: Any, user_message: str) -> str:
+        topic = str(self._session_value(session, "current_topic", "") or "").strip()
+        if topic:
+            return topic
+        chapter = self._resolve_current_chapter(session)
+        if chapter:
+            return chapter
+        fallback = str(user_message or "").strip()
+        if fallback:
+            return fallback
+        return str(self._config("default_topic_label", "Mathematics")).strip() or "Mathematics"
+
+    def _build_session_rag_context(self, session: Any, user_message: str) -> str:
+        current_lesson_topic = self._resolve_current_lesson_topic(session, user_message)
+        current_chapter = self._resolve_current_chapter(session)
+        current_phase = self._resolve_current_phase(session)
+        exam_type = str(self._session_value(session, "exam", self._config("default_exam", "cbse"))).strip().lower() or "cbse"
+        grade = self._coerce_int(self._session_value(session, "grade", self._config("default_grade", 10)), 10)
+        target_k = max(1, self._coerce_int(self._config("default_rag_k", 8), 8))
+
+        chapter_filter: str | None = current_chapter or None
+        if chapter_filter is None:
+            print("WARNING: session.current_chapter is empty. Retrieving RAG context across all chapters.")
+
+        context = retrieve_context(
+            query=current_lesson_topic,
+            chapter=chapter_filter,
+            phase=current_phase,
+            exam_type=exam_type,
+            k=target_k,
+            grade=grade,
+        )
+        return str(context or "").strip()
+
     @staticmethod
     def _render_system_prompt(template: str, **values: Any) -> str:
         """Safely format known placeholders while keeping literal JSON braces intact."""
@@ -160,7 +246,23 @@ ADDITIONAL RULES:
         rag_context: str = "",
     ) -> dict:
         was_first_interaction = session.is_first_interaction
-        prompt = self._build_prompt(session, user_message, diagnostic_nudge, rag_context=rag_context)
+        session_rag_context = await asyncio.to_thread(self._build_session_rag_context, session, user_message)
+        provided_rag_context = str(rag_context or "").strip()
+        resolved_rag_context = session_rag_context
+        if provided_rag_context and session_rag_context:
+            if session_rag_context in provided_rag_context:
+                resolved_rag_context = provided_rag_context
+            else:
+                resolved_rag_context = f"{provided_rag_context}\n\n{session_rag_context}".strip()
+        elif provided_rag_context:
+            resolved_rag_context = provided_rag_context
+
+        prompt = self._build_prompt(
+            session,
+            user_message,
+            diagnostic_nudge,
+            rag_context=resolved_rag_context,
+        )
         raw_response = await asyncio.to_thread(generate_response, prompt)
         result = self._parse_agent_response(raw_response)
 
@@ -189,28 +291,32 @@ ADDITIONAL RULES:
         diagnostic_nudge: str | None,
         rag_context: str,
     ) -> str:
-        # Robust context extractor handling both class model instances and standard dictionaries
-        def get_val(attr: str, default: Any = None) -> Any:
-            if isinstance(session, dict):
-                return session.get(attr, default)
-            return getattr(session, attr, default)
-
-        current_problem = json.dumps(get_val("current_problem", {}), ensure_ascii=False)
-        mistake_history = json.dumps(get_val("mistake_history", []), ensure_ascii=False)
-        agenda = json.dumps(get_val("agenda", []), ensure_ascii=False)
+        current_problem = json.dumps(self._session_value(session, "current_problem", {}), ensure_ascii=False)
+        mistake_history = json.dumps(self._session_value(session, "mistake_history", []), ensure_ascii=False)
+        agenda = json.dumps(self._session_value(session, "agenda", []), ensure_ascii=False)
         
-        exam_type = str(get_val("exam", "CBSE")).upper()
-        grade_level = str(get_val("grade", "10"))
-        teaching_language = _normalize_teaching_language(get_val("teaching_language", "en-IN"))
-        raw_phase = get_val("active_phase", "teaching")
-        phase = str(getattr(raw_phase, "value", raw_phase) or "teaching").strip().lower()
+        exam_type = str(self._session_value(session, "exam", self._config("default_exam", "cbse"))).upper()
+        grade_level = str(self._session_value(session, "grade", self._config("default_grade", 10)))
+        teaching_language = _normalize_teaching_language(
+            self._session_value(session, "teaching_language", self._config("default_teaching_language", "en-IN"))
+        )
+        phase = self._resolve_current_phase(session)
         
-        is_first_interaction = bool(get_val("is_first_interaction", False))
-        is_new_chap = bool(get_val("is_new_chapter", is_first_interaction))
+        is_first_interaction = bool(self._session_value(session, "is_first_interaction", False))
+        is_new_chap = bool(self._session_value(session, "is_new_chapter", is_first_interaction))
         
-        # Robust fallbacks to stop WebSocket/API KeyError/AttributeError crashes
-        chapter_title = str(get_val("chapter_name", "Mathematics Overview"))
-        current_topic = str(get_val("current_topic", chapter_title) or chapter_title)
+        chapter_title = self._resolve_current_chapter(session) or str(
+            self._config("default_chapter_label", "Mathematics Overview")
+        )
+        current_topic = str(
+            self._session_value(
+                session,
+                "current_topic",
+                chapter_title or self._config("default_topic_label", "Mathematics"),
+            )
+            or chapter_title
+            or self._config("default_topic_label", "Mathematics")
+        )
 
         resolved_system_prompt = self._render_system_prompt(
             self.SYSTEM_PROMPT,
@@ -219,7 +325,7 @@ ADDITIONAL RULES:
             is_new_chapter=is_new_chap,
             chapter_name=chapter_title,
             current_topic=current_topic,
-            rag_context=rag_context or "No specific RAG context provided for this topic.",
+            rag_context=rag_context or self._config("missing_rag_context_label", "No specific RAG context provided for this topic."),
             phase=phase,
         )
 
@@ -239,7 +345,7 @@ ADDITIONAL RULES:
                 f"Do not ask questions yet - TEACH FIRST, ASK LATER."
             )
 
-        next_note = get_val("next_system_note")
+        next_note = self._session_value(session, "next_system_note")
         if next_note:
             system_notes.append(str(next_note))
 
@@ -249,15 +355,15 @@ ADDITIONAL RULES:
             f"{system_note_str}\n\n"
             f"{resolved_system_prompt}\n\n"
             "CURRENT SESSION STATE:\n"
-            f"- session_id: {get_val('session_id', 'live-session')}\n"
+            f"- session_id: {self._session_value(session, 'session_id', self._config('default_session_id', 'live-session'))}\n"
             f"- grade: {grade_level}\n"
             f"- exam: {exam_type}\n"
             f"- is_new_chapter: {is_new_chap}\n"
             f"- chapter_name: {chapter_title}\n"
             f"- agenda: {agenda}\n"
-            f"- current_topic_index: {get_val('current_topic_index', 0)}\n"
+            f"- current_topic_index: {self._session_value(session, 'current_topic_index', 0)}\n"
             f"- current_topic: {current_topic}\n"
-            f"- difficulty_level: {get_val('difficulty_level', 'medium')}\n"
+            f"- difficulty_level: {self._session_value(session, 'difficulty_level', self._config('default_difficulty_level', 'moderate'))}\n"
             f"- mistake_history: {mistake_history}\n"
             f"- current_problem: {current_problem}\n\n"
             f"STUDENT MESSAGE / PROBLEM STATEMENT:\n{user_message}\n\n"
@@ -274,10 +380,13 @@ ADDITIONAL RULES:
     def _opening_whiteboard_actions(self, session: StudentSession) -> list[dict[str, Any]]:
         agenda_lines = [f"{index + 1}. {topic}" for index, topic in enumerate(session.agenda or [])]
         agenda_text = "Agenda:\n" + ("\n".join(agenda_lines) if agenda_lines else "1. Topic overview")
-        exam_label = str(getattr(session, "exam", "CBSE")).upper()
+        exam_label = str(getattr(session, "exam", self._config("default_exam", "cbse"))).upper()
+        chapter_label = self._resolve_current_chapter(session) or str(
+            self._config("default_chapter_label", "Current Chapter")
+        )
         return [
             {"action": "draw_text", "content": f"Grade {session.grade} {exam_label} Mathematics"},
-            {"action": "draw_text", "content": f"Chapter: {session.chapter_name or 'Current Chapter'}"},
+            {"action": "draw_text", "content": f"Chapter: {chapter_label}"},
             {"action": "draw_text", "content": agenda_text},
         ]
 

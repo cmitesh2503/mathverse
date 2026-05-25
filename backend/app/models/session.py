@@ -5,7 +5,7 @@ from enum import Enum
 from uuid import uuid4
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 def utc_now() -> datetime:
@@ -24,6 +24,8 @@ class StudentSession(BaseModel):
     session_id: str = Field(default_factory=lambda: str(uuid4()))
     grade: int = 11
     exam: Literal["cbse", "jee"] = "cbse"
+    current_chapter: str = ""
+    current_phase: str = SessionPhase.TEACHING.value
     current_topic: str | None = None
     current_topic_index: int = 0
     current_chapter_index: int = 0
@@ -69,6 +71,36 @@ class StudentSession(BaseModel):
     )
     # Prefetched next problem actions to enable seamless continuous class flow
     next_problem_actions: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _backfill_phase_and_chapter(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        payload = dict(data)
+
+        current_chapter = str(payload.get("current_chapter") or "").strip()
+        chapter_name = str(payload.get("chapter_name") or "").strip()
+        if not current_chapter:
+            current_chapter = chapter_name
+        payload["current_chapter"] = current_chapter
+        if not chapter_name and current_chapter:
+            payload["chapter_name"] = current_chapter
+
+        raw_phase = payload.get("current_phase")
+        if not raw_phase:
+            raw_phase = payload.get("active_phase", SessionPhase.TEACHING.value)
+            raw_phase = getattr(raw_phase, "value", raw_phase)
+        normalized_phase = str(raw_phase or SessionPhase.TEACHING.value).strip().lower()
+        if normalized_phase not in {phase.value for phase in SessionPhase}:
+            normalized_phase = SessionPhase.TEACHING.value
+        payload["current_phase"] = normalized_phase
+
+        if payload.get("active_phase") in {None, ""}:
+            payload["active_phase"] = normalized_phase
+
+        return payload
 
 
 class TranscriptTurn(BaseModel):

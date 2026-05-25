@@ -17,7 +17,7 @@ from ..core.config import (
 from ..services.ai_gateway import generate_audio, get_live_client, live_api_available
 from ..services.cbse_exercises import build_exercise_solution
 from ..services.rag_service import retrieve_context as rag_get_context
-from ..services.retrieval_service import retrieve_context
+from ..services.rag_service import retrieve_context
 from ..services.session_service import session_service
 from ..tutor_brain.curriculum import get_grade_curriculum
 

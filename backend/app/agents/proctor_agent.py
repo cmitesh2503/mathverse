@@ -38,6 +38,7 @@ class ProctorAgent:
 
     async def process_message(self, session: StudentSession, user_message: str) -> dict[str, Any]:
         session.active_phase = SessionPhase.TESTING
+        session.current_phase = SessionPhase.TESTING.value
         message = (user_message or "").strip()
 
         if session.exam_status == "terminated" or session.warnings_issued >= self.WARNING_LIMIT:

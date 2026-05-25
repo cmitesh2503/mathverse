@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-import warnings
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from threading import Lock
@@ -28,14 +27,13 @@ from app.services.cbse_exercises import (
     load_all_pdf_exercises,
     load_chapter_pdf_exercises,
 )
-from app.services.rag_service import get_retriever
+from app.services.rag_service import retrieve_context
+from app.models.session import SessionPhase
 from sympy import symbols, solve
 import asyncio
 from app.cache.cache_manager import get_cache, set_cache
 import random
 
-retriever = None
-retriever_lock = Lock()
 AI_DOUBT_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ai-doubt")
 CLASS_DURATION_MINUTES = 45
 
@@ -141,37 +139,6 @@ def format_for_avatar(response: dict[str, Any]) -> dict[str, Any]:
         "pace": response.get("pace") or "slow",
         "pause_ms": response.get("pause_ms") or 900,
     }
-    
-def _embedding_class():
-    try:
-        from langchain_huggingface import HuggingFaceEmbeddings
-
-        return HuggingFaceEmbeddings
-    except ImportError:
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message=r"The class `HuggingFaceEmbeddings` was deprecated in LangChain")
-            from langchain_community.embeddings import HuggingFaceEmbeddings
-
-        return HuggingFaceEmbeddings
-
-
-def init_cbse() -> bool:
-    global retriever
-    if retriever is not None:
-        return True
-
-    with retriever_lock:
-        if retriever is not None:
-            return True
-
-        print("Loading CBSE FAISS index...")
-        try:
-            retriever = get_retriever()
-            print("CBSE index loaded")
-            return True
-        except Exception as error:
-            print(f"CBSE init failed: {error}")
-            return False
 
 
 @dataclass
@@ -194,6 +161,7 @@ class ClassroomState:
     class_duration_minutes: int = CLASS_DURATION_MINUTES
     chapter_label: str = ""
     exam: str = "cbse"
+    active_phase: SessionPhase = SessionPhase.TEACHING
     stats: dict[str, Any] = field(default_factory=_default_stats)
     mistakes: list[str] = field(default_factory=list)
     last_questions: list[str] = field(default_factory=list)
@@ -266,10 +234,41 @@ class PlannerAgent:
 
 
 class TutorEngine:
+    TEACHING_GUARDRAIL_KEYWORDS = ("exercise", "test", "homework", "solution", "practice")
+    TEACHING_GUARDRAIL_BLOCK_MESSAGE = (
+        "We're focusing on the theory and concepts right now, Mitesh. "
+        "Let's master this foundation before moving to practice exercises!"
+    )
+    PRACTICE_GATE_MESSAGE = "We will reach the exercises once we've completed the theory."
+
     def __init__(self) -> None:
         self._states: dict[str, ClassroomState] = {}
         self._state_lock = Lock()
         self.planner = PlannerAgent()
+
+    def _is_unauthorized_query(self, session, user_input: str) -> str | None:
+        phase = getattr(session, "active_phase", SessionPhase.TEACHING)
+        phase_value = str(getattr(phase, "value", phase) or "").strip().lower()
+        if phase_value != SessionPhase.TEACHING.value:
+            return None
+
+        lowered = str(user_input or "").strip().lower()
+        if any(keyword in lowered for keyword in self.TEACHING_GUARDRAIL_KEYWORDS):
+            return self.TEACHING_GUARDRAIL_BLOCK_MESSAGE
+        return None
+
+    def _phase_value(self, session: ClassroomState) -> str:
+        raw_phase = getattr(session, "active_phase", SessionPhase.TEACHING)
+        return str(getattr(raw_phase, "value", raw_phase) or SessionPhase.TEACHING.value).strip().lower()
+
+    def _is_practice_phase(self, session: ClassroomState) -> bool:
+        return self._phase_value(session) == SessionPhase.PRACTICE.value
+
+    def _set_active_phase(self, session: ClassroomState, phase: SessionPhase) -> None:
+        session.active_phase = phase
+        # Keep string mirror in sync for compatibility with new session schema.
+        if hasattr(session, "current_phase"):
+            session.current_phase = phase.value
 
     def hydrate_session(self, session_id, session) -> None:
         with self._state_lock:
@@ -279,6 +278,7 @@ class TutorEngine:
                 self._states[session_id] = state
 
             state.grade = getattr(session, "grade", state.grade)
+            state.active_phase = getattr(session, "active_phase", state.active_phase)
             state.stage = getattr(session, "lesson_stage", state.stage) or state.stage
             if getattr(session, "topic_slug", None):
                 self._set_topic(state, session.grade, session.topic_slug, reset=True)
@@ -318,6 +318,9 @@ class TutorEngine:
 
         text = (message or "").strip()
         lowered = text.lower()
+        block_message = self._is_unauthorized_query(state, text)
+        if block_message:
+            return block_message
 
         # 🔥 STEP FLOW PRIORITY
         
@@ -394,11 +397,14 @@ class TutorEngine:
             if state is not None:
                 if session_record is not None:
                     state.grade = getattr(session_record, "grade", state.grade)
+                    state.active_phase = getattr(session_record, "active_phase", state.active_phase)
                 return state
 
             grade = getattr(session_record, "grade", 10) if session_record is not None else 10
             topic_slug = getattr(session_record, "topic_slug", None) if session_record is not None else None
             state = self._fresh_state(grade, topic_slug)
+            if session_record is not None:
+                state.active_phase = getattr(session_record, "active_phase", state.active_phase)
             self._states[session_id] = state
             return state
 
@@ -412,6 +418,7 @@ class TutorEngine:
             concept_id=concept["id"] if concept else None,
             concept_title=concept["title"] if concept else "",
             chapter_label=self._chapter_label(grade, topic["slug"] if topic else topic_slug),
+            current_chapter=(topic["title"] if topic else "CBSE Mathematics"),
         )
         self._refresh_public_state(state, include_problem=False)
         return state
@@ -422,6 +429,7 @@ class TutorEngine:
         state.grade = grade
         state.topic_slug = topic_slug
         state.topic_title = topic["title"] if topic else topic_slug.replace("_", " ").title()
+        state.current_chapter = state.topic_title
         state.concept_id = concept["id"] if concept else None
         state.concept_title = concept["title"] if concept else ""
         state.chapter_label = self._chapter_label(grade, topic_slug)
@@ -707,6 +715,7 @@ class TutorEngine:
     def _build_intro(self, state: ClassroomState) -> str:
         # Ensure we are in teaching mode
         state.stage = "STEP_TEACH"
+        self._set_active_phase(state, SessionPhase.TEACHING)
 
         # Directly start teaching (no intro text blocking flow)
         return self._teach_current_concept(state, transition=False)
@@ -733,7 +742,7 @@ class TutorEngine:
         state.stage = "TEACH"
 
         exam = _normalize_exam(getattr(state, "exam", "cbse"))
-        rag_text = self._get_cbse_context(concept["title"]) if exam == "cbse" else concept["title"]
+        rag_text = self._get_cbse_context(concept["title"], state) if exam == "cbse" else concept["title"]
 
         if rag_text:
             try:
@@ -767,6 +776,7 @@ class TutorEngine:
                 "You can also ask for **homework** any time."
             )
         state.stage = "PRACTICE"
+        self._set_active_phase(state, SessionPhase.PRACTICE)
         self._refresh_public_state(state, include_problem=True)
         return self._restate_problem(state)
 
@@ -931,7 +941,7 @@ class TutorEngine:
                 cached["next_question"] = self._format_next_question(exam, next_problem)
                 return cached
 
-            planner_context = self._get_cbse_context(problem.get("prompt", "")) or problem.get("prompt", "")
+            planner_context = self._get_cbse_context(problem.get("prompt", ""), state) or problem.get("prompt", "")
             plan = self._run_lesson_plan(planner_context, mistake_type, exam)
             next_problem = self._next_adaptive_problem(state)
             result = {
@@ -1050,6 +1060,9 @@ class TutorEngine:
         
 
     def _give_homework(self, state: ClassroomState) -> str:
+        if not self._is_practice_phase(state):
+            return self.PRACTICE_GATE_MESSAGE
+
         if not state.homework:
             self._refresh_public_state(state, include_problem=state.active_problem is not None)
 
@@ -1115,7 +1128,7 @@ class TutorEngine:
     def _answer_like_teacher(self, state: ClassroomState, message: str) -> str:
         topic = get_topic(state.grade, state.topic_slug or get_default_topic_slug(state.grade))
         concept = get_concept(state.grade, state.topic_slug or get_default_topic_slug(state.grade), state.concept_id)
-        support = self._supporting_ncert_point(message)
+        support = self._supporting_ncert_point(message, state)
         state.stage = "TEACH"
         self._refresh_public_state(state, include_problem=state.active_problem is not None)
 
@@ -1287,7 +1300,7 @@ class TutorEngine:
         cleaned = re.sub(r"\s+", " ", str(text or "")).strip()
         return cleaned
 
-    def _get_cbse_chapter_outline(self, topic: dict[str, Any] | str | None) -> dict[str, Any]:
+    def _get_cbse_chapter_outline(self, topic: dict[str, Any] | str | None, state: ClassroomState) -> dict[str, Any]:
         title = topic.get("title") if isinstance(topic, dict) else str(topic or "")
         slug = topic.get("slug") if isinstance(topic, dict) else None
         cache_key = f"cbse_outline|{title}|{slug or ''}"
@@ -1296,7 +1309,8 @@ class TutorEngine:
             return cached
 
         context = self._get_cbse_context(
-            f"NCERT Class 10 Maths {title} section headings examples exercises types"
+            f"NCERT Class 10 Maths {title} section headings examples exercises types",
+            state,
         )
         lines = [self._sentence(line) for line in re.split(r"[\n\r]+", context) if self._sentence(line)]
         heading_pattern = re.compile(r"^(?:\d+(?:\.\d+)*\s+)?([A-Z][A-Za-z0-9 ,:'()/-]{4,80})$")
@@ -1660,6 +1674,9 @@ class TutorEngine:
         return board_work[0] if board_work else None
 
     def generate_homework(self, state: ClassroomState, topic=None) -> list[dict[str, Any]]:
+        if not self._is_practice_phase(state):
+            return []
+
         exam = _normalize_exam(getattr(state, "exam", "cbse"))
         if exam == "jee":
             patterns = ["quadratic_difference_of_squares", "quadratic_factor_pair", "quadratic_formula"]
@@ -1950,8 +1967,33 @@ class TutorEngine:
         topic: dict[str, Any] | None = None,
         concept: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        if not self._is_practice_phase(state):
+            return self._class_response(
+                response_type="teach",
+                state=state,
+                chapter=chapter,
+                topic=topic,
+                concept=concept,
+                explanation=self.PRACTICE_GATE_MESSAGE,
+                steps=[],
+                next_action="continue",
+                voice_text=self.PRACTICE_GATE_MESSAGE,
+            )
+
         topic_obj = topic or get_topic(state.grade, state.topic_slug or get_default_topic_slug(state.grade))
         questions = self.generate_homework(state, topic_obj.get("title") if topic_obj else state.topic_title)
+        if not questions:
+            return self._class_response(
+                response_type="teach",
+                state=state,
+                chapter=chapter or topic_obj,
+                topic=topic_obj,
+                concept=concept,
+                explanation=self.PRACTICE_GATE_MESSAGE,
+                steps=[],
+                next_action="continue",
+                voice_text=self.PRACTICE_GATE_MESSAGE,
+            )
         state.homework_questions = questions
         state.homework = [
             question.get("prompt", str(question)) if isinstance(question, dict) else str(question)
@@ -2009,30 +2051,27 @@ class TutorEngine:
     def _skip_homework_response(self, state: ClassroomState) -> dict[str, Any]:
         return self._advance_after_homework(state)
 
-    def _retrieve_documents(self, query: str):
-        if retriever is None:
-            return []
-        if hasattr(retriever, "invoke"):
-            return retriever.invoke(query)
-        if hasattr(retriever, "get_relevant_documents"):
-            return retriever.get_relevant_documents(query)
-        raise AttributeError("Retriever does not support invoke() or get_relevant_documents().")
-
-    def _get_cbse_context(self, query: str) -> str:
-        if retriever is None:
-            init_cbse()
-        if retriever is None:
-            return ""
+    def _get_cbse_context(self, query: str, session: ClassroomState) -> str:
         try:
-            docs = self._retrieve_documents(query) or []
-            print("Retrieved docs:", len(docs))
-            return "\n\n".join(doc.page_content for doc in docs if getattr(doc, "page_content", None))
+            user_input = self._sentence(query)
+            raw_phase = getattr(session, "active_phase", SessionPhase.TEACHING)
+            phase_value = str(getattr(raw_phase, "value", raw_phase) or SessionPhase.TEACHING.value).strip().lower()
+            exam_type = _normalize_exam(getattr(session, "exam", "cbse"))
+            grade = int(getattr(session, "grade", 10) or 10)
+            return retrieve_context(
+                query=user_input,
+                chapter=session.current_chapter,
+                phase=phase_value,
+                exam_type=exam_type,
+                grade=grade,
+                k=8,
+            )
         except Exception as error:
             print("Retrieval error:", error)
             return ""
 
-    def _supporting_ncert_point(self, query: str) -> str:
-        context = self._get_cbse_context(query)
+    def _supporting_ncert_point(self, query: str, session: ClassroomState) -> str:
+        context = self._get_cbse_context(query, session)
         if not context:
             return ""
         flat = " ".join(context.split())
@@ -2450,9 +2489,12 @@ Return ONLY JSON:
         """
         Generate homework using CBSE RAG + store in Firebase
         """
+        if not self._is_practice_phase(state):
+            return {"questions": []}
+
         topic_name = state.topic_title or "Mathematics"
 
-        context = self._get_cbse_context(topic_name)
+        context = self._get_cbse_context(topic_name, state)
 
         questions = []
 
@@ -2555,6 +2597,17 @@ Return ONLY JSON:
         action = payload.get("action") if isinstance(payload, dict) else None
         topic_text = payload.get("topic") or payload.get("question") if isinstance(payload, dict) else topic
         topic_text = topic_text or state.topic_title or "quadratic equations"
+        block_message = self._is_unauthorized_query(state, str(topic_text))
+        if block_message:
+            return {
+                "concept": None,
+                "explanation": block_message,
+                "example": None,
+                "check_question": None,
+                "next_action": "continue",
+                "topic": state.topic_title,
+                "chapter": state.chapter_label,
+            }
         topic_obj = find_topic_by_message(state.grade, topic_text) or get_topic(state.grade, state.topic_slug or get_default_topic_slug(state.grade))
         if topic_obj:
             state.topic_slug = topic_obj["slug"]
@@ -2628,7 +2681,7 @@ Return ONLY JSON:
                 "chapter": state.chapter_label,
             }
 
-        context = self._get_cbse_context(concept.get("title", "")) or concept.get("explanation", "")
+        context = self._get_cbse_context(concept.get("title", ""), state) or concept.get("explanation", "")
         plan = self._run_lesson_plan(context, exam=exam)
         return {
             "concept": concept.get("title"),
@@ -2648,7 +2701,7 @@ Return ONLY JSON:
             state.topic_slug = topic_obj["slug"]
             state.topic_title = topic_obj.get("title", topic_obj["slug"])
             state.current_topic = state.topic_slug
-            state.current_chapter = self._chapter_label(state.grade, state.topic_slug)
+            state.current_chapter = state.topic_title
 
     def _teacher_agent_payload(self, state: ClassroomState, concept: dict[str, Any]) -> dict[str, Any]:
         exam = _normalize_exam(getattr(state, "exam", "cbse"))
@@ -2687,7 +2740,7 @@ Return ONLY JSON:
         if cached:
             return cached
 
-        context = self._get_cbse_context(concept.get("title", "")) or concept.get("explanation", "")
+        context = self._get_cbse_context(concept.get("title", ""), state) or concept.get("explanation", "")
         plan = self._run_lesson_plan(context, exam="cbse")
         steps = plan.get("concept_steps") or concept.get("board_work", [])[:3]
         explanation = plan.get("mistake_explanation") or concept.get("explanation", "")
@@ -2725,6 +2778,7 @@ Return ONLY JSON:
         self._class_topic_from_payload(state, data)
 
         if action == "start":
+            self._set_active_phase(state, SessionPhase.TEACHING)
             state.current_concept_index = 0
             state.class_phase = "teach"
             state.learning_path = [{
@@ -2745,7 +2799,19 @@ Return ONLY JSON:
         if step["type"] == "question" and concept:
             return self._question_agent_payload(state, concept)
         if step["type"] == "homework":
+            if not self._is_practice_phase(state):
+                self._set_active_phase(state, SessionPhase.PRACTICE)
             questions = self.generate_homework(state, state.topic_title)
+            if not questions:
+                return {
+                    "type": "teach",
+                    "content": {
+                        "explanation": self.PRACTICE_GATE_MESSAGE,
+                        "steps": [],
+                        "example": None,
+                        "voice_text": self.PRACTICE_GATE_MESSAGE,
+                    },
+                }
             state.homework_questions = questions
             return {
                 "type": "homework",
@@ -2768,6 +2834,7 @@ Return ONLY JSON:
         }
 
     def start_class(self, state: ClassroomState, grade: int = 10, subject: str = "math") -> None:
+        self._set_active_phase(state, SessionPhase.TEACHING)
         curriculum = get_grade_curriculum(int(grade or 10))
         state.grade = int(grade or 10)
         state.curriculum = curriculum
@@ -2786,9 +2853,10 @@ Return ONLY JSON:
         first_chapter = (curriculum.get("chapters") or [{}])[0]
         state.topic_slug = first_chapter.get("slug") or get_default_topic_slug(state.grade)
         state.topic_title = first_chapter.get("title") or "Mathematics"
+        state.current_chapter = state.topic_title
         state.chapter_label = self._chapter_label(state.grade, state.topic_slug)
         state.subject = subject or curriculum.get("subject", "math")
-        state.cbse_outline = self._get_cbse_chapter_outline(first_chapter)
+        state.cbse_outline = self._get_cbse_chapter_outline(first_chapter, state)
         state.completed_exercise_types = []
         state.completed_concepts = []
         state.current_exercise_type = None
@@ -2934,7 +3002,22 @@ Return ONLY JSON:
         topic = current["topic"]
         concept = current["concept"]
         if not chapter or not concept:
-            return self._class_homework_response(state, chapter, topic, concept)
+            chapter_title = getattr(state, "topic_title", None) or "Mathematics"
+            explanation = (
+                f"Welcome back. Today we will begin with theory for {chapter_title}. "
+                "I will first explain the core concept in simple steps, then we will move to examples."
+            )
+            return self._class_response(
+                response_type="teach",
+                state=state,
+                chapter=chapter,
+                topic=topic,
+                concept=concept,
+                explanation=explanation,
+                steps=[],
+                next_action="continue",
+                voice_text=explanation,
+            )
 
         question = self._concept_check_question(concept)
         state.class_last_step = "teach"
@@ -2983,7 +3066,7 @@ Return ONLY JSON:
                 session_notes=notes,
             )
 
-        outline = getattr(state, "cbse_outline", {}) or self._get_cbse_chapter_outline(chapter)
+        outline = getattr(state, "cbse_outline", {}) or self._get_cbse_chapter_outline(chapter, state)
         state.cbse_outline = outline
         check_question = self._generate_cbse_check_question(concept)
         state.active_problem = check_question
@@ -3150,8 +3233,10 @@ Return ONLY JSON:
             state.class_last_step = "evaluation"
             next_result = self._next_concept(state)
             if next_result.get("type") == "chapter_complete":
+                self._set_active_phase(state, SessionPhase.PRACTICE)
                 return self._class_homework_response(state, chapter, topic, concept)
             if next_result.get("type") == "exercise":
+                self._set_active_phase(state, SessionPhase.PRACTICE)
                 return self._teach_exercise_type(state)
             return self._class_response(
                 response_type="evaluation",
@@ -3177,6 +3262,7 @@ Return ONLY JSON:
             state.attempts_on_problem = 0
             next_result = self._next_concept(state)
             if next_result.get("type") == "exercise":
+                self._set_active_phase(state, SessionPhase.PRACTICE)
                 return self._teach_exercise_type(state)
             return self._class_response(
                 response_type="evaluation",
@@ -3236,6 +3322,20 @@ Return ONLY JSON:
         return None
 
     def _teach_exercise_type(self, state: ClassroomState) -> dict[str, Any]:
+        if not self._is_practice_phase(state):
+            current = self._get_current_concept(state)
+            return self._class_response(
+                response_type="teach",
+                state=state,
+                chapter=current["chapter"],
+                topic=current["topic"],
+                concept=current["concept"],
+                explanation=self.PRACTICE_GATE_MESSAGE,
+                steps=[],
+                next_action="continue",
+                voice_text=self.PRACTICE_GATE_MESSAGE,
+            )
+
         current = self._get_current_concept(state)
         chapter = current["chapter"]
         topic = current["topic"]
@@ -3304,7 +3404,7 @@ Return ONLY JSON:
             next_chapter = chapters[state.current_chapter_index]
             state.topic_slug = next_chapter.get("slug")
             state.topic_title = next_chapter.get("title")
-            state.cbse_outline = self._get_cbse_chapter_outline(next_chapter)
+            state.cbse_outline = self._get_cbse_chapter_outline(next_chapter, state)
             state.completed_exercise_types = []
             state.class_last_step = "evaluation"
             return {"type": "continue", "next_action": "continue"}
@@ -3318,6 +3418,21 @@ Return ONLY JSON:
         answer = data.get("answer")
         grade = int(data.get("grade") or getattr(state, "grade", 10) or 10)
         subject = data.get("subject") or "math"
+
+        practice_actions = {
+            "solve_pdf_exercises",
+            "solve_all_exercises",
+            "solve_all_pdf_exercises",
+            "next_exercise",
+            "next_pdf_exercise",
+            "skip_homework",
+            "end",
+            "end_day",
+            "homework",
+            "finish",
+        }
+        if action in practice_actions and not self._is_practice_phase(state):
+            self._set_active_phase(state, SessionPhase.PRACTICE)
 
         if action in {"solve_pdf_exercises", "solve_all_exercises", "solve_all_pdf_exercises"}:
             return self._start_pdf_exercise_session(state, data, grade, subject)
@@ -3363,6 +3478,8 @@ Return ONLY JSON:
             return self._evaluate_class_answer(state, answer)
 
         if getattr(state, "class_last_step", None) == "chapter_complete":
+            if not self._is_practice_phase(state):
+                self._set_active_phase(state, SessionPhase.PRACTICE)
             current = self._get_current_concept(state)
             return self._class_homework_response(state, current["chapter"], current["topic"], current["concept"])
 
@@ -3375,6 +3492,20 @@ Return ONLY JSON:
         grade: int,
         subject: str,
     ) -> dict[str, Any]:
+        if not self._is_practice_phase(state):
+            current = self._get_current_concept(state)
+            return self._class_response(
+                response_type="teach",
+                state=state,
+                chapter=current["chapter"],
+                topic=current["topic"],
+                concept=current["concept"],
+                explanation=self.PRACTICE_GATE_MESSAGE,
+                steps=[],
+                next_action="continue",
+                voice_text=self.PRACTICE_GATE_MESSAGE,
+            )
+
         if not getattr(state, "curriculum", None):
             curriculum = get_grade_curriculum(int(grade or 10))
             state.grade = int(grade or 10)
@@ -3432,6 +3563,20 @@ Return ONLY JSON:
         return self._pdf_exercise_response_at_cursor(state)
 
     def _next_pdf_exercise_response(self, state: ClassroomState) -> dict[str, Any]:
+        if not self._is_practice_phase(state):
+            current = self._get_current_concept(state)
+            return self._class_response(
+                response_type="teach",
+                state=state,
+                chapter=current["chapter"],
+                topic=current["topic"],
+                concept=current["concept"],
+                explanation=self.PRACTICE_GATE_MESSAGE,
+                steps=[],
+                next_action="continue",
+                voice_text=self.PRACTICE_GATE_MESSAGE,
+            )
+
         session = getattr(state, "pdf_exercise_session", {}) or {}
         problems = session.get("problems") or []
         if not problems:
@@ -3545,6 +3690,15 @@ Return ONLY JSON:
         action = payload.get("action") if isinstance(payload, dict) else None
         answers = payload.get("answers") if isinstance(payload, dict) else None
         topic = payload.get("topic") if isinstance(payload, dict) else text
+
+        if not self._is_practice_phase(state):
+            return {
+                "score": None,
+                "weak_areas": [],
+                "explanation": self.PRACTICE_GATE_MESSAGE,
+                "questions": [],
+                "next_recommendation": "Continue with theory first.",
+            }
 
         if action in {"help", "unable", "not_able"}:
             questions = getattr(state, "homework_questions", []) or self.generate_homework(state, topic)
