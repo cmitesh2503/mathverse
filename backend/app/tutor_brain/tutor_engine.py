@@ -2786,6 +2786,7 @@ Return ONLY JSON:
                 "topic": state.topic_title,
                 "concept_index": 0,
             }]
+            return self._theory_welcome_response(state)
         elif action == "repeat":
             state.class_phase = "teach"
         elif action == "next":
@@ -2799,30 +2800,13 @@ Return ONLY JSON:
         if step["type"] == "question" and concept:
             return self._question_agent_payload(state, concept)
         if step["type"] == "homework":
-            if not self._is_practice_phase(state):
-                self._set_active_phase(state, SessionPhase.PRACTICE)
-            questions = self.generate_homework(state, state.topic_title)
-            if not questions:
-                return {
-                    "type": "teach",
-                    "content": {
-                        "explanation": self.PRACTICE_GATE_MESSAGE,
-                        "steps": [],
-                        "example": None,
-                        "voice_text": self.PRACTICE_GATE_MESSAGE,
-                    },
-                }
-            state.homework_questions = questions
-            return {
-                "type": "homework",
-                "content": {
-                    "explanation": "Class is complete. Homework is ready.",
-                    "steps": [],
-                    "example": None,
-                    "voice_text": "Good work. I have prepared your homework for this topic.",
-                    "questions": questions,
-                },
-            }
+            return self.transition_to_practice_phase(
+                state,
+                chapter={"title": state.current_chapter} if state.current_chapter else None,
+                topic={"title": state.topic_title} if state.topic_title else None,
+                concept={"title": state.concept_title} if state.concept_title else None,
+                target="homework",
+            )
         return {
             "type": "exam",
             "content": {
@@ -2975,6 +2959,76 @@ Return ONLY JSON:
             "avatar_stream": response["avatar_stream"],
         }
         return response
+
+    def _theory_welcome_response(self, state: ClassroomState) -> dict[str, Any]:
+        current = self._get_current_concept(state)
+        chapter = current["chapter"]
+        topic = current["topic"]
+        concept = current["concept"]
+        topic_title = (
+            (topic.get("title") if isinstance(topic, dict) else None)
+            or getattr(state, "topic_title", None)
+            or "this chapter"
+        )
+        explanation = f"Welcome to the class! Let's start with the theory for {topic_title}."
+        state.class_last_step = "intro"
+        state.stage = "TEACH"
+        return self._class_response(
+            response_type="teach",
+            state=state,
+            chapter=chapter,
+            topic=topic,
+            concept=concept,
+            explanation=explanation,
+            steps=[
+                f"Topic: {topic_title}",
+                "Step 1: Understand the core concept.",
+                "Step 2: Build intuition with one simple example.",
+            ],
+            next_action="continue",
+            voice_text=explanation,
+        )
+
+    def transition_to_practice_phase(
+        self,
+        state: ClassroomState,
+        *,
+        chapter: dict[str, Any] | None = None,
+        topic: dict[str, Any] | None = None,
+        concept: dict[str, Any] | None = None,
+        target: str = "practice",
+        practice_payload: dict[str, Any] | None = None,
+        grade: int | None = None,
+        subject: str | None = None,
+    ) -> dict[str, Any]:
+        self._set_active_phase(state, SessionPhase.PRACTICE)
+        state.class_phase = "practice"
+        state.stage = "PRACTICE"
+
+        if target == "exercise":
+            return self._teach_exercise_type(state)
+        if target == "homework":
+            return self._class_homework_response(state, chapter, topic, concept)
+        if target == "pdf_exercises":
+            return self._start_pdf_exercise_session(
+                state,
+                practice_payload or {"scope": "all_chapters"},
+                int(grade or getattr(state, "grade", 10) or 10),
+                subject or getattr(state, "subject", "math") or "math",
+            )
+
+        current = self._get_current_concept(state)
+        return self._class_response(
+            response_type="teach",
+            state=state,
+            chapter=current["chapter"],
+            topic=current["topic"],
+            concept=current["concept"],
+            explanation="Practice phase is active. We can now solve exercises step by step.",
+            steps=[],
+            next_action="continue",
+            voice_text="Practice phase is active. We can now solve exercises step by step.",
+        )
 
     def _text_from_class_response(self, response: dict[str, Any]) -> str:
         if not isinstance(response, dict):
@@ -3233,11 +3287,21 @@ Return ONLY JSON:
             state.class_last_step = "evaluation"
             next_result = self._next_concept(state)
             if next_result.get("type") == "chapter_complete":
-                self._set_active_phase(state, SessionPhase.PRACTICE)
-                return self._class_homework_response(state, chapter, topic, concept)
+                return self.transition_to_practice_phase(
+                    state,
+                    chapter=chapter,
+                    topic=topic,
+                    concept=concept,
+                    target="homework",
+                )
             if next_result.get("type") == "exercise":
-                self._set_active_phase(state, SessionPhase.PRACTICE)
-                return self._teach_exercise_type(state)
+                return self.transition_to_practice_phase(
+                    state,
+                    chapter=chapter,
+                    topic=topic,
+                    concept=concept,
+                    target="exercise",
+                )
             return self._class_response(
                 response_type="evaluation",
                 state=state,
@@ -3262,8 +3326,13 @@ Return ONLY JSON:
             state.attempts_on_problem = 0
             next_result = self._next_concept(state)
             if next_result.get("type") == "exercise":
-                self._set_active_phase(state, SessionPhase.PRACTICE)
-                return self._teach_exercise_type(state)
+                return self.transition_to_practice_phase(
+                    state,
+                    chapter=chapter,
+                    topic=topic,
+                    concept=concept,
+                    target="exercise",
+                )
             return self._class_response(
                 response_type="evaluation",
                 state=state,
@@ -3432,10 +3501,27 @@ Return ONLY JSON:
             "finish",
         }
         if action in practice_actions and not self._is_practice_phase(state):
-            self._set_active_phase(state, SessionPhase.PRACTICE)
+            current = self._get_current_concept(state)
+            return self._class_response(
+                response_type="teach",
+                state=state,
+                chapter=current["chapter"],
+                topic=current["topic"],
+                concept=current["concept"],
+                explanation=self.PRACTICE_GATE_MESSAGE,
+                steps=[],
+                next_action="continue",
+                voice_text=self.PRACTICE_GATE_MESSAGE,
+            )
 
         if action in {"solve_pdf_exercises", "solve_all_exercises", "solve_all_pdf_exercises"}:
-            return self._start_pdf_exercise_session(state, data, grade, subject)
+            return self.transition_to_practice_phase(
+                state,
+                target="pdf_exercises",
+                practice_payload=data,
+                grade=grade,
+                subject=subject,
+            )
 
         if action in {"next_exercise", "next_pdf_exercise"}:
             return self._next_pdf_exercise_response(state)
@@ -3449,10 +3535,20 @@ Return ONLY JSON:
         if action in {"end", "end_day", "homework", "finish"}:
             current = self._get_current_concept(state)
             state.class_last_step = "chapter_complete"
-            return self._class_homework_response(state, current["chapter"], current["topic"], current["concept"])
+            return self.transition_to_practice_phase(
+                state,
+                chapter=current["chapter"],
+                topic=current["topic"],
+                concept=current["concept"],
+                target="homework",
+            )
 
         if action == "start" or not getattr(state, "curriculum", None) or getattr(state, "class_last_step", None) is None:
             self.start_class(state, grade, subject)
+            self._set_active_phase(state, SessionPhase.TEACHING)
+            return self._theory_welcome_response(state)
+
+        if getattr(state, "class_last_step", None) == "intro":
             return self._teach_concept(state)
 
         if getattr(state, "class_last_step", None) == "teach":
@@ -3478,10 +3574,14 @@ Return ONLY JSON:
             return self._evaluate_class_answer(state, answer)
 
         if getattr(state, "class_last_step", None) == "chapter_complete":
-            if not self._is_practice_phase(state):
-                self._set_active_phase(state, SessionPhase.PRACTICE)
             current = self._get_current_concept(state)
-            return self._class_homework_response(state, current["chapter"], current["topic"], current["concept"])
+            return self.transition_to_practice_phase(
+                state,
+                chapter=current["chapter"],
+                topic=current["topic"],
+                concept=current["concept"],
+                target="homework",
+            )
 
         return self._teach_concept(state)
 

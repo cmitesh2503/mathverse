@@ -272,8 +272,9 @@ async def tutor_ws(websocket: WebSocket):
         if getattr(session_record, "topic_title", None):
             bootstrap_context["chapter"] = session_record.topic_title
             bootstrap_context["topic"] = session_record.topic_title
+        bootstrap_context["phase"] = "teaching"
         await live_bridge.send_text_turn(
-            "ready",
+            json.dumps({"action": "start"}),
             mode=initial_mode or None,
             context=bootstrap_context or None,
         )

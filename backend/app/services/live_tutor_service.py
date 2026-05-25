@@ -356,13 +356,21 @@ class LiveTutorBridge:
             or "Mathematics Overview"
         )
         board_context = self._board_context_text()
+        raw_phase = getattr(self.student_session, "active_phase", "teaching")
+        phase = str(getattr(raw_phase, "value", raw_phase) or "teaching").strip().lower()
 
         source_material = self._firebase_curriculum_context(
             grade=int(getattr(session_record, "grade", 10) or 10),
             exam=str(getattr(self.student_session, "exam", "cbse") or "cbse"),
             chapter=chapter_title,
             topic=topic_title,
-        ) or retrieve_context(topic_title, session_record.grade)
+        ) or retrieve_context(
+            query=topic_title,
+            exam_type=str(getattr(self.student_session, "exam", "cbse") or "cbse"),
+            grade=int(getattr(session_record, "grade", 10) or 10),
+            chapter=chapter_title,
+            phase=phase,
+        )
         curriculum_grounding = (
             f"Board: {session_record.board}\n"
             f"Subject: {session_record.subject}\n"
@@ -378,9 +386,6 @@ class LiveTutorBridge:
                 "Use this textbook-backed content when teaching this chapter.\n"
                 f"{source_material}"
             )
-
-        raw_phase = getattr(self.student_session, "active_phase", "teaching")
-        phase = str(getattr(raw_phase, "value", raw_phase) or "teaching").strip().lower()
 
         resolved_system_prompt = self.tutor_agent._render_system_prompt(
             self.tutor_agent.SYSTEM_PROMPT,
@@ -514,6 +519,8 @@ class LiveTutorBridge:
                     "Do not jump to Euclid's division lemma or another chapter unless explicitly requested."
                 )
             normalized_exam = "jee" if str(self.student_session.exam or "").lower() == "jee" else "cbse"
+            raw_phase = getattr(self.student_session, "active_phase", "teaching")
+            phase = str(getattr(raw_phase, "value", raw_phase) or "teaching").strip().lower()
             source_hint = (
                 "JEE PYQ patterns, solved examples, and problem solving strategies"
                 if normalized_exam == "jee"
@@ -532,7 +539,14 @@ class LiveTutorBridge:
                     exam=normalized_exam,
                     chapter=self.student_session.chapter_name or topic,
                     topic=topic,
-                ) or rag_get_context(query=query, exam_type=normalized_exam, k=6)
+                ) or rag_get_context(
+                    query=query,
+                    exam_type=normalized_exam,
+                    k=6,
+                    grade=int(getattr(self.student_session, "grade", 10) or 10),
+                    chapter=self.student_session.chapter_name or topic,
+                    phase=phase,
+                )
             except Exception as error:
                 print(f"Live RAG lookup failed ({type(error).__name__}): {error}")
                 rag_context = ""
@@ -551,7 +565,11 @@ class LiveTutorBridge:
                 correct_answer="42",
             )
             nudge = diagnostic_result.get("hidden_nudge")
-            if effective_mode == "class" and action in {"start", "next", "continue", "repeat", "refresh_problem", "previous_problem", "next_exercise", "next_pdf_exercise"}:
+            if (
+                effective_mode == "class"
+                and phase != "teaching"
+                and action in {"start", "next", "continue", "repeat", "refresh_problem", "previous_problem", "next_exercise", "next_pdf_exercise"}
+            ):
                 candidates = self._extract_problem_candidates(rag_context)
                 if candidates:
                     base_prob = candidates[self.student_session.questions_asked % len(candidates)]
@@ -575,7 +593,11 @@ class LiveTutorBridge:
             whiteboard_actions = tutor_payload.get("whiteboard_actions", [])
         else:
             # âœ… FIX 2: Explicitly order the AI Agent to solve the problem on the board
-            if effective_mode == "class" and action in {"start", "next", "continue", "repeat", "refresh_problem", "previous_problem", "next_exercise", "next_pdf_exercise"}:
+            if (
+                effective_mode == "class"
+                and phase != "teaching"
+                and action in {"start", "next", "continue", "repeat", "refresh_problem", "previous_problem", "next_exercise", "next_pdf_exercise"}
+            ):
                 candidates = self._extract_problem_candidates(rag_context)
                 if candidates:
                     base_prob = candidates[self.student_session.questions_asked % len(candidates)]

@@ -20,6 +20,14 @@ class Orchestrator:
         self._redis_key_prefix = os.getenv("ORCHESTRATOR_SESSION_KEY_PREFIX", "orchestrator:session:")
         self.redis_client = redis.from_url(redis_url, decode_responses=True)
 
+    def _phase_value(self, session: StudentSession) -> str:
+        raw_phase = getattr(session, "active_phase", SessionPhase.TEACHING)
+        return str(getattr(raw_phase, "value", raw_phase) or SessionPhase.TEACHING.value).strip().lower()
+
+    def _set_active_phase(self, session: StudentSession, phase: SessionPhase) -> None:
+        session.active_phase = phase
+        session.current_phase = phase.value
+
     def _redis_key(self, session_id: str) -> str:
         return f"{self._redis_key_prefix}{session_id}"
 
@@ -47,9 +55,36 @@ class Orchestrator:
         if existing is not None:
             return existing
 
-        created = StudentSession(session_id=session_id)
+        created = StudentSession(
+            session_id=session_id,
+            active_phase=SessionPhase.TEACHING,
+            current_phase=SessionPhase.TEACHING.value,
+        )
         await self.set_session(session_id, created)
         return created
+
+    async def start_session(
+        self,
+        session_id: str,
+        *,
+        context: dict | None = None,
+        session: StudentSession | None = None,
+    ) -> StudentSession:
+        target = session if session is not None else await self.get_or_create_session(session_id)
+        grade = self._normalize_grade(context, getattr(target, "grade", 10))
+        preferred_chapter = (context or {}).get("chapter") or (context or {}).get("chapter_slug")
+        self._initialize_grade_curriculum(target, grade, preferred_chapter)
+        self._set_active_phase(target, SessionPhase.TEACHING)
+        target.is_first_interaction = True
+        target.next_system_note = None
+        target.questions_asked = 0
+        target.class_problem_cursor = 0
+        target.class_intro_done = False
+        target.concept_teaching_index = 0
+        target.concept_teaching_complete = False
+        target.exercise_phase_started = False
+        await self.set_session(session_id, target)
+        return target
 
     def _normalize_grade(self, context: dict | None, fallback: int) -> int:
         raw_grade = (context or {}).get("grade", fallback)
@@ -191,9 +226,9 @@ class Orchestrator:
         *,
         mode: str | None = None,
         context: dict | None = None,
+        session: StudentSession | None = None,
     ) -> str:
-        session = await self.get_or_create_session(session_id)
-        phase = session.active_phase
+        session = session if session is not None else await self.get_or_create_session(session_id)
         message_text = str(user_message or "").strip()
         message = message_text.lower()
         exam = str((context or {}).get("exam", "")).lower()
@@ -221,6 +256,10 @@ class Orchestrator:
             action = "next_step"
         elif message in {"start", "begin"}:
             action = "start"
+        elif message in {"homework", "finish", "end"}:
+            action = "homework"
+        elif message in {"next exercise", "next_exercise", "next pdf exercise", "next_pdf_exercise"}:
+            action = "next_exercise"
         elif len(message) < 25 and any(
             phrase in message
             for phrase in ["understood", "got it", "makes sense", "move on", "go ahead", "clear"]
@@ -228,15 +267,11 @@ class Orchestrator:
             action = "next_step"
 
         if action == "start":
-            self._initialize_grade_curriculum(session, grade, preferred_chapter)
-            session.is_first_interaction = True
-            session.next_system_note = None
-            session.questions_asked = 0
-            session.class_problem_cursor = 0
-            session.class_intro_done = False
-            session.concept_teaching_index = 0
-            session.concept_teaching_complete = False
-            session.exercise_phase_started = False
+            session = await self.start_session(
+                session_id,
+                context=context,
+                session=session,
+            )
         elif mode_normalized == "class" and action == "next_topic":
             self._advance_to_next_topic(session)
         elif mode_normalized == "class" and action == "next_step":
@@ -248,19 +283,40 @@ class Orchestrator:
         elif not session.agenda or session.current_topic is None:
             self._initialize_grade_curriculum(session, grade)
 
+        phase = self._phase_value(session)
+        practice_only_actions = {
+            "homework",
+            "finish",
+            "end",
+            "next_exercise",
+            "next_pdf_exercise",
+            "solve_pdf_exercises",
+            "solve_all_exercises",
+            "solve_all_pdf_exercises",
+            "skip_homework",
+        }
+        if phase == SessionPhase.TEACHING.value and action in practice_only_actions:
+            session.next_system_note = (
+                "SYSTEM NOTE: Keep this turn in THEORY mode only. "
+                "Do not generate homework or practice exercises yet. "
+                "Continue the current chapter explanation and concept board work."
+            )
+            await self.set_session(session_id, session)
+            return "tutor_agent"
+
         if session.exam == "jee" and mode_normalized in {"mock_test", "exam"}:
             await self.set_session(session_id, session)
             return "proctor_agent"
 
-        if phase == SessionPhase.TEACHING:
+        if phase == SessionPhase.TEACHING.value:
             await self.set_session(session_id, session)
             return "tutor_agent"
 
-        if phase == SessionPhase.TESTING:
+        if phase == SessionPhase.TESTING.value:
             await self.set_session(session_id, session)
             return "proctor_agent"
 
-        if phase == SessionPhase.PRACTICE:
+        if phase == SessionPhase.PRACTICE.value:
             if any(keyword in message for keyword in self.ANSWER_KEYWORDS):
                 await self.set_session(session_id, session)
                 return "diagnostic_agent"

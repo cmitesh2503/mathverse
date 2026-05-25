@@ -10,7 +10,7 @@ from ..agents.diagnostic_agent import DiagnosticAgent
 from ..agents.orchestrator import Orchestrator
 from ..agents.proctor_agent import ProctorAgent
 from ..agents.teacher_agent import TutorAgent
-from ..models.session import StudentSession, utc_now
+from ..models.session import SessionPhase, StudentSession, utc_now
 from ..services.cbse_exercises import (
     build_exercise_solution,
     get_pdf_chapter_number,
@@ -1817,6 +1817,20 @@ def _normalize_action(input_data: dict[str, Any]) -> str:
     return str(input_data.get("action") or "").strip().lower()
 
 
+def _phase_value(session: StudentSession) -> str:
+    raw_phase = getattr(session, "active_phase", SessionPhase.TEACHING)
+    return str(getattr(raw_phase, "value", raw_phase) or SessionPhase.TEACHING.value).strip().lower()
+
+
+def _set_active_phase(session: StudentSession, phase: SessionPhase) -> None:
+    session.active_phase = phase
+    session.current_phase = phase.value
+
+
+def _is_teaching_phase(session: StudentSession) -> bool:
+    return _phase_value(session) == SessionPhase.TEACHING.value
+
+
 _CURRICULUM_STEP_ACTIONS = {
     "start",
     "next",
@@ -2147,6 +2161,9 @@ def _topic_teaching_fallback(topic: str, chapter: dict[str, Any]) -> tuple[str, 
 
 
 def _chapter_teaching_phase_actions(session: StudentSession) -> list[dict[str, Any]] | None:
+    if not _is_teaching_phase(session):
+        return None
+
     chapter = _chapter_for_session(session)
     chapter_title = str(chapter.get("title") or session.chapter_name or "Current Chapter").strip()
     topics = [str(item).strip() for item in (session.agenda or []) if str(item).strip()]
@@ -2213,18 +2230,11 @@ def _chapter_teaching_phase_actions(session: StudentSession) -> list[dict[str, A
             session.concept_teaching_complete = True
         return actions
 
-    if not getattr(session, "exercise_phase_started", False):
-        session.exercise_phase_started = True
-        session.current_topic_index = 0
-        session.current_topic = topics[0]
-        return [
-            {"action": "draw_text", "content": f"Chapter concepts complete: {chapter_title}"},
-            {"action": "draw_text", "content": "Now we start NCERT exercise solving step by step."},
-            {"action": "draw_text", "content": "Exercise flow: read problem -> identify concept -> solve on board -> final answer."},
-            {"action": "draw_shape", "content": "Flow diagram from concept notes to exercise problem solving."},
-        ]
-
-    return None
+    return [
+        {"action": "draw_text", "content": f"Theory segment complete for: {chapter_title}"},
+        {"action": "draw_text", "content": "Phase gate active: staying in TEACHING mode."},
+        {"action": "draw_text", "content": "Next: we will enter PRACTICE only after an explicit phase transition."},
+    ]
 
 
 def _exercise_nudge_from_rag(rag_context: str, variation: int) -> str | None:
@@ -2331,9 +2341,11 @@ def _rag_context_for_session(session: StudentSession, exam_type: str) -> str:
     chapter = session.chapter_name or topic
     normalized_exam = "jee" if str(exam_type or "").lower() == "jee" else "cbse"
     grade = int(getattr(session, "grade", 10) or 10)
+    phase = _phase_value(session)
     cache_key = (
         grade,
         normalized_exam,
+        phase,
         str(chapter or "").strip().lower(),
         str(topic or "").strip().lower(),
     )
@@ -2342,9 +2354,9 @@ def _rag_context_for_session(session: StudentSession, exam_type: str) -> str:
         return cached_context
 
     source_hint = (
-        "JEE PYQ patterns, solved examples, and problem solving strategies"
+        "JEE concept explanation, worked examples, and step-by-step intuition"
         if normalized_exam == "jee"
-        else "NCERT textbook concept explanations, worked examples, and exercise questions"
+        else "NCERT textbook theory explanation and worked examples (no homework generation)"
     )
     query = (
         f"Grade {grade} "
@@ -2395,10 +2407,12 @@ def _rag_context_for_session(session: StudentSession, exam_type: str) -> str:
                         lines.append(f"Explanation: {concept.get('explanation')}")
                     for bw in (concept.get("board_work") or [])[:4]:
                         lines.append(str(bw))
-                    for example in (concept.get("ncert_examples") or [])[:4]:
-                        if isinstance(example, dict) and example.get("prompt"):
+                    for example in (concept.get("ncert_examples") or [])[:2]:
+                        if not isinstance(example, dict):
+                            continue
+                        if phase != SessionPhase.TEACHING.value and example.get("prompt"):
                             lines.append(f"Exercise question: {example.get('prompt')}")
-                        for step in (example.get("steps") or [])[:5]:
+                        for step in (example.get("steps") or [])[:4]:
                             lines.append(f"Step: {step}")
 
                 firebase_context = "\n".join(str(line).strip() for line in lines if str(line).strip())
@@ -2410,13 +2424,12 @@ def _rag_context_for_session(session: StudentSession, exam_type: str) -> str:
         print(f"Firestore curriculum grounding failed ({type(error).__name__}): {error}")
 
     try:
-        raw_phase = getattr(session, "active_phase", "teaching")
-        phase = str(getattr(raw_phase, "value", raw_phase) or "teaching").strip().lower()
         raw_context = retrieve_context(
             query=query,
             exam_type=normalized_exam,
             k=12,
             grade=grade,
+            chapter=chapter,
             phase=phase,
         )
         scoped_context = _scope_rag_context_to_chapter(raw_context, chapter=chapter, topic=topic)
@@ -2453,6 +2466,31 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
     )
 
     action = _normalize_action(input_data)
+    if action == "start":
+        session = await orchestrator.start_session(
+            req.session_id,
+            context=route_context,
+            session=session,
+        )
+        _set_active_phase(session, SessionPhase.TEACHING)
+
+    phase_gated_actions = {
+        "homework",
+        "finish",
+        "end",
+        "next_exercise",
+        "next_pdf_exercise",
+        "solve_pdf_exercises",
+        "solve_all_exercises",
+        "solve_all_pdf_exercises",
+        "skip_homework",
+    }
+    if _is_teaching_phase(session) and action in phase_gated_actions:
+        session.next_system_note = (
+            "SYSTEM NOTE: Reject this request for exercises/homework. "
+            "Continue theory teaching in the current chapter."
+        )
+        action = "continue"
     # If no explicit action provided and no question/answer, auto-continue for a seamless class
     if not action and not input_data.get("answer") and not input_data.get("question"):
         action = "continue"
@@ -2468,8 +2506,7 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         or session.current_topic
         or ("JEE Mathematics" if session.exam == "jee" else "CBSE Mathematics")
     )
-    session.active_phase = "practice" if input_data.get("answer") else "teaching"
-    session.current_phase = str(getattr(session.active_phase, "value", session.active_phase) or "teaching").lower()
+    session.current_phase = _phase_value(session)
 
     if input_data.get("question"):
         session.current_problem = {"prompt": input_data["question"]}
@@ -2481,11 +2518,12 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         user_message,
         mode=req.mode,
         context=route_context,
+        session=session,
     )
     session.current_topic = _resolve_session_topic(session)
     rag_context = _rag_context_for_session(session, session.exam)
-    # Warm cache on class start for smoother continuous experience
-    if action == "start":
+    # Warm problem cache only after entering practice mode.
+    if action == "start" and not _is_teaching_phase(session):
         try:
             _warm_problem_cache(session, topic=session.current_topic or session.chapter_name, rag_context=rag_context, count=3)
         except Exception:
@@ -2538,7 +2576,7 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
             correct_answer="42",
         )
         nudge = diagnostic_result.get("hidden_nudge")
-        exercise_nudge = _exercise_nudge_from_rag(rag_context, turn_index)
+        exercise_nudge = None if _is_teaching_phase(session) else _exercise_nudge_from_rag(rag_context, turn_index)
         nudge = "\n".join(part for part in [nudge, continuation_nudge, exercise_nudge] if part)
         tutor_payload = await tutor_agent.process_message(
             session,
@@ -2549,7 +2587,7 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         spoken_response = tutor_payload.get("spoken_response", "")
         whiteboard_actions = tutor_payload.get("whiteboard_actions", [])
     else:
-        exercise_nudge = _exercise_nudge_from_rag(rag_context, turn_index)
+        exercise_nudge = None if _is_teaching_phase(session) else _exercise_nudge_from_rag(rag_context, turn_index)
         nudge = "\n".join(part for part in [continuation_nudge, exercise_nudge] if part)
         tutor_payload = await tutor_agent.process_message(
             session,
@@ -2625,12 +2663,19 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
     whiteboard_actions = _ensure_board_header_actions(session, whiteboard_actions, include_headers=include_headers)
     steps = _steps_from_actions(whiteboard_actions)
     if not steps:
-        fallback_actions = _next_problem_actions_for_session(
-            session,
-            topic=session.current_topic or session.chapter_name,
-            rag_context=rag_context,
-            action=action,
-        )
+        if _is_teaching_phase(session):
+            fallback_actions = _chapter_teaching_phase_actions(session) or [
+                {"action": "draw_text", "content": f"Chapter: {session.chapter_name or session.current_topic or 'Current Chapter'}"},
+                {"action": "draw_text", "content": f"Topic: {session.current_topic or session.chapter_name or 'Current Topic'}"},
+                {"action": "draw_text", "content": "Welcome to the class! Let us start with theory and key concepts."},
+            ]
+        else:
+            fallback_actions = _next_problem_actions_for_session(
+                session,
+                topic=session.current_topic or session.chapter_name,
+                rag_context=rag_context,
+                action=action,
+            )
         whiteboard_actions = _ensure_board_header_actions(session, fallback_actions, include_headers=include_headers)
         steps = _steps_from_actions(whiteboard_actions)
     session.class_problem_cursor = turn_index + 1
@@ -2678,7 +2723,7 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         "whiteboard": {
             "title": f"{chapter_title} | {topic_title}",
             "subtitle": "Arvind Sir's smart blackboard",
-            "mode": "concept" if concept_phase_used else "exercise",
+            "mode": "concept" if concept_phase_used or _is_teaching_phase(session) else "exercise",
             "problem": board_problem or None,
             "chalk_lines": steps,
             "actions": whiteboard_actions,
