@@ -55,9 +55,10 @@ class PdfExercise:
     number: str
     prompt: str
     source_file: str
+    figure_hint: str | None = None
 
     def as_problem(self) -> dict[str, Any]:
-        return {
+        payload = {
             "chapter_index": self.chapter_index,
             "chapter_title": self.chapter_title,
             "exercise": self.exercise,
@@ -66,6 +67,9 @@ class PdfExercise:
             "source_file": self.source_file,
             "source": "cbse_pdf_exercise",
         }
+        if self.figure_hint:
+            payload["figure_hint"] = self.figure_hint
+        return payload
 
 
 def _pdf_dir(grade: int) -> Path:
@@ -178,6 +182,34 @@ def _split_subparts(prompt: str) -> list[tuple[str, str]]:
     return parts
 
 
+def _figure_hint_from_prompt(prompt: str, chapter_title: str) -> str | None:
+    text = str(prompt or "").strip()
+    lowered = text.lower()
+    figure_markers = ("figure", "fig.", "in fig", "in the fig", "in the figure", "given below", "as shown")
+    if not any(marker in lowered for marker in figure_markers):
+        return None
+
+    labels = []
+    for token in re.findall(r"\b[A-Z]{1,4}\b", text):
+        if token in {"NCERT", "CBSE"}:
+            continue
+        if token not in labels:
+            labels.append(token)
+        if len(labels) >= 8:
+            break
+
+    chapter_l = str(chapter_title or "").lower()
+    if "triangle" in chapter_l or any(word in lowered for word in ("triangle", "similar", "parallel", "quadrilateral", "trapezium")):
+        label_text = ", ".join(labels) if labels else "the points named in the problem"
+        return f"Reconstruct the figure from the problem statement. Draw the geometry for labels {label_text}; mark any parallel sides, equal angles, or proportional sides mentioned."
+
+    if "circle" in chapter_l or "circle" in lowered:
+        label_text = ", ".join(labels) if labels else "the marked points"
+        return f"Reconstruct the circle figure from the problem statement. Draw the circle and label {label_text}; mark radii, chords, tangents, and given points."
+
+    return "Reconstruct the figure described in the problem statement and label all visible points from the question."
+
+
 def load_chapter_pdf_exercises(
     grade: int,
     chapter_index: int,
@@ -202,6 +234,7 @@ def load_chapter_pdf_exercises(
                             number=f"{number}({roman})",
                             prompt=subprompt,
                             source_file=path.name,
+                            figure_hint=_figure_hint_from_prompt(subprompt, chapter_title),
                         )
                     )
             else:
@@ -213,6 +246,7 @@ def load_chapter_pdf_exercises(
                         number=number,
                         prompt=prompt,
                         source_file=path.name,
+                        figure_hint=_figure_hint_from_prompt(prompt, chapter_title),
                     )
                 )
     return [exercise.as_problem() for exercise in exercises]

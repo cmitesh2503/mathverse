@@ -200,6 +200,8 @@ class ClassroomState:
     pdf_exercise_session: dict[str, Any] = field(default_factory=dict)
     last_doubt_question: str | None = None
     last_doubt_plan: dict[str, Any] = field(default_factory=dict)
+    doubt_open: bool = False
+    transcript: list[dict[str, Any]] = field(default_factory=list)
     
     def get_weak_area(state):
         stats = getattr(state, "stats", {})
@@ -305,6 +307,7 @@ class TutorEngine:
     def process(self, session_id: str, message, session_record=None, exam="cbse") -> str:
 
         state = self._ensure_state(session_id, session_record)
+        state.session_id = session_id
         state.exam = _normalize_exam(getattr(state, "exam", exam) or exam)
         # ✅ HANDLE DICT INPUT HERE (MAIN FIX)
         if isinstance(message, dict):
@@ -324,6 +327,13 @@ class TutorEngine:
 
         # 🔥 STEP FLOW PRIORITY
         
+        if self._should_route_open_doubt_followup(state, text):
+            return self.handle_doubt(state, text, session=session_record)
+
+        if self._is_doubt_resolution_confirmation(text) and getattr(state, "doubt_open", False):
+            state.doubt_open = False
+            return "Great. We can continue the lesson now."
+
         if "start practice" in lowered or "test me" in lowered:
             state.stage = "PRACTICE"
             state.active_problem = self._current_problem(state)
@@ -398,6 +408,15 @@ class TutorEngine:
                 if session_record is not None:
                     state.grade = getattr(session_record, "grade", state.grade)
                     state.active_phase = getattr(session_record, "active_phase", state.active_phase)
+                    if not state.transcript and getattr(session_record, "transcript", None):
+                        state.transcript = [
+                            {
+                                "role": str(getattr(turn, "role", "")),
+                                "content": str(getattr(turn, "content", "")),
+                                "transport": str(getattr(turn, "transport", "text")),
+                            }
+                            for turn in getattr(session_record, "transcript", [])[-12:]
+                        ]
                 return state
 
             grade = getattr(session_record, "grade", 10) if session_record is not None else 10
@@ -405,6 +424,15 @@ class TutorEngine:
             state = self._fresh_state(grade, topic_slug)
             if session_record is not None:
                 state.active_phase = getattr(session_record, "active_phase", state.active_phase)
+                if getattr(session_record, "transcript", None):
+                    state.transcript = [
+                        {
+                            "role": str(getattr(turn, "role", "")),
+                            "content": str(getattr(turn, "content", "")),
+                            "transport": str(getattr(turn, "transport", "text")),
+                        }
+                        for turn in getattr(session_record, "transcript", [])[-12:]
+                    ]
             self._states[session_id] = state
             return state
 
@@ -2103,6 +2131,102 @@ class TutorEngine:
         )
         return any(phrase in lowered for phrase in followup_phrases)
 
+    def _is_doubt_resolution_confirmation(self, question: str) -> bool:
+        lowered = self._sentence(question).lower()
+        confirmations = (
+            "yes",
+            "yes understood",
+            "understood",
+            "got it",
+            "clear",
+            "makes sense",
+            "no more doubt",
+            "no doubts",
+            "continue",
+            "move on",
+        )
+        return lowered in confirmations
+
+    def _should_route_open_doubt_followup(self, state: ClassroomState, question: str) -> bool:
+        if not getattr(state, "doubt_open", False) and not self._last_ai_message_waits_for_doubt(state):
+            return False
+        if self._is_doubt_resolution_confirmation(question):
+            return False
+        lowered = self._sentence(question).lower()
+        if not lowered:
+            return False
+        progress_commands = {"next", "continue", "start", "homework", "finish", "end"}
+        if lowered in progress_commands:
+            return False
+        return True
+
+    def _last_ai_message_waits_for_doubt(self, state: ClassroomState) -> bool:
+        turns = getattr(state, "transcript", []) or []
+        for turn in reversed(turns):
+            if isinstance(turn, dict):
+                role = str(turn.get("role") or "").strip().lower()
+                content = str(turn.get("content") or "").strip().lower()
+            else:
+                role = str(getattr(turn, "role", "") or "").strip().lower()
+                content = str(getattr(turn, "content", "") or "").strip().lower()
+            if not role or not content:
+                continue
+            if role == "assistant":
+                return any(
+                    cue in content
+                    for cue in (
+                        "does that make sense",
+                        "need further clarification",
+                        "need more clarification",
+                        "do you understand",
+                        "is it clear",
+                    )
+                )
+            if role == "user":
+                return False
+        return False
+
+    def _append_transcript_turn(self, state: ClassroomState, role: str, content: str, session: Any | None = None) -> None:
+        text = self._sentence(content)
+        if not text:
+            return
+
+        turn = {"role": role, "content": text, "transport": "text"}
+        state.transcript.append(turn)
+        state.transcript = state.transcript[-12:]
+
+        transcript = getattr(session, "transcript", None)
+        if isinstance(transcript, list):
+            try:
+                from app.models.session import TranscriptTurn
+
+                transcript.append(TranscriptTurn(role=role, content=text, transport="text"))
+            except Exception:
+                transcript.append(turn)
+
+        session_id = str(getattr(session, "session_id", None) or getattr(state, "session_id", "") or "").strip()
+        if session_id:
+            try:
+                from app.services.session_service import session_service
+
+                session_service.append_turn(session_id, role, text, transport="text")
+            except Exception as error:
+                print(f"[DOUBT] Transcript append failed: {type(error).__name__}: {error}")
+
+    def _recent_doubt_transcript(self, state: ClassroomState) -> str:
+        turns = getattr(state, "transcript", []) or []
+        lines: list[str] = []
+        for turn in turns[-8:]:
+            if isinstance(turn, dict):
+                role = str(turn.get("role") or "").strip()
+                content = str(turn.get("content") or "").strip()
+            else:
+                role = str(getattr(turn, "role", "") or "").strip()
+                content = str(getattr(turn, "content", "") or "").strip()
+            if role and content:
+                lines.append(f"{role.title()}: {content}")
+        return "\n".join(lines)
+
     def _integers_from_text(self, text: str) -> list[int]:
         return [int(match) for match in re.findall(r"\b\d+\b", str(text or ""))]
 
@@ -2359,15 +2483,29 @@ class TutorEngine:
             f"Current board problem: {problem_text or 'None'}\n"
             f"Current blackboard lines: {' | '.join(board_lines) if board_lines else 'None'}\n"
             f"Previous doubt: {getattr(state, 'last_doubt_question', None) or 'None'}\n"
+            f"Recent doubt transcript:\n{self._recent_doubt_transcript(state) or 'None'}\n"
             f"Student question: {question}"
         )
 
     def _build_ai_doubt_response(self, state: ClassroomState, question: str) -> dict[str, Any] | None:
         from app.services.ai_gateway import generate_response
 
+        student_doubt = self._sentence(question)
         topic = getattr(state, "topic_title", None) or getattr(state, "current_topic", None) or "Current mathematics topic"
         active_problem = getattr(state, "active_problem", None) or {}
         problem_text = str(active_problem.get("prompt") or active_problem.get("question") or "").strip()
+        raw_phase = getattr(state, "active_phase", SessionPhase.TEACHING)
+        phase_value = str(getattr(raw_phase, "value", raw_phase) or SessionPhase.TEACHING.value).strip().lower()
+        exam_type = _normalize_exam(getattr(state, "exam", "cbse"))
+        grade = int(getattr(state, "grade", 10) or 10)
+        rag_context = retrieve_context(
+            query=student_doubt,
+            chapter=getattr(state, "current_chapter", None),
+            phase=phase_value,
+            exam_type=exam_type,
+            grade=grade,
+            k=8,
+        )
         
         prompt = f"""
 You are Arvind Sir, an expert Class 10-12 mathematics tutor.
@@ -2375,8 +2513,12 @@ You are Arvind Sir, an expert Class 10-12 mathematics tutor.
 CURRENT CLASS CONTEXT:
 - Chapter/Topic: {topic}
 - Current Problem: {problem_text or 'None'}
+- Current Phase: {phase_value}
 
-STUDENT QUESTION: {question}
+RELEVANT CURRICULUM CONTEXT:
+{rag_context or 'No matching curriculum context was retrieved. Use only the current class context and standard mathematics.'}
+
+STUDENT QUESTION: {student_doubt}
 
 INSTRUCTIONS (FOLLOW STRICTLY):
 1. ANSWER DIRECTLY AND SPECIFICALLY about the current problem/topic. Do NOT give generic study advice.
@@ -2391,8 +2533,11 @@ INSTRUCTIONS (FOLLOW STRICTLY):
 6. Use Hindi/Hinglish for explanation but keep mathematics terms in English.
 7. Keep sentences short and simple for an Indian school student.
 8. Return ONLY valid JSON, no markdown, no code blocks.
+9. Use the relevant curriculum context above when it contains matching material.
+10. When answering a student's doubt, ALWAYS end by asking if they understood or if they need further clarification, for example: "Does that make sense?"
+11. Do NOT assume the doubt is fully resolved until the student confirms it.
 
-Context from blackboard: {self._ai_doubt_context(state, question)}
+Context from blackboard: {self._ai_doubt_context(state, student_doubt)}
 
 Return ONLY JSON:
 {{
@@ -2411,20 +2556,37 @@ Return ONLY JSON:
 
         future = AI_DOUBT_EXECUTOR.submit(generate_response, prompt)
         try:
-            text = future.result(timeout=15)
+            text = future.result(timeout=45)
         except FutureTimeoutError:
-            print(f"[DOUBT] AI generation timed out for question: {question[:100]}")
-            return None
+            future.cancel()
+            raise RuntimeError(f"AI generation timed out for doubt: {student_doubt[:100]}")
         except Exception as error:
-            print(f"[DOUBT] AI generation failed: {type(error).__name__}: {error}")
-            return None
+            raise RuntimeError(f"AI generation failed for doubt: {type(error).__name__}: {error}") from error
 
         plan = self._parse_ai_doubt_plan(text)
         if plan:
             set_cache(cache_key, plan)
-        else:
-            print(f"[DOUBT] Failed to parse AI response for question: {question[:100]}")
-        return plan
+            return plan
+
+        try:
+            payload = json.loads(str(text or ""))
+        except Exception:
+            payload = None
+        if isinstance(payload, dict) and "spoken_response" in payload and "whiteboard_actions" in payload:
+            raise RuntimeError("AI gateway returned its fallback response for the doubt request.")
+
+        raw_text = self._sentence(text)
+        if raw_text:
+            plan = {
+                "mistake_explanation": raw_text,
+                "concept_steps": [],
+                "shortcut": None,
+                "speed_hint": None,
+            }
+            set_cache(cache_key, plan)
+            return plan
+
+        raise RuntimeError(f"AI returned an empty doubt response for: {student_doubt[:100]}")
 
     def _build_cbse_doubt_response(self, question: str, state: ClassroomState | None = None, context: str = "") -> dict[str, Any]:
         question_text = self._sentence(question)
@@ -2453,37 +2615,7 @@ Return ONLY JSON:
             number = max(numbers) if numbers else None
             return self._build_factor_search_response(number)
 
-        # Use current context to provide a better fallback response
-        topic = getattr(state, "topic_title", None) or getattr(state, "current_topic", None) or "this topic"
-        problem_text = ""
-        active_problem = getattr(state, "active_problem", None)
-        if isinstance(active_problem, dict):
-            problem_text = str(active_problem.get("prompt") or active_problem.get("question") or "").strip()
-        
-        # Build a contextual explanation instead of generic one
-        explanation = f"Your doubt is: {question_text}\n\n"
-        if problem_text:
-            explanation += f"Based on the current problem '{problem_text[:80]}...':\n\n"
-        explanation += (
-            "Let me explain this step-by-step:\n"
-            "1. First, identify what information we have (what is given)\n"
-            "2. Then, identify what we need to find (what is asked)\n"
-            "3. Next, recall the relevant rule, formula, or concept\n"
-            "4. Finally, apply it with the actual numbers\n\n"
-            "This approach helps you solve similar problems independently."
-        )
-
-        return {
-            "mistake_explanation": explanation,
-            "concept_steps": [
-                "Underline the exact quantity asked in the question.",
-                "Write the known values separately.",
-                "Choose the matching formula, property, or divisibility rule.",
-                "Substitute values and simplify one line at a time.",
-            ],
-            "shortcut": None,
-            "speed_hint": None,
-        }
+        raise RuntimeError("AI doubt response was not generated.")
     
     def _generate_rag_homework(self, state: ClassroomState, session_id: str, student_id: str):
         """
@@ -2554,30 +2686,44 @@ Return ONLY JSON:
         else:
             return "easy"   # start safe
         
-    def handle_doubt(self, state, question):
+    def handle_doubt(self, state, question, session: Any | None = None):
         exam = _normalize_exam(getattr(state, "exam", "cbse"))
         question = self._sentence(question or "")
         effective_question = question
         if self._is_doubt_followup(question) and getattr(state, "last_doubt_question", None):
             effective_question = f"{state.last_doubt_question}. Follow-up request: {question}"
 
-        if exam == "jee":
-            pattern = self._classify_jee_pattern(effective_question)
-            plan = self._build_jee_response({"prompt": effective_question, "pattern": pattern}, "concept_error")
-        else:
-            plan = self._build_cbse_doubt_response(effective_question, state=state)
-
-        state.last_doubt_question = effective_question
-        state.last_doubt_plan = plan
-        
-        # Ensure plan has required keys
-        if not plan:
+        try:
+            if exam == "jee":
+                pattern = self._classify_jee_pattern(effective_question)
+                plan = self._build_jee_response({"prompt": effective_question, "pattern": pattern}, "concept_error")
+            else:
+                plan = self._build_cbse_doubt_response(effective_question, state=state)
+        except Exception as error:
+            print(f"[DOUBT] Falling back after error: {type(error).__name__}: {error}")
             plan = {
-                "mistake_explanation": "Unable to process your question right now. Please try again or ask a simpler question.",
+                "mistake_explanation": "I'm having trouble connecting to my math database right now. Could you repeat that?",
                 "concept_steps": [],
                 "shortcut": None,
                 "speed_hint": None,
             }
+
+        state.last_doubt_question = effective_question
+        state.last_doubt_plan = plan
+        state.doubt_open = True
+        
+        # Ensure plan has required keys
+        if not plan:
+            plan = {
+                "mistake_explanation": "I'm having trouble connecting to my math database right now. Could you repeat that?",
+                "concept_steps": [],
+                "shortcut": None,
+                "speed_hint": None,
+            }
+
+        answer_text = plan.get("mistake_explanation", "")
+        self._append_transcript_turn(state, "user", question, session=session)
+        self._append_transcript_turn(state, "assistant", answer_text, session=session)
 
         return {
             "correct": None,
@@ -2589,6 +2735,9 @@ Return ONLY JSON:
             "speed_hint": plan.get("speed_hint") if exam == "jee" else None,
             "adaptive_hint": None,
             "next_question": None,
+            "action": {"action": "wait_for_student"},
+            "next_action": "wait_for_student",
+            "doubt_open": True,
         }
 
     def handle_learn(self, state, topic):

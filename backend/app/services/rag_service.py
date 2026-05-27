@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import re
 from typing import Any
 
 from ..core.config import GEMINI_API_KEY
@@ -14,10 +15,30 @@ _embedding_instance: object | None = None
 FAISS_INDEX_PATH = Path(__file__).resolve().parents[2] / "data" / "faiss_index"
 CBSE_INDEX_NAME = "cbse_index"
 JEE_INDEX_NAME = "jee_index"
-EMBEDDING_MODEL = os.getenv("RAG_EMBEDDING_MODEL", "gemini-embedding-2-preview")
+EMBEDDING_MODEL = os.getenv("RAG_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 PHASE_DOC_TYPE_FILTERS: dict[str, list[str]] = {
     "teaching": ["theory", "examples"],
     "practice": ["practice", "solutions"],
+}
+_CHAPTER_ALIAS_CACHE: dict[tuple[int | None, str, str], set[str]] = {}
+CBSE_GRADE10_CHAPTER_ALIASES: dict[str, int] = {
+    "real numbers": 1,
+    "polynomials": 2,
+    "pair of linear equations": 3,
+    "pair of linear equations in two variables": 3,
+    "quadratic equations": 4,
+    "arithmetic progressions": 5,
+    "triangles": 6,
+    "coordinate geometry": 7,
+    "introduction to trigonometry": 8,
+    "some applications of trigonometry": 9,
+    "applications of trigonometry": 9,
+    "circles": 10,
+    "constructions": 11,
+    "areas related to circles": 12,
+    "surface areas and volumes": 13,
+    "statistics": 14,
+    "probability": 15,
 }
 
 
@@ -26,12 +47,18 @@ def _query_embeddings():
     if _embedding_instance is not None:
         return _embedding_instance
 
+    if EMBEDDING_MODEL.startswith("sentence-transformers/") or EMBEDDING_MODEL.startswith("all-"):
+        try:
+            from langchain_huggingface import HuggingFaceEmbeddings
+        except ImportError:
+            from langchain_community.embeddings import HuggingFaceEmbeddings
+
+        _embedding_instance = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+        return _embedding_instance
+
     from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-    embedding_kwargs = {
-        "model": EMBEDDING_MODEL,
-        "task_type": "RETRIEVAL_QUERY",
-    }
+    embedding_kwargs = {"model": EMBEDDING_MODEL, "task_type": "RETRIEVAL_QUERY"}
     if GEMINI_API_KEY:
         embedding_kwargs["google_api_key"] = GEMINI_API_KEY
     _embedding_instance = GoogleGenerativeAIEmbeddings(**embedding_kwargs)
@@ -98,18 +125,117 @@ def get_retriever(exam_type: str = "cbse"):
     return retriever_instances.get(normalized_exam, retriever_instances["cbse"])
 
 
+def _grade_number(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        pass
+
+    match = re.search(r"\d+", str(value or ""))
+    if match:
+        try:
+            return int(match.group(0))
+        except ValueError:
+            return None
+    return None
+
+
 def _doc_metadata_grade(doc: object) -> int | None:
     metadata = getattr(doc, "metadata", None)
     if not isinstance(metadata, dict):
         return None
     for key in ("grade", "class", "std"):
-        raw = metadata.get(key)
-        try:
-            if raw is not None:
-                return int(raw)
-        except (TypeError, ValueError):
-            continue
+        grade = _grade_number(metadata.get(key))
+        if grade is not None:
+            return grade
     return None
+
+
+def _normalize_match_value(value: object) -> str:
+    text = str(value or "").strip().lower()
+    text = re.sub(r"(?i)\b(ch|chapter|grade|class|std)[\s_-]*(\d+)\b", r"\1 \2", text)
+    text = text.replace("_", " ").replace("-", " ")
+    return " ".join(text.split())
+
+
+def _chapter_number_aliases(index: int) -> set[str]:
+    return {
+        str(index),
+        f"{index:02d}",
+        f"ch {index}",
+        f"ch {index:02d}",
+        f"chapter {index}",
+        f"chapter {index:02d}",
+    }
+
+
+def _chapter_aliases(chapter: str | None, grade: int | None, exam_type: str | None) -> set[str]:
+    normalized_chapter = _normalize_match_value(chapter)
+    if not normalized_chapter:
+        return set()
+
+    normalized_exam = _normalize_exam_type(exam_type)
+    cache_key = (grade, normalized_exam, normalized_chapter)
+    cached = _CHAPTER_ALIAS_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    aliases = {normalized_chapter}
+    if match := re.search(r"\d+", normalized_chapter):
+        aliases.update(_chapter_number_aliases(int(match.group(0))))
+    has_known_pdf_number = False
+    if grade == 10 and normalized_exam == "cbse":
+        chapter_number = CBSE_GRADE10_CHAPTER_ALIASES.get(normalized_chapter)
+        if chapter_number is not None:
+            has_known_pdf_number = True
+            aliases.update(_chapter_number_aliases(chapter_number))
+
+    if grade is not None and not has_known_pdf_number:
+        try:
+            from ..tutor_brain.curriculum import get_grade_curriculum
+
+            curriculum = get_grade_curriculum(grade, normalized_exam)
+            chapters = curriculum.get("chapters") if isinstance(curriculum, dict) else []
+        except Exception:
+            chapters = []
+
+        if isinstance(chapters, list):
+            for index, item in enumerate(chapters, start=1):
+                if not isinstance(item, dict):
+                    continue
+                candidate_values = [
+                    item.get("slug"),
+                    item.get("title"),
+                    item.get("chapter"),
+                    item.get("name"),
+                ]
+                normalized_candidates = {
+                    _normalize_match_value(value)
+                    for value in candidate_values
+                    if str(value or "").strip()
+                }
+                if not normalized_candidates:
+                    continue
+                if any(
+                    normalized_chapter == candidate
+                    or normalized_chapter in candidate
+                    or candidate in normalized_chapter
+                    for candidate in normalized_candidates
+                ):
+                    aliases.update(normalized_candidates)
+                    aliases.update(_chapter_number_aliases(index))
+
+    _CHAPTER_ALIAS_CACHE[cache_key] = aliases
+    return aliases
+
+
+def _doc_matches_grade(doc: object, grade: int | None) -> bool:
+    if grade is None:
+        return True
+    doc_grade = _doc_metadata_grade(doc)
+    return doc_grade is None or doc_grade == grade
 
 
 def _doc_matches_phase(doc: object, phase: str | None) -> bool:
@@ -132,18 +258,36 @@ def _doc_matches_phase(doc: object, phase: str | None) -> bool:
     return False
 
 
-def _doc_matches_chapter(doc: object, chapter: str | None) -> bool:
-    chapter_value = str(chapter or "").strip().lower()
-    if not chapter_value:
+def _doc_matches_chapter(
+    doc: object,
+    chapter: str | None,
+    *,
+    grade: int | None = None,
+    exam_type: str | None = None,
+) -> bool:
+    aliases = _chapter_aliases(chapter, grade, exam_type)
+    if not aliases:
         return True
 
     metadata = getattr(doc, "metadata", None)
     if not isinstance(metadata, dict):
         return False
-    candidate = metadata.get("chapter")
-    if candidate is None:
+
+    candidates = [
+        metadata.get("chapter"),
+        metadata.get("chapter_name"),
+        metadata.get("chapter_title"),
+        metadata.get("source_file"),
+        metadata.get("source_path"),
+    ]
+    normalized_candidates = {
+        _normalize_match_value(candidate)
+        for candidate in candidates
+        if str(candidate or "").strip()
+    }
+    if not normalized_candidates:
         return False
-    return str(candidate).strip().lower() == chapter_value
+    return bool(aliases.intersection(normalized_candidates))
 
 
 def embed_text(text: str) -> list[float]:
@@ -173,13 +317,13 @@ def get_context(
     target_k = max(2, int(k or 3))
     normalized_phase = str(phase or "").strip().lower()
     filtered_doc_types = PHASE_DOC_TYPE_FILTERS.get(normalized_phase, [])
-    chapter_value = str(chapter or "").strip()
     metadata_filter: dict[str, object] = {}
-    if chapter_value:
-        metadata_filter["chapter"] = chapter_value
-    if filtered_doc_types:
-        metadata_filter["doc_type"] = filtered_doc_types
-    print(f"Searching RAG: {chapter} | Phase: {phase} | Filtered Doc Types: {filtered_doc_types}")
+    normalized_grade = _grade_number(grade)
+    print(
+        "Searching RAG: "
+        f"Grade: {normalized_grade or grade} | Chapter: {chapter} | "
+        f"Phase: {phase} | Filtered Doc Types: {filtered_doc_types}"
+    )
 
     docs = []
     try:
@@ -198,14 +342,27 @@ def get_context(
         retriever = get_retriever(exam_type=normalized_exam)
         docs = retriever.invoke(query)
 
-    if grade is not None:
-        filtered = [doc for doc in docs if _doc_metadata_grade(doc) in {None, int(grade)}]
+    if normalized_grade is not None:
+        filtered = [doc for doc in docs if _doc_matches_grade(doc, normalized_grade)]
         if filtered:
             docs = filtered
     if chapter is not None:
-        docs = [doc for doc in docs if _doc_matches_chapter(doc, chapter)]
+        filtered = [
+            doc
+            for doc in docs
+            if _doc_matches_chapter(
+                doc,
+                chapter,
+                grade=normalized_grade,
+                exam_type=normalized_exam,
+            )
+        ]
+        if filtered:
+            docs = filtered
     if phase is not None:
-        docs = [doc for doc in docs if _doc_matches_phase(doc, phase)]
+        filtered = [doc for doc in docs if _doc_matches_phase(doc, phase)]
+        if filtered:
+            docs = filtered
 
     return "\n\n".join(
         (doc.page_content or "").strip()
@@ -215,17 +372,7 @@ def get_context(
 
 
 def _metadata_grade(metadata_filter: dict[str, Any]) -> int | None:
-    raw_grade = metadata_filter.get("grade")
-    if raw_grade is None:
-        return None
-    try:
-        return int(raw_grade)
-    except (TypeError, ValueError):
-        match = str(raw_grade).strip().lower().replace("grade_", "")
-        try:
-            return int(match)
-        except (TypeError, ValueError):
-            return None
+    return _grade_number(metadata_filter.get("grade"))
 
 
 def _retrieve_chroma_context(query: str, n_results: int, metadata_filter: dict[str, Any] | None) -> str:

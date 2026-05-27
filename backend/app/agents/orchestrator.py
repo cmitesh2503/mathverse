@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Any
 
 import redis.asyncio as redis
+from redis.exceptions import RedisError
 
 from ..models.session import SessionPhase, StudentSession
 from ..tutor_brain.curriculum import list_chapters
@@ -14,11 +16,14 @@ class Orchestrator:
     ANSWER_KEYWORDS = ("answer is", "submitted", "final")
     HELP_KEYWORDS = ("hint", "help", "stuck")
     SESSION_TTL_SECONDS = 24 * 60 * 60
+    _memory_sessions: dict[str, tuple[str, float]] = {}
 
     def __init__(self) -> None:
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         self._redis_key_prefix = os.getenv("ORCHESTRATOR_SESSION_KEY_PREFIX", "orchestrator:session:")
         self.redis_client = redis.from_url(redis_url, decode_responses=True)
+        self._use_memory_store = os.getenv("ORCHESTRATOR_STORE", "").lower() == "memory"
+        self._require_redis = os.getenv("ORCHESTRATOR_REQUIRE_REDIS", "").lower() in {"1", "true", "yes"}
 
     def _phase_value(self, session: StudentSession) -> str:
         raw_phase = getattr(session, "active_phase", SessionPhase.TEACHING)
@@ -31,11 +36,46 @@ class Orchestrator:
     def _redis_key(self, session_id: str) -> str:
         return f"{self._redis_key_prefix}{session_id}"
 
+    def _memory_get(self, session_id: str) -> str | None:
+        key = self._redis_key(session_id)
+        item = self._memory_sessions.get(key)
+        if item is None:
+            return None
+
+        serialized, expires_at = item
+        if expires_at <= time.monotonic():
+            self._memory_sessions.pop(key, None)
+            return None
+        return serialized
+
+    def _memory_set(self, session_id: str, serialized: str) -> None:
+        expires_at = time.monotonic() + self.SESSION_TTL_SECONDS
+        self._memory_sessions[self._redis_key(session_id)] = (serialized, expires_at)
+
+    def _fallback_to_memory(self, error: Exception) -> None:
+        if self._require_redis:
+            raise error
+        self._use_memory_store = True
+
     async def verify_connection(self) -> bool:
-        return bool(await self.redis_client.ping())
+        if self._use_memory_store:
+            return True
+        try:
+            return bool(await self.redis_client.ping())
+        except (OSError, RedisError) as error:
+            self._fallback_to_memory(error)
+            print(f"Redis unavailable; using in-memory orchestrator sessions ({type(error).__name__}: {error})")
+            return True
 
     async def get_session(self, session_id: str) -> StudentSession | None:
-        raw = await self.redis_client.get(self._redis_key(session_id))
+        if self._use_memory_store:
+            raw = self._memory_get(session_id)
+        else:
+            try:
+                raw = await self.redis_client.get(self._redis_key(session_id))
+            except (OSError, RedisError) as error:
+                self._fallback_to_memory(error)
+                raw = self._memory_get(session_id)
         if not raw:
             return None
 
@@ -47,7 +87,14 @@ class Orchestrator:
         session.session_id = session_id
 
         serialized = json.dumps(session.model_dump(mode="json"), ensure_ascii=False)
-        await self.redis_client.set(self._redis_key(session_id), serialized, ex=self.SESSION_TTL_SECONDS)
+        if self._use_memory_store:
+            self._memory_set(session_id, serialized)
+        else:
+            try:
+                await self.redis_client.set(self._redis_key(session_id), serialized, ex=self.SESSION_TTL_SECONDS)
+            except (OSError, RedisError) as error:
+                self._fallback_to_memory(error)
+                self._memory_set(session_id, serialized)
         return session
 
     async def get_or_create_session(self, session_id: str) -> StudentSession:

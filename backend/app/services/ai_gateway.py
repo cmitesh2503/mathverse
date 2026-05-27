@@ -28,7 +28,7 @@ except ImportError:  # pragma: no cover - optional dependency
     ResourceExhausted = None
 
 
-TEXT_MODEL_ID = "gemini-3.1-flash-lite-preview"
+TEXT_MODEL_ID = "gemini-3.1-flash"
 TTS_MODEL_ID = "gemini-2.5-flash-preview-tts"
 DEPRECATED_TEXT_MODEL_SUFFIXES = (
     "2.0-flash",

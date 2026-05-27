@@ -19,6 +19,7 @@ from ..services.cbse_exercises import (
 from ..services.rag_service import retrieve_context
 from ..services.firebase_service import get_attempts, save_attempt
 from ..services.ai_gateway import generate_audio
+from ..services.session_service import session_service
 from ..services.math_formatter import (
     convert_text_to_display_symbols,
     convert_display_symbols_to_speech,
@@ -37,7 +38,7 @@ tutor_agent = TutorAgent()
 diagnostic_agent = DiagnosticAgent()
 proctor_agent = ProctorAgent()
 _legacy_engine = None
-_RAG_CONTEXT_CACHE: dict[tuple[int, str, str, str], str] = {}
+_RAG_CONTEXT_CACHE: dict[tuple[int, str, str, str, str], str] = {}
 
 
 def _sanitize_for_speech(text: str) -> str:
@@ -251,28 +252,42 @@ def _spoken_for_concept_board(steps: list[str], topic_title: str, teaching_langu
         for line in lines
         if line.lower().startswith("concept step ")
     ][:4]
+    pdf_lines = [
+        line.split(":", 1)[1].strip()
+        for line in lines
+        if line.lower().startswith(("pdf theorem/example", "pdf note"))
+    ][:4]
+    theorem_line = next(
+        (
+            line
+            for line in pdf_lines
+            if any(token in line.lower() for token in ("theorem", "criterion", "similarity", "pythagoras", "thales"))
+        ),
+        pdf_lines[0] if pdf_lines else "",
+    )
 
     if chapter_flow:
         topic_text = ", ".join(chapter_topic_list)
+        theorem_intro = f" The first theorem idea from the NCERT PDF is: {theorem_line}" if theorem_line else ""
         if teaching_language == "hi-IN":
             return (
                 f"Aaj hum {chapter_name or topic_title} chapter start kar rahe hain. "
                 "Pehle main chapter ka roadmap board par likhunga, phir har topic ka concept samjhaunga, "
                 "aur uske baad NCERT exercise solve karenge. "
-                f"Is chapter ke topics hain: {topic_text}."
+                f"Is chapter ke topics hain: {topic_text}.{theorem_intro}"
             ).strip()
         if teaching_language == "gu-IN":
             return (
                 f"Aaje aapde {chapter_name or topic_title} chapter start kariye chhiye. "
                 "Pehla hu chapter no roadmap board par lakhish, pachi darek topic no concept samjavish, "
                 "ane tyaar baad NCERT exercise solve karishu. "
-                f"Aa chapter na topics chhe: {topic_text}."
+                f"Aa chapter na topics chhe: {topic_text}.{theorem_intro}"
             ).strip()
         return (
             f"Today we are starting the {chapter_name or topic_title} chapter. "
             "First I am writing the chapter roadmap on the board, then I will explain each topic concept, "
             "and after that we will solve the NCERT exercise. "
-            f"The topics in this chapter are: {topic_text}."
+            f"The topics in this chapter are: {topic_text}.{theorem_intro}"
         ).strip()
 
     if teaching_language == "hi-IN":
@@ -309,6 +324,8 @@ def _spoken_for_concept_board(steps: list[str], topic_title: str, teaching_langu
         spoken_parts.append(f"The intuition is: {why}")
     if concept_steps:
         spoken_parts.append("Now look at the board work: " + " ".join(concept_steps))
+    if theorem_line:
+        spoken_parts.append(f"From the NCERT PDF, the theorem or criterion we are learning is: {theorem_line}")
     spoken_parts.append("Hold this concept clearly; we will continue in the same flow.")
     return " ".join(spoken_parts)
 
@@ -530,7 +547,30 @@ def _word_problem_target(prompt: str) -> str:
 
 
 def _force_problem_readout_prefix(steps: list[str]) -> str:
-    return ""
+    compact_steps = [str(step).strip() for step in steps if str(step).strip()]
+    problem_no = next((line.split(":", 1)[1].strip() for line in compact_steps if line.lower().startswith("problem no:")), "")
+    problem_statement = next((line.split(":", 1)[1].strip() for line in compact_steps if line.lower().startswith("problem statement:")), "")
+    figure_line = next(
+        (
+            line
+            for line in compact_steps
+            if line.lower().startswith("figure") or line.lower().startswith("diagram:")
+        ),
+        "",
+    )
+    if not problem_statement:
+        return ""
+    spoken_problem = _sanitize_for_speech(problem_statement)
+    figure_part = ""
+    if figure_line:
+        figure_text = figure_line.split(":", 1)[1].strip() if ":" in figure_line else figure_line
+        figure_part = f" Look carefully at the figure on the board: {_sanitize_for_speech(figure_text)}."
+    return (
+        f"Now we will solve Problem no {problem_no or '-'}. "
+        f"First, let us read the problem statement: {spoken_problem}."
+        f"{figure_part} "
+        "Now I will explain the solution step by step. "
+    )
 
 
 def _is_word_problem(prompt: str) -> bool:
@@ -588,7 +628,28 @@ def _normalize_board_math_style(step: str) -> str:
 
 
 def _prepend_tutoring_principles(problem_statement: str, steps: list[str]) -> list[str]:
-    return steps
+    problem = str(problem_statement or "").strip()
+    lowered = problem.lower()
+    additions: list[str] = []
+    if "all circles" in lowered and "congruent" in lowered and "similar" in lowered:
+        additions.append("The theorem idea is similarity of figures: same shape means similar, same shape and same size means congruent.")
+        additions.append("First draw the circles from the problem so we can compare shape and size visually.")
+    elif "polygon" in lowered and "similar" in lowered:
+        additions.append("The theorem idea is similarity of polygons: corresponding angles must be equal and corresponding sides must be proportional.")
+        additions.append("First draw two same-shape polygons of different sizes so the equal angles and side ratios are visible.")
+    elif "non-similar" in lowered:
+        additions.append("The theorem idea is that figures are non-similar when their shape changes: either corresponding angles differ or side ratios are not proportional.")
+        additions.append("First draw the two example pairs so we can compare their shapes visually.")
+    elif "triangle" in lowered or "parallel" in lowered or "proportional" in lowered:
+        additions.append("First identify the triangle theorem needed from the chapter, such as similarity criteria or Basic Proportionality Theorem.")
+        additions.append("Draw the given figure and mark the known parallel lines, equal angles, or side ratios before calculation.")
+    elif "figure" in lowered or "fig." in lowered or "diagram" in lowered:
+        additions.append("First reconstruct the figure from the problem statement and mark all given information on it.")
+
+    existing = {step.strip().lower() for step in steps}
+    merged = [step for step in additions if step.strip().lower() not in existing]
+    merged.extend(steps)
+    return merged
 
 
 def _equation_rhs_factors(step: str) -> list[str]:
@@ -624,6 +685,9 @@ def _is_generic_diagram_hint(hint: str) -> bool:
         "simplify to the final result",
         "follow the chapter method",
         "show the flow",
+        "reconstruct the figure from the problem statement",
+        "labels the points named",
+        "points named in the problem",
     )
     return any(token in lowered for token in generic_tokens)
 
@@ -659,6 +723,15 @@ def _context_requests_diagram(prompt: str, solved_steps: list[str]) -> bool:
         "label ",
         "bisector",
         "perpendicular",
+        "polygon",
+        "polygons",
+        "rectangle",
+        "rectangles",
+        "square",
+        "rhombus",
+        "similar figure",
+        "similar figures",
+        "non-similar",
     )
     return any(marker in prompt_text for marker in geometry_markers)
 
@@ -694,6 +767,14 @@ def _resolve_diagram_hint(prompt: str, solved_steps: list[str], diagram_hint: st
             "Draw a circle with center O. Mark an external point A. Draw tangents AP and AQ touching the circle at P and Q. "
             "Join OA, OP, OQ and chord PQ."
         )
+    if "circle" in lowered and ("different radii" in lowered or "different sizes" in lowered or "all circles" in lowered):
+        return "Draw three circles of different sizes with radii r1, r2, and r3 to compare congruent versus similar."
+    if "polygon" in lowered and "similar" in lowered:
+        return "Draw two rectangles, one larger than the other. Mark equal corresponding angles and proportional corresponding sides."
+    if "non-similar" in lowered:
+        return "Draw two pairs of non-similar figures: a scalene triangle and an equilateral triangle; a square and a rhombus."
+    if "triangle" in lowered and ("similar" in lowered or "criterion" in lowered or "proportional" in lowered):
+        return "Draw triangle ABC with D on AB and E on AC. Draw DE parallel to BC to show corresponding angles and proportional sides."
     if "circle" in lowered:
         return "Draw a circle and mark all given points and line segments from the question."
     if "triangle" in lowered:
@@ -755,6 +836,8 @@ def _diagram_construction_steps(primitives: list[dict[str, Any]]) -> tuple[list[
 
         if name == "draw_line":
             step_text = f"Draw segment {label}." if label else "Draw the next required segment."
+        elif name == "draw_circle":
+            step_text = f"Draw circle {label}." if label else "Draw the required circle."
         elif name == "draw_angle":
             step_text = f"Mark angle {label}." if label else "Mark the required angle."
         elif name == "highlight_element":
@@ -778,6 +861,130 @@ def _diagram_construction_steps(primitives: list[dict[str, Any]]) -> tuple[list[
                 primitive_step_map[idx] = 6
 
     return steps, primitive_step_map
+
+
+def _circle_comparison_primitives() -> list[dict[str, Any]]:
+    return [
+        {"action": "draw_circle", "x": 58, "y": 96, "radius": 22, "color": "skyblue", "thickness": 3, "label": "r1", "metadata": {"diagram": True}},
+        {"action": "draw_circle", "x": 138, "y": 88, "radius": 34, "color": "orange", "thickness": 3, "label": "r2", "metadata": {"diagram": True}},
+        {"action": "draw_circle", "x": 238, "y": 78, "radius": 48, "color": "violet", "thickness": 3, "label": "r3", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 47, "y": 130, "label": "Circle 1", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 124, "y": 130, "label": "Circle 2", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 222, "y": 130, "label": "Circle 3", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 126, "y": 18, "label": "same shape, different size", "metadata": {"diagram": True}},
+    ]
+
+
+def _triangle_similarity_primitives() -> list[dict[str, Any]]:
+    return [
+        {"action": "draw_line", "x1": 32, "y1": 134, "x2": 260, "y2": 134, "color": "skyblue", "thickness": 3, "label": "BC", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 32, "y1": 134, "x2": 106, "y2": 26, "color": "skyblue", "thickness": 3, "label": "AB", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 106, "y1": 26, "x2": 260, "y2": 134, "color": "skyblue", "thickness": 3, "label": "AC", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 76, "y1": 70, "x2": 170, "y2": 70, "color": "orange", "thickness": 3, "label": "DE || BC", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 102, "y": 18, "label": "A", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 22, "y": 148, "label": "B", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 264, "y": 148, "label": "C", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 62, "y": 66, "label": "D", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 174, "y": 66, "label": "E", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 110, "y": 158, "label": "AD/DB = AE/EC", "metadata": {"diagram": True}},
+    ]
+
+
+def _generic_triangle_primitives(labels: list[str] | None = None) -> list[dict[str, Any]]:
+    pts = labels or ["A", "B", "C"]
+    a, b, c = (pts + ["A", "B", "C"])[:3]
+    return [
+        {"action": "draw_line", "x1": 34, "y1": 136, "x2": 260, "y2": 136, "color": "skyblue", "thickness": 3, "label": f"{b}{c}", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 34, "y1": 136, "x2": 120, "y2": 24, "color": "skyblue", "thickness": 3, "label": f"{a}{b}", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 120, "y1": 24, "x2": 260, "y2": 136, "color": "skyblue", "thickness": 3, "label": f"{a}{c}", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 116, "y": 16, "label": a, "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 22, "y": 150, "label": b, "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 264, "y": 150, "label": c, "metadata": {"diagram": True}},
+    ]
+
+
+def _generic_quadrilateral_primitives(labels: list[str] | None = None) -> list[dict[str, Any]]:
+    pts = labels or ["A", "B", "C", "D"]
+    a, b, c, d = (pts + ["A", "B", "C", "D"])[:4]
+    return [
+        {"action": "draw_line", "x1": 50, "y1": 126, "x2": 238, "y2": 126, "color": "skyblue", "thickness": 3, "label": f"{b}{c}", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 82, "y1": 38, "x2": 190, "y2": 38, "color": "skyblue", "thickness": 3, "label": f"{a}{d}", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 82, "y1": 38, "x2": 50, "y2": 126, "color": "skyblue", "thickness": 3, "label": f"{a}{b}", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 190, "y1": 38, "x2": 238, "y2": 126, "color": "skyblue", "thickness": 3, "label": f"{d}{c}", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 76, "y": 28, "label": a, "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 38, "y": 142, "label": b, "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 244, "y": 142, "label": c, "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 196, "y": 28, "label": d, "metadata": {"diagram": True}},
+    ]
+
+
+def _similar_rectangles_primitives() -> list[dict[str, Any]]:
+    return [
+        {"action": "draw_line", "x1": 32, "y1": 52, "x2": 112, "y2": 52, "color": "skyblue", "thickness": 3, "label": "AB", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 112, "y1": 52, "x2": 112, "y2": 104, "color": "skyblue", "thickness": 3, "label": "BC", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 112, "y1": 104, "x2": 32, "y2": 104, "color": "skyblue", "thickness": 3, "label": "CD", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 32, "y1": 104, "x2": 32, "y2": 52, "color": "skyblue", "thickness": 3, "label": "DA", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 160, "y1": 32, "x2": 288, "y2": 32, "color": "orange", "thickness": 3, "label": "PQ", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 288, "y1": 32, "x2": 288, "y2": 116, "color": "orange", "thickness": 3, "label": "QR", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 288, "y1": 116, "x2": 160, "y2": 116, "color": "orange", "thickness": 3, "label": "RS", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 160, "y1": 116, "x2": 160, "y2": 32, "color": "orange", "thickness": 3, "label": "SP", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 34, "y": 34, "label": "90°", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 178, "y": 18, "label": "all angles 90°", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 96, "y": 142, "label": "corresponding sides proportional", "metadata": {"diagram": True}},
+    ]
+
+
+def _non_similar_examples_primitives() -> list[dict[str, Any]]:
+    return [
+        {"action": "draw_line", "x1": 34, "y1": 112, "x2": 116, "y2": 112, "color": "skyblue", "thickness": 3, "label": "AB", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 34, "y1": 112, "x2": 78, "y2": 34, "color": "skyblue", "thickness": 3, "label": "AC", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 78, "y1": 34, "x2": 116, "y2": 112, "color": "skyblue", "thickness": 3, "label": "BC", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 56, "y": 128, "label": "scalene", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 188, "y1": 112, "x2": 280, "y2": 112, "color": "orange", "thickness": 3, "label": "XY", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 188, "y1": 112, "x2": 234, "y2": 32, "color": "orange", "thickness": 3, "label": "XZ", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 234, "y1": 32, "x2": 280, "y2": 112, "color": "orange", "thickness": 3, "label": "YZ", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 208, "y": 128, "label": "equilateral", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 42, "y1": 214, "x2": 98, "y2": 214, "color": "violet", "thickness": 3, "label": "square", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 98, "y1": 214, "x2": 98, "y2": 270, "color": "violet", "thickness": 3, "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 98, "y1": 270, "x2": 42, "y2": 270, "color": "violet", "thickness": 3, "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 42, "y1": 270, "x2": 42, "y2": 214, "color": "violet", "thickness": 3, "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 198, "y1": 242, "x2": 244, "y2": 206, "color": "teal", "thickness": 3, "label": "rhombus", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 244, "y1": 206, "x2": 290, "y2": 242, "color": "teal", "thickness": 3, "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 290, "y1": 242, "x2": 244, "y2": 278, "color": "teal", "thickness": 3, "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 244, "y1": 278, "x2": 198, "y2": 242, "color": "teal", "thickness": 3, "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 112, "y": 18, "label": "examples of non-similar figures", "metadata": {"diagram": True}},
+    ]
+
+
+def _manual_diagram_primitives(prompt: str, diagram_hint: str | None = None) -> list[dict[str, Any]]:
+    text = f"{prompt or ''} {diagram_hint or ''}".lower()
+    labels = []
+    for token in re.findall(r"\b[A-Z]{1,4}\b", f"{prompt or ''} {diagram_hint or ''}"):
+        if token in {"NCERT", "CBSE"}:
+            continue
+        if token not in labels:
+            labels.append(token)
+        if len(labels) >= 8:
+            break
+    if "circle" in text and ("different radii" in text or "different sizes" in text or "all circles" in text):
+        return _circle_comparison_primitives()
+    if "non-similar" in text:
+        return _non_similar_examples_primitives()
+    if "rectangle" in text or ("polygon" in text and "similar" in text):
+        return _similar_rectangles_primitives()
+    if "triangle" in text and (
+        "similar" in text
+        or "basic proportionality" in text
+        or "thales" in text
+        or "parallel" in text
+        or "criterion" in text
+    ):
+        return _triangle_similarity_primitives()
+    if "quadrilateral" in text or "trapezium" in text:
+        return _generic_quadrilateral_primitives(labels[:4] if labels else None)
+    if "triangle" in text or len(labels) >= 3:
+        return _generic_triangle_primitives(labels[:3] if labels else None)
+    return []
 
 
 def _is_drawing_step_instruction(text: str) -> bool:
@@ -883,14 +1090,15 @@ def _solution_actions(
         actions.append({"action": "draw_text", "content": f"Diagram: {formatted_diagram}", "metadata": {"diagram": True, "diagram_phase": 0}})
         actions.append({"action": "draw_shape", "content": formatted_diagram, "metadata": {"diagram": True, "diagram_phase": 0}})
 
+        diagram_primitives = _manual_diagram_primitives(formatted_prompt, formatted_diagram)
         try:
             from ..services.geometry_translator import translate_diagram_to_primitives
 
-            primitives = translate_diagram_to_primitives(formatted_diagram, model=None, max_attempts=1)
+            primitives = diagram_primitives or translate_diagram_to_primitives(formatted_diagram, model=None, max_attempts=1)
             if primitives:
                 diagram_primitives = [dict(item) for item in primitives if isinstance(item, dict)]
         except Exception:
-            diagram_primitives = []
+            diagram_primitives = diagram_primitives or []
 
     if formatted_diagram and diagram_primitives:
         if not any(_is_drawing_step_instruction(step) for step in formatted_steps[:6]):
@@ -1133,7 +1341,7 @@ def _pdf_problem_actions_for_session(
         solved_steps=solved_steps,
         answer=answer,
         source_label="NCERT Chapter Exercise",
-        diagram_hint=solved.get("diagram"),
+        diagram_hint=problem.get("figure_hint") or solved.get("diagram"),
         chapter_no=str(chapter_no),
         chapter_name=chapter_title,
     )
@@ -2015,6 +2223,84 @@ def _scope_rag_context_to_chapter(raw_context: str, chapter: str, topic: str) ->
     return "\n\n".join(blocks[:6])
 
 
+def _pdf_teaching_points(rag_context: str, topic: str, limit: int = 4) -> list[str]:
+    if not isinstance(rag_context, str) or not rag_context.strip():
+        return []
+
+    normalized_topic = _normalize_teaching_text(topic)
+    topic_keywords = [
+        keyword
+        for keyword in _topic_keywords(topic)
+        if len(keyword) >= 4 and keyword not in {"chapter", "topic", "math", "mathematics"}
+    ]
+    cleaned = re.sub(r"Reprint\s+\d{4}-\d{2}", " ", rag_context)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    sentences = [
+        sentence.strip(" -:;")
+        for sentence in re.split(r"(?<=[.!?])\s+", cleaned)
+        if 40 <= len(sentence.strip()) <= 260
+    ]
+
+    priority_terms = (
+        "theorem",
+        "criterion",
+        "similar",
+        "example",
+        "exercise",
+        "prove",
+        "given",
+        "find",
+        "show",
+    )
+    theory: list[str] = []
+    examples: list[str] = []
+    exercises: list[str] = []
+    seen: set[str] = set()
+    for sentence in sentences:
+        lowered = sentence.lower()
+        matches_topic = normalized_topic and normalized_topic in lowered
+        matches_keyword = any(keyword in lowered for keyword in topic_keywords)
+        matches_priority = any(term in lowered for term in priority_terms)
+        if not (matches_topic or matches_keyword or matches_priority):
+            continue
+        key = lowered[:180]
+        if key in seen:
+            continue
+        seen.add(key)
+
+        is_exercise = any(term in lowered for term in ("find", "show", "solve", "prove that", "?"))
+        is_theory = any(term in lowered for term in ("theorem", "criterion", "similar", "property"))
+        if is_theory and not is_exercise:
+            theory.append(sentence)
+        elif is_exercise:
+            exercises.append(sentence)
+        else:
+            examples.append(sentence)
+
+    selected = [*theory, *examples, *exercises]
+    if selected:
+        return selected[:limit]
+
+    return sentences[:limit]
+
+
+def _append_pdf_teaching_actions(actions: list[dict[str, Any]], rag_context: str, topic: str) -> None:
+    points = _pdf_teaching_points(rag_context, topic)
+    if not points:
+        return
+
+    actions.append({"action": "draw_text", "content": "From NCERT PDF:"})
+    for index, point in enumerate(points, start=1):
+        label = "PDF theorem/example" if index == 1 else "PDF note"
+        actions.append({"action": "draw_text", "content": f"{label} {index}: {point}"})
+
+    combined = " ".join(points)
+    primitives = _manual_diagram_primitives(topic, combined)
+    if primitives:
+        actions.append({"action": "draw_text", "content": "Diagram: NCERT-style figure reconstructed from the theorem/problem.", "metadata": {"diagram": True}})
+        actions.extend(primitives)
+
+
 def _widget_to_actions(widget: Any) -> list[dict[str, Any]]:
     if not isinstance(widget, dict):
         return []
@@ -2088,17 +2374,27 @@ def _chapter_for_session(session: StudentSession) -> dict[str, Any]:
     if not isinstance(chapters, list):
         return {}
 
-    index = int(getattr(session, "current_chapter_index", 0) or 0)
-    if 0 <= index < len(chapters) and isinstance(chapters[index], dict):
-        return chapters[index]
-
     wanted = _normalize_teaching_text(getattr(session, "chapter_name", ""))
     for chapter in chapters:
         if not isinstance(chapter, dict):
             continue
         labels = [chapter.get("slug"), chapter.get("title"), chapter.get("chapter"), chapter.get("name")]
-        if any(wanted and wanted in _normalize_teaching_text(label) for label in labels):
+        if any(
+            wanted
+            and _normalize_teaching_text(label)
+            and (
+                wanted == _normalize_teaching_text(label)
+                or wanted in _normalize_teaching_text(label)
+                or _normalize_teaching_text(label) in wanted
+            )
+            for label in labels
+        ):
             return chapter
+
+    if not wanted:
+        index = int(getattr(session, "current_chapter_index", 0) or 0)
+        if 0 <= index < len(chapters) and isinstance(chapters[index], dict):
+            return chapters[index]
     return {}
 
 
@@ -2116,6 +2412,31 @@ def _concept_for_chapter_topic(chapter: dict[str, Any], topic: str) -> dict[str,
             if wanted and normalized and (wanted == normalized or wanted in normalized or normalized in wanted):
                 return concept
     return {}
+
+
+def _chapter_topics_for_board(chapter: dict[str, Any], fallback: str) -> list[str]:
+    if not isinstance(chapter, dict) or not chapter:
+        return [fallback] if fallback else []
+
+    for key in ("agenda", "book_topics"):
+        values = chapter.get(key)
+        if isinstance(values, list):
+            topics = [str(item).strip() for item in values if str(item).strip()]
+            if topics:
+                return topics
+
+    concepts = chapter.get("concepts")
+    if isinstance(concepts, list):
+        topics = [
+            str(item.get("title") or "").strip()
+            for item in concepts
+            if isinstance(item, dict) and str(item.get("title") or "").strip()
+        ]
+        if topics:
+            return topics
+
+    title = str(chapter.get("title") or chapter.get("chapter") or chapter.get("name") or fallback).strip()
+    return [title] if title else []
 
 
 def _topic_teaching_fallback(topic: str, chapter: dict[str, Any]) -> tuple[str, str, list[str], str]:
@@ -2160,13 +2481,15 @@ def _topic_teaching_fallback(topic: str, chapter: dict[str, Any]) -> tuple[str, 
     )
 
 
-def _chapter_teaching_phase_actions(session: StudentSession) -> list[dict[str, Any]] | None:
+def _chapter_teaching_phase_actions(session: StudentSession, rag_context: str = "") -> list[dict[str, Any]] | None:
     if not _is_teaching_phase(session):
         return None
 
     chapter = _chapter_for_session(session)
     chapter_title = str(chapter.get("title") or session.chapter_name or "Current Chapter").strip()
-    topics = [str(item).strip() for item in (session.agenda or []) if str(item).strip()]
+    topics = _chapter_topics_for_board(chapter, chapter_title)
+    if not topics:
+        topics = [str(item).strip() for item in (session.agenda or []) if str(item).strip()]
     if not topics:
         topics = [chapter_title]
 
@@ -2184,6 +2507,7 @@ def _chapter_teaching_phase_actions(session: StudentSession) -> list[dict[str, A
             actions.append({"action": "draw_text", "content": f"{index}. {topic}"})
         if chapter.get("summary"):
             actions.append({"action": "draw_text", "content": f"Chapter idea: {chapter.get('summary')}"})
+        _append_pdf_teaching_actions(actions, rag_context, chapter_title)
         actions.append({"action": "draw_shape", "content": "Chapter roadmap with topic boxes connected left to right."})
         return actions
 
@@ -2219,6 +2543,7 @@ def _chapter_teaching_phase_actions(session: StudentSession) -> list[dict[str, A
                 actions.append({"action": "draw_text", "content": f"Mini example: {example.get('prompt')}"})
             for step_index, step in enumerate((example.get("steps") or [])[:3], start=1):
                 actions.append({"action": "draw_text", "content": f"Example step {step_index}: {step}"})
+        _append_pdf_teaching_actions(actions, rag_context, topic)
         actions.append({"action": "draw_text", "content": "Check: understand the idea before exercise practice."})
         actions.append({"action": "draw_text", "content": f"Diagram: {diagram_hint}"})
         actions.append({"action": "draw_shape", "content": diagram_hint})
@@ -2230,11 +2555,7 @@ def _chapter_teaching_phase_actions(session: StudentSession) -> list[dict[str, A
             session.concept_teaching_complete = True
         return actions
 
-    return [
-        {"action": "draw_text", "content": f"Theory segment complete for: {chapter_title}"},
-        {"action": "draw_text", "content": "Phase gate active: staying in TEACHING mode."},
-        {"action": "draw_text", "content": "Next: we will enter PRACTICE only after an explicit phase transition."},
-    ]
+    return None
 
 
 def _exercise_nudge_from_rag(rag_context: str, variation: int) -> str | None:
@@ -2367,6 +2688,22 @@ def _rag_context_for_session(session: StudentSession, exam_type: str) -> str:
     ).strip()
 
     try:
+        raw_context = retrieve_context(
+            query=query,
+            exam_type=normalized_exam,
+            k=12,
+            grade=grade,
+            chapter=chapter,
+            phase=phase,
+        )
+        scoped_context = _scope_rag_context_to_chapter(raw_context, chapter=chapter, topic=topic)
+        if len(scoped_context.strip()) >= 120:
+            _RAG_CONTEXT_CACHE[cache_key] = scoped_context
+            return scoped_context
+    except Exception as error:
+        print(f"Tutor PDF RAG lookup failed ({type(error).__name__}): {error}")
+
+    try:
         curriculum = get_grade_curriculum(grade, normalized_exam)
         chapters = curriculum.get("chapters") if isinstance(curriculum, dict) else []
         if isinstance(chapters, list) and chapters:
@@ -2423,22 +2760,8 @@ def _rag_context_for_session(session: StudentSession, exam_type: str) -> str:
     except Exception as error:
         print(f"Firestore curriculum grounding failed ({type(error).__name__}): {error}")
 
-    try:
-        raw_context = retrieve_context(
-            query=query,
-            exam_type=normalized_exam,
-            k=12,
-            grade=grade,
-            chapter=chapter,
-            phase=phase,
-        )
-        scoped_context = _scope_rag_context_to_chapter(raw_context, chapter=chapter, topic=topic)
-        _RAG_CONTEXT_CACHE[cache_key] = scoped_context
-        return scoped_context
-    except Exception as error:
-        print(f"Tutor RAG lookup failed ({type(error).__name__}): {error}")
-        _RAG_CONTEXT_CACHE[cache_key] = ""
-        return ""
+    _RAG_CONTEXT_CACHE[cache_key] = ""
+    return ""
 
 
 async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any]) -> dict:
@@ -2603,7 +2926,7 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         explicit_exercise_action = action in {"next_exercise", "next_pdf_exercise", "refresh_problem", "previous_problem"}
         concept_actions = None
         if not explicit_exercise_action and not input_data.get("answer") and not input_data.get("question"):
-            concept_actions = _chapter_teaching_phase_actions(session)
+            concept_actions = _chapter_teaching_phase_actions(session, rag_context=rag_context)
 
         if concept_actions is not None:
             whiteboard_actions = concept_actions
@@ -2664,7 +2987,7 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
     steps = _steps_from_actions(whiteboard_actions)
     if not steps:
         if _is_teaching_phase(session):
-            fallback_actions = _chapter_teaching_phase_actions(session) or [
+            fallback_actions = _chapter_teaching_phase_actions(session, rag_context=rag_context) or [
                 {"action": "draw_text", "content": f"Chapter: {session.chapter_name or session.current_topic or 'Current Chapter'}"},
                 {"action": "draw_text", "content": f"Topic: {session.current_topic or session.chapter_name or 'Current Topic'}"},
                 {"action": "draw_text", "content": "Welcome to the class! Let us start with theory and key concepts."},
@@ -2779,6 +3102,7 @@ async def tutor_api(req: TutorRequest):
         engine = _get_legacy_engine()
         state = engine._ensure_state(req.session_id)
         state.exam = req.get_exam()
+        session_record = session_service.get_session(req.session_id)
         if route_as_doubt and req.mode == "class":
             class_session = await orchestrator.get_session(req.session_id)
             _seed_doubt_state_from_class_context(state, class_session, input_data)
@@ -2793,13 +3117,13 @@ async def tutor_api(req: TutorRequest):
             response = engine._handle_answer(state, answer)
 
         elif mode == "doubt":
-            response = engine.handle_doubt(state, question)
+            response = engine.handle_doubt(state, question, session=session_record)
 
         elif mode == "learn":
             response = engine.handle_learn(state, input_data)
 
         elif mode == "ocr":
-            response = engine.handle_doubt(state, question)
+            response = engine.handle_doubt(state, question, session=session_record)
 
         elif mode == "homework":
             response = engine.handle_homework(state, input_data)

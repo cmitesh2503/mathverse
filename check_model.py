@@ -1,12 +1,22 @@
 import os
+from pathlib import Path
+
 import google.generativeai as genai
 
-# Make sure your GEMINI_API_KEY environment variable is set
-api_key = os.getenv("GEMINI_API_KEY") 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parent / "backend" / ".env")
+except ImportError:
+    pass
+
+api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+if not api_key:
+    raise RuntimeError("Set GEMINI_API_KEY or GOOGLE_API_KEY in backend/.env before listing models.")
+
 genai.configure(api_key=api_key)
 
 print("Models available on your account:")
 for m in genai.list_models():
     if 'generateContent' in m.supported_generation_methods:
-        if 'gemini-3' in m.name or 'gemini-1.5' in m.name:
-            print(m.name)
+        print(m.name)

@@ -189,6 +189,8 @@ Whenever a topic or word problem involves visual data, shapes, data tables, or c
 2. If the question relates to the current problem or current topic, explain it using that exact problem/topic.
 3. If the student needs a prerequisite concept first, explain that prerequisite slowly with one simple example, and then connect it back to the current problem.
 4. Do not reply with vague study strategy. Use the question to produce a clear conceptual answer and a short worked example.
+5. When answering a student's doubt, ALWAYS end by asking if they understood or if they need further clarification, for example: "Does that make sense?"
+6. Do NOT assume the doubt is fully resolved until the student confirms it.
 
 **THE PEDAGOGICAL LOOP (HOW YOU TEACH - GUIDED EXPLAINER):**
 When teaching a topic or solving a problem, you MUST follow this sequence strictly:
@@ -294,6 +296,7 @@ ADDITIONAL RULES:
         current_problem = json.dumps(self._session_value(session, "current_problem", {}), ensure_ascii=False)
         mistake_history = json.dumps(self._session_value(session, "mistake_history", []), ensure_ascii=False)
         agenda = json.dumps(self._session_value(session, "agenda", []), ensure_ascii=False)
+        recent_transcript = self._recent_transcript_context(session)
         
         exam_type = str(self._session_value(session, "exam", self._config("default_exam", "cbse"))).upper()
         grade_level = str(self._session_value(session, "grade", self._config("default_grade", 10)))
@@ -365,7 +368,8 @@ ADDITIONAL RULES:
             f"- current_topic: {current_topic}\n"
             f"- difficulty_level: {self._session_value(session, 'difficulty_level', self._config('default_difficulty_level', 'moderate'))}\n"
             f"- mistake_history: {mistake_history}\n"
-            f"- current_problem: {current_problem}\n\n"
+            f"- current_problem: {current_problem}\n"
+            f"- recent_transcript:\n{recent_transcript or 'No saved transcript yet.'}\n\n"
             f"STUDENT MESSAGE / PROBLEM STATEMENT:\n{user_message}\n\n"
             f"HIDDEN DIAGNOSTIC NUDGE:\n{diagnostic_nudge or 'None'}\n\n"
             "Return valid JSON only.\n"
@@ -446,6 +450,23 @@ ADDITIONAL RULES:
         if text and "{" not in text:
             result["spoken_response"] = text.strip()
         return result
+
+    def _recent_transcript_context(self, session: Any) -> str:
+        transcript = self._session_value(session, "transcript", [])
+        if not isinstance(transcript, list):
+            return ""
+
+        lines: list[str] = []
+        for turn in transcript[-8:]:
+            if isinstance(turn, dict):
+                role = str(turn.get("role") or "").strip()
+                content = str(turn.get("content") or "").strip()
+            else:
+                role = str(getattr(turn, "role", "") or "").strip()
+                content = str(getattr(turn, "content", "") or "").strip()
+            if role and content:
+                lines.append(f"{role.title()}: {content}")
+        return "\n".join(lines)
 
     def _sanitize_whiteboard_actions(self, actions: list[Any]) -> list[dict[str, Any]]:
         """Validate and map incoming LLM whiteboard actions to the strict frontend schema.

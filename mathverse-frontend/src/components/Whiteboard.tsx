@@ -260,6 +260,14 @@ function renderSVGFromPrimitives(
       touch(x + r, y + r);
       return;
     }
+    if (name === "draw_circle") {
+      const x = toFiniteNumber(action.x);
+      const y = toFiniteNumber(action.y);
+      const r = Math.max(1, toFiniteNumber(action.radius, 1));
+      touch(x - r, y - r);
+      touch(x + r, y + r);
+      return;
+    }
     if (name === "highlight_element") {
       touch(toFiniteNumber(action.x1), toFiniteNumber(action.y1));
       touch(toFiniteNumber(action.x2), toFiniteNumber(action.y2));
@@ -292,7 +300,7 @@ function renderSVGFromPrimitives(
   const sy = (y: number) => y * scale + offsetY;
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-40 bg-slate-800 rounded-md border border-slate-700">
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-72 bg-slate-800 rounded-md border border-slate-700">
       {visibleActions.map((action, index) => {
         const name = String(action.action || "").toLowerCase();
         if (name === "highlight_element") {
@@ -370,6 +378,25 @@ function renderSVGFromPrimitives(
           );
         }
 
+        if (name === "draw_circle") {
+          const cx = sx(toFiniteNumber(action.x));
+          const cy = sy(toFiniteNumber(action.y));
+          const r = Math.max(1, toFiniteNumber(action.radius, 1)) * scale;
+          const stroke = diagramStroke(action.color, "#f472b6");
+          const thickness = Math.max(1, toFiniteNumber(action.thickness, 2));
+          const circleLabel = String(action.label || "").trim();
+          return (
+            <g key={`diagram-circle-${index}`}>
+              <circle cx={cx} cy={cy} r={r} stroke={stroke} strokeWidth={thickness} fill="none" />
+              {isShortDiagramLabel(circleLabel) ? (
+                <text x={cx + r + 4} y={cy} fill="#cbd5e1" fontSize="10" fontWeight={600}>
+                  {circleLabel}
+                </text>
+              ) : null}
+            </g>
+          );
+        }
+
         if (name === "write_text") {
           const label = String(action.label || "").trim();
           if (!isShortDiagramLabel(label)) return null;
@@ -397,7 +424,7 @@ function renderSVGForHint(hint: string) {
   const text = String(hint || "").toLowerCase();
   if (!text.trim()) {
     return (
-      <svg viewBox="0 0 200 120" className="w-full h-40 bg-slate-800 rounded-md border border-slate-700">
+      <svg viewBox="0 0 200 120" className="w-full h-72 bg-slate-800 rounded-md border border-slate-700">
         <line x1="20" y1="100" x2="180" y2="100" stroke="#94f3c7" strokeWidth="1" />
         <line x1="20" y1="100" x2="20" y2="10" stroke="#94f3c7" strokeWidth="1" />
       </svg>
@@ -408,7 +435,7 @@ function renderSVGForHint(hint: string) {
   if (text.includes("a = bq") || text.includes("a = bq + r") || text.includes("split dividend") || (text.includes("quotient") && text.includes("remainder"))) {
     // Visualize a dividend split into quotient-part and remainder as a bar graph
     return (
-      <svg viewBox="0 0 300 80" className="w-full h-40 bg-slate-800 rounded-md border border-slate-700">
+      <svg viewBox="0 0 300 80" className="w-full h-72 bg-slate-800 rounded-md border border-slate-700">
         <rect x="16" y="20" width="268" height="28" rx="4" fill="#0f172a" stroke="#334155" />
         {/* quotient part (left) - 70% */}
         <rect x="18" y="22" width="188" height="24" rx="3" fill="#60a5fa" />
@@ -424,7 +451,7 @@ function renderSVGForHint(hint: string) {
   // Simple primitives: axes, circle, triangle, line, parabola
   if (text.includes("axis") || text.includes("axes") || text.includes("coordinate") || text.includes("graph")) {
     return (
-      <svg viewBox="0 0 200 120" className="w-full h-40 bg-slate-800 rounded-md border border-slate-700">
+      <svg viewBox="0 0 200 120" className="w-full h-72 bg-slate-800 rounded-md border border-slate-700">
         <g transform="translate(0,0)">
           <line x1="20" y1="100" x2="180" y2="100" stroke="#94f3c7" strokeWidth="1" />
           <line x1="20" y1="100" x2="20" y2="10" stroke="#94f3c7" strokeWidth="1" />
@@ -436,7 +463,7 @@ function renderSVGForHint(hint: string) {
   }
   if (text.includes("circle") && text.includes("tangent")) {
     return (
-      <svg viewBox="0 0 220 140" className="w-full h-40 bg-slate-800 rounded-md border border-slate-700">
+      <svg viewBox="0 0 220 140" className="w-full h-72 bg-slate-800 rounded-md border border-slate-700">
         <circle cx="95" cy="70" r="34" stroke="#f472b6" strokeWidth="2" fill="none" />
         <line x1="155" y1="70" x2="130" y2="44" stroke="#60a5fa" strokeWidth="2" />
         <line x1="155" y1="70" x2="130" y2="96" stroke="#60a5fa" strokeWidth="2" />
@@ -453,22 +480,22 @@ function renderSVGForHint(hint: string) {
   }
   if (text.includes("circle") || text.includes("circ")) {
     return (
-      <svg viewBox="0 0 200 120" className="w-full h-40 bg-slate-800 rounded-md border border-slate-700">
+      <svg viewBox="0 0 200 120" className="w-full h-72 bg-slate-800 rounded-md border border-slate-700">
         <circle cx="100" cy="60" r="36" stroke="#f472b6" strokeWidth="2" fill="none" />
         <line x1="100" y1="60" x2="136" y2="60" stroke="#f472b6" strokeWidth="1" />
       </svg>
     );
   }
-  if (text.includes("triangle") || text.includes("constr")) {
+  if (text.includes("triangle") || /\bconstruct(ion)?\b/.test(text)) {
     return (
-      <svg viewBox="0 0 200 120" className="w-full h-40 bg-slate-800 rounded-md border border-slate-700">
+      <svg viewBox="0 0 200 120" className="w-full h-72 bg-slate-800 rounded-md border border-slate-700">
         <polygon points="40,90 160,90 100,20" stroke="#f97316" strokeWidth="2" fill="none" />
       </svg>
     );
   }
   // fallback: show hint text inside a box
   return (
-    <div className="w-full h-40 rounded-md border border-slate-700 bg-slate-800 p-3 text-sm text-slate-300">{hint}</div>
+    <div className="w-full h-72 rounded-md border border-slate-700 bg-slate-800 p-3 text-sm text-slate-300">{hint}</div>
   );
 }
 
@@ -699,7 +726,7 @@ export function Whiteboard({
     }, -1);
     const currentActions = lastClearIndex >= 0 ? incomingActions.slice(lastClearIndex + 1) : incomingActions;
     const primitives = currentActions.filter((action) =>
-      ["draw_line", "draw_angle", "highlight_element", "write_text"].includes(String(action?.action || "").toLowerCase()),
+      ["draw_line", "draw_circle", "draw_angle", "highlight_element", "write_text"].includes(String(action?.action || "").toLowerCase()),
     );
     const taggedPrimitives = primitives.filter((action) => isDiagramTagged(action));
     return taggedPrimitives.length ? taggedPrimitives : primitives;
@@ -707,7 +734,7 @@ export function Whiteboard({
   const hasPrimitiveGeometry = useMemo(
     () =>
       diagramPrimitiveActions.some((action) =>
-        ["draw_line", "draw_angle", "highlight_element"].includes(String(action.action || "").toLowerCase()),
+        ["draw_line", "draw_circle", "draw_angle", "highlight_element"].includes(String(action.action || "").toLowerCase()),
       ),
     [diagramPrimitiveActions],
   );
@@ -790,7 +817,7 @@ export function Whiteboard({
               </div>
 
               {hasDiagramVisuals ? (
-                <div className="grid gap-3 lg:grid-cols-2">
+                <div className="grid gap-3">
                   <div className="rounded-md border border-slate-700 bg-slate-900 p-3">
                     {hasPrimitiveGeometry
                       ? renderSVGFromPrimitives(diagramPrimitiveActions, conceptBoardLines, activeStepIndex)
@@ -821,7 +848,7 @@ export function Whiteboard({
 
                   {/* Render diagrams and figure hints if present in incoming actions */}
                   {hasDiagramVisuals ? (
-                    <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                    <div className="mt-3 grid gap-3">
                       <div className="rounded-md border border-slate-700 bg-slate-900 p-3">
                         {hasPrimitiveGeometry
                           ? renderSVGFromPrimitives(diagramPrimitiveActions, boardModel.solutionSteps, activeStepIndex)
