@@ -91,6 +91,23 @@ function actionTextValue(action: WhiteboardAction) {
   ).trim();
 }
 
+function valueAfterColon(value: string) {
+  const text = String(value || "");
+  const index = text.indexOf(":");
+  return index >= 0 ? text.slice(index + 1).trim() : text.trim();
+}
+
+function renderImageFigure(action: WhiteboardAction) {
+  const raw = String(action.base64 || action.content || "").trim();
+  if (!raw) return null;
+  const src = raw.startsWith("data:") ? raw : `data:image/png;base64,${raw}`;
+  return (
+    <div className="flex h-72 items-center justify-center rounded-md border border-slate-700 bg-slate-800 p-2">
+      <img src={src} alt="Problem figure" className="max-h-full max-w-full object-contain" />
+    </div>
+  );
+}
+
 function isDiagramInstructionText(value: string) {
   const lower = String(value || "").trim().toLowerCase();
   return (
@@ -202,19 +219,7 @@ function renderSVGFromPrimitives(
   }
 
   if (hasStepMappedPrimitives && currentStepNumber === null) {
-    const minMapped = orderedActions
-      .map((action) => diagramStep(action))
-      .filter((value): value is number => value !== null)
-      .reduce<number | null>((acc, value) => (acc === null ? value : Math.min(acc, value)), null);
-    if (minMapped !== null) {
-      visibleActions = orderedActions.filter((action) => {
-        const mappedStep = diagramStep(action);
-        return mappedStep !== null && mappedStep <= minMapped;
-      });
-    }
-    if (!visibleActions.length) {
-      visibleActions = orderedActions.slice(0, 1);
-    }
+    visibleActions = orderedActions;
   }
 
   if (!hasStepMappedPrimitives) {
@@ -518,8 +523,8 @@ function MathText({ children, forceMath = false }: { children: string; forceMath
             key={`${part}-${index}`}
             className={
               math
-                ? "font-serif text-[1.06em] font-semibold italic tracking-normal text-emerald-100"
-                : "tracking-normal text-emerald-100"
+                ? "font-serif text-[1.06em] font-semibold italic tracking-normal text-inherit"
+                : "tracking-normal text-inherit"
             }
           >
             {math ? formatLatex(part) : part}
@@ -678,12 +683,23 @@ export function Whiteboard({
     let latestStepBlock: string[] = [];
     for (const line of lines) {
       const lower = line.toLowerCase();
-      if (lower.startsWith("chapter no:")) model.chapterNo = line.split(":", 2)[1]?.trim() || "-";
-      else if (lower.startsWith("chapter name:")) model.chapterName = line.split(":", 2)[1]?.trim() || "-";
-      else if (lower.startsWith("topic name:")) model.topicName = line.split(":", 2)[1]?.trim() || "-";
-      else if (lower.startsWith("exercise no:")) model.exerciseNo = line.split(":", 2)[1]?.trim() || "-";
-      else if (lower.startsWith("problem no:")) model.problemNo = line.split(":", 2)[1]?.trim() || "-";
-      else if (lower.startsWith("problem statement:")) model.problemStatement = line.split(":", 2)[1]?.trim() || "-";
+      if (lower.startsWith("chapter no:")) model.chapterNo = valueAfterColon(line) || "-";
+      else if (lower.startsWith("chapter name:")) model.chapterName = valueAfterColon(line) || "-";
+      else if (lower.startsWith("chapter:")) model.chapterName = valueAfterColon(line) || "-";
+      else if (lower.startsWith("topic name:")) model.topicName = valueAfterColon(line) || "-";
+      else if (lower.startsWith("topic:")) model.topicName = valueAfterColon(line) || "-";
+      else if (lower.startsWith("exercise no:")) model.exerciseNo = valueAfterColon(line) || "-";
+      else if (lower.startsWith("problem no:")) {
+        const remainder = valueAfterColon(line) || "-";
+        const match = /^([^:]+):\s*(.+)$/.exec(remainder);
+        if (match) {
+          model.problemNo = match[1].trim() || "-";
+          model.problemStatement = match[2].trim() || "-";
+        } else {
+          model.problemNo = remainder;
+        }
+      }
+      else if (lower.startsWith("problem statement:")) model.problemStatement = valueAfterColon(line) || "-";
       else if (lower.startsWith("step ")) {
         const n = Number((/^step\s+(\d+)/i.exec(line)?.[1] || "0"));
         if (n === 1 && currentStepBlock.length) {
@@ -705,6 +721,10 @@ export function Whiteboard({
       return isDiagramInstructionText(actionTextValue(action));
     }),
     [incomingActions],
+  );
+  const diagramImageAction = useMemo(
+    () => undefined,
+    [diagramActions],
   );
   const diagramHintText = useMemo(() => {
     const directHint = diagramActions
@@ -747,6 +767,7 @@ export function Whiteboard({
     const currentActions = lastClearIndex >= 0 ? incomingActions.slice(lastClearIndex + 1) : incomingActions;
     return currentActions
       .filter((action) => {
+        if (isDiagramTagged(action)) return false;
         const name = String(action?.action || "").toLowerCase();
         return ["draw_text", "write", "write_text", "add_text", "text"].includes(name);
       })
@@ -762,17 +783,22 @@ export function Whiteboard({
         ).trim(),
       )
       .filter(Boolean)
-      .filter((line) => !line.toLowerCase().startsWith(("chapter no:", "exercise no:", "problem no:", "problem statement:", "solution:")));
+      .filter((line) => !line.toLowerCase().startsWith(("chapter no:", "chapter name:", "topic name:", "exercise no:", "problem no:", "solution:", "diagram:", "source:")));
   }, [incomingActions]);
+  const hasExerciseProblem =
+    boardModel.exerciseNo !== "-" ||
+    boardModel.problemNo !== "-" ||
+    boardModel.problemStatement !== "-";
   const isConceptBoard =
-    String(whiteboard?.mode || "").toLowerCase() === "concept" ||
+    !hasExerciseProblem &&
+    (String(whiteboard?.mode || "").toLowerCase() === "concept" ||
     (!boardModel.solutionSteps.length &&
       boardModel.problemNo === "-" &&
       boardModel.problemStatement === "-" &&
-      conceptBoardLines.length > 0);
+      conceptBoardLines.length > 0));
 
   return (
-    <section className="flex h-full min-h-[540px] flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-950 shadow-2xl">
+    <section className="flex h-full min-h-[720px] flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-950 shadow-2xl">
       <div className="flex items-center justify-between border-b border-slate-700 bg-slate-900 px-5 py-4">
         <div className="min-w-0">
           <h2 className="truncate text-lg font-semibold tracking-normal text-slate-50">{whiteboard?.title || "Smart Blackboard"}</h2>
@@ -783,31 +809,62 @@ export function Whiteboard({
         </span>
       </div>
 
-      <div ref={scrollPaneRef} className="relative flex-1 overflow-auto bg-slate-900 p-5">
-        <div className="mx-auto max-w-4xl rounded-lg border-4 border-slate-700 bg-slate-950 p-4">
+      <div ref={scrollPaneRef} className="relative flex-1 overflow-auto bg-slate-900 p-6">
+        <div className="mx-auto w-full max-w-none rounded-lg border-4 border-slate-700 bg-slate-950 p-5">
           {isConceptBoard ? (
             <div className="space-y-4">
-              <div className="grid gap-3 border-b border-slate-700 pb-4 text-sm text-slate-200 md:grid-cols-2">
+              <div className="grid gap-3 border-b border-slate-700 pb-4 text-base text-slate-200 md:grid-cols-2">
                 <p><span className="font-semibold text-emerald-200">Chapter:</span> {boardModel.chapterName !== "-" ? boardModel.chapterName : whiteboard?.title?.split("|")[0]?.trim() || "Current chapter"}</p>
                 <p><span className="font-semibold text-emerald-200">Topic:</span> {boardModel.topicName !== "-" ? boardModel.topicName : whiteboard?.title?.split("|")[1]?.trim() || "Current topic"}</p>
               </div>
+
+              {hasDiagramVisuals ? (
+                <div className="grid gap-3">
+                  <div className="rounded-md border border-slate-700 bg-slate-900 p-3">
+                    {diagramImageAction
+                      ? renderImageFigure(diagramImageAction)
+                      : hasPrimitiveGeometry
+                        ? renderSVGFromPrimitives(diagramPrimitiveActions, conceptBoardLines, activeStepIndex)
+                        : renderSVGForHint(diagramHintText)}
+                    {diagramHintText ? (
+                      <p className="mt-2 text-base text-slate-400">
+                        <span className="font-semibold text-slate-100">Figure:</span>{" "}
+                        <MathText>{diagramHintText}</MathText>
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="space-y-3">
                 {conceptBoardLines.map((line, index) => {
                   const lower = line.toLowerCase();
                   const isHeading =
                     lower.startsWith("chapter:") ||
-                    lower.startsWith("topic") ||
-                    lower.startsWith("today's flow") ||
-                    lower.startsWith("topics in this chapter") ||
-                    lower.startsWith("blackboard build");
+                    lower.startsWith("topic:");
+                  const isTheory = lower.startsWith("theory:");
+                  const isProblemStatement = lower.startsWith("problem statement:") || lower.startsWith("problem:");
+                  const stepIndex = nodeStepIndex({ id: `c-${index}`, kind: "step", label: line, content: line });
+                  const latestStepIndex = conceptBoardLines.reduce((latest, item, itemIndex) => {
+                    const candidate = nodeStepIndex({ id: `c-latest-${itemIndex}`, kind: "step", label: item, content: item });
+                    return candidate !== null ? itemIndex : latest;
+                  }, -1);
+                  const isActive =
+                    (activeStepIndex !== null && stepIndex === activeStepIndex) ||
+                    (activeStepIndex === null && index === latestStepIndex);
                   return (
                     <div
                       key={`${line}-${index}`}
-                      className={`rounded-md px-3 py-2 ${
-                        isHeading
-                          ? "border border-emerald-200/25 bg-emerald-200/10 text-lg font-semibold text-emerald-100"
-                          : "border border-slate-700/80 bg-slate-900 text-base leading-7 text-slate-100"
+                      className={`rounded-md px-4 py-3 ${
+                        isProblemStatement
+                          ? "border border-emerald-300/40 bg-emerald-300/10 text-xl font-bold leading-9 text-emerald-100"
+                          : isActive
+                          ? "border border-emerald-300/70 bg-emerald-300/10 text-lg font-semibold leading-8 text-white ring-2 ring-emerald-300/70"
+                          : isTheory
+                          ? "border border-emerald-200/25 bg-emerald-200/10 text-xl font-bold leading-9 text-emerald-100"
+                          : isHeading
+                          ? "border border-emerald-200/25 bg-emerald-200/10 text-lg font-semibold leading-8 text-emerald-100"
+                          : "border border-slate-700/80 bg-slate-900 text-lg leading-8 text-white"
                       }`}
                     >
                       <MathText>{line}</MathText>
@@ -816,63 +873,50 @@ export function Whiteboard({
                 })}
               </div>
 
-              {hasDiagramVisuals ? (
-                <div className="grid gap-3">
-                  <div className="rounded-md border border-slate-700 bg-slate-900 p-3">
-                    {hasPrimitiveGeometry
-                      ? renderSVGFromPrimitives(diagramPrimitiveActions, conceptBoardLines, activeStepIndex)
-                      : renderSVGForHint(diagramHintText)}
-                    {diagramHintText ? (
-                      <p className="mt-2 text-sm text-slate-400">
-                        <span className="font-semibold text-slate-100">Figure:</span>{" "}
-                        <MathText>{diagramHintText}</MathText>
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-3 text-sm text-slate-200 md:grid-cols-3">
-                <p><span className="font-semibold">Chapter no:</span> {boardModel.chapterNo}</p>
-                <p><span className="font-semibold">Chapter name:</span> {boardModel.chapterName}</p>
-                <p><span className="font-semibold">Topic name:</span> {boardModel.topicName}</p>
-                <p className="md:col-span-3"><span className="font-semibold">Exercise no:</span> {boardModel.exerciseNo}</p>
+              <div className="grid grid-cols-1 gap-3 text-base text-slate-200">
+                <p><span className="font-semibold text-emerald-200">Exercise no:</span> {boardModel.exerciseNo}</p>
               </div>
 
-              <div className="mt-4 rounded-md border-2 border-slate-600 bg-slate-900 p-4">
-                <p className="text-xl font-bold text-emerald-300">
-                  Problem no: {boardModel.problemNo} : &quot;{boardModel.problemStatement}&quot;
-                </p>
-
-                  {/* Render diagrams and figure hints if present in incoming actions */}
-                  {hasDiagramVisuals ? (
-                    <div className="mt-3 grid gap-3">
-                      <div className="rounded-md border border-slate-700 bg-slate-900 p-3">
-                        {hasPrimitiveGeometry
+              <div className="mt-4 rounded-md border border-slate-700 bg-slate-900 p-4">
+                {hasDiagramVisuals ? (
+                  <div className="mb-4 grid gap-3">
+                    <div className="rounded-md border border-slate-700 bg-slate-900 p-3">
+                      {diagramImageAction
+                        ? renderImageFigure(diagramImageAction)
+                        : hasPrimitiveGeometry
                           ? renderSVGFromPrimitives(diagramPrimitiveActions, boardModel.solutionSteps, activeStepIndex)
                           : renderSVGForHint(diagramHintText)}
-                        {diagramHintText ? (
-                          <p className="mt-2 text-sm text-slate-400">
-                            <span className="font-semibold text-slate-100">Figure hint:</span>{" "}
-                            <MathText>{diagramHintText}</MathText>
-                          </p>
-                        ) : null}
-                      </div>
+                      {diagramHintText ? (
+                        <p className="mt-2 text-base text-slate-400">
+                          <span className="font-semibold text-slate-100">Figure hint:</span>{" "}
+                          <MathText>{diagramHintText}</MathText>
+                        </p>
+                      ) : null}
                     </div>
-                  ) : null}
+                  </div>
+                ) : null}
 
-            <p className="mt-4 text-base font-bold text-white">Solution</p>
+                <p className="text-xl font-bold leading-9 text-emerald-200">
+                  {boardModel.problemNo !== "-" ? `Problem no: ${boardModel.problemNo}: ` : "Problem statement: "}
+                  <MathText>{boardModel.problemStatement}</MathText>
+                </p>
+
+            <p className="mt-4 text-lg font-bold text-white">Solution</p>
             {boardModel.solutionSteps.length ? (
               <div className="mt-2 space-y-2">
                 {boardModel.solutionSteps.map((step, index) => {
                   const stepIndex = nodeStepIndex({ id: `s-${index}`, kind: "step", label: step, content: step });
+                  const isActive = activeStepIndex !== null && stepIndex === activeStepIndex;
                   return (
                     <p
                       key={`${step}-${index}`}
-                      className={`rounded px-2 py-1 text-lg text-emerald-100 ${
-                        activeStepIndex !== null && stepIndex === activeStepIndex ? "ring-2 ring-emerald-300" : ""
+                      className={`rounded border px-4 py-3 text-lg leading-8 ${
+                        isActive
+                          ? "border-emerald-300/70 bg-emerald-300/10 text-white ring-2 ring-emerald-300/70"
+                          : "border-slate-700/70 bg-slate-950/70 text-white"
                       }`}
                     >
                       <MathText>{step}</MathText>

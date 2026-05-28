@@ -4,9 +4,11 @@ import asyncio
 import base64
 import contextlib
 import json
+import os
 import re
 import time
 from functools import lru_cache
+from typing import Any
 
 from ..cache.cache_manager import get_cache, set_cache
 from ..core.config import GEMINI_API_KEY, GEMINI_LIVE_MODEL, GEMINI_TEXT_MODEL
@@ -28,16 +30,11 @@ except ImportError:  # pragma: no cover - optional dependency
     ResourceExhausted = None
 
 
-TEXT_MODEL_ID = "gemini-3.1-flash"
-TTS_MODEL_ID = "gemini-2.5-flash-preview-tts"
+TEXT_MODEL_ID = "gemini-2.5-flash"
+TTS_MODEL_ID = os.getenv("GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-tts")
 DEPRECATED_TEXT_MODEL_SUFFIXES = (
-    "2.0-flash",
-    "2.0-flash-001",
-    "2.5-flash",
-    "2.5-pro",
-    "3.1-flash",
-    "3.1-flash-lite",
-    "3.1-pro",
+    "1.5-flash",
+    "1.5-flash-8b",
     "1.5-pro",
 )
 
@@ -47,6 +44,7 @@ DEFAULT_TEXT_MODEL = (
     else GEMINI_TEXT_MODEL
 )
 DEFAULT_LIVE_MODEL = GEMINI_LIVE_MODEL
+GENAI_HTTP_TIMEOUT_MS = 300_000
 _tts_retry_after = 0.0
 
 SAFE_FALLBACK_AGENT_RESPONSE = {
@@ -64,7 +62,7 @@ def live_api_available() -> bool:
 def _new_sdk_client():
     if not GEMINI_API_KEY or google_genai is None:
         return None
-    return google_genai.Client(api_key=GEMINI_API_KEY)
+    return google_genai.Client(api_key=GEMINI_API_KEY, http_options={"timeout": GENAI_HTTP_TIMEOUT_MS})
 
 
 def get_live_client():
@@ -117,7 +115,11 @@ def _handle_generation_error(error: Exception, *, source: str, prompt: str) -> s
     return None
 
 
-def generate_response(prompt: str, model: str = DEFAULT_TEXT_MODEL) -> str:
+def generate_response(
+    prompt: str, 
+    model: str = DEFAULT_TEXT_MODEL, 
+    response_schema: Any = None
+) -> str:
     cached = get_cache(prompt)
     if cached:
         return cached
@@ -133,6 +135,7 @@ def generate_response(prompt: str, model: str = DEFAULT_TEXT_MODEL) -> str:
             config = types.GenerateContentConfig(
                 temperature=0.0,
                 response_mime_type="application/json",
+                response_schema=response_schema,
             )
             response = client.models.generate_content(model=model_id, contents=prompt, config=config)
             text = getattr(response, "text", None)
@@ -145,9 +148,13 @@ def generate_response(prompt: str, model: str = DEFAULT_TEXT_MODEL) -> str:
         try:
             if _configure_legacy_sdk():
                 legacy_model = legacy_genai.GenerativeModel(model_id)
+                gen_config = {"temperature": 0.0, "response_mime_type": "application/json"}
+                if response_schema:
+                    gen_config["response_schema"] = response_schema
                 response = legacy_model.generate_content(
                     prompt,
-                    generation_config={"temperature": 0.0},
+                    generation_config=gen_config,
+                    request_options={"timeout": 300.0},
                 )
                 text = getattr(response, "text", None)
         except Exception as error:  # pragma: no cover - network dependent
@@ -160,8 +167,8 @@ def generate_response(prompt: str, model: str = DEFAULT_TEXT_MODEL) -> str:
     return final_text
 
 
-async def stream_response(prompt: str, model: str = DEFAULT_TEXT_MODEL):
-    text = generate_response(prompt, model=model)
+async def stream_response(prompt: str, model: str = DEFAULT_TEXT_MODEL, response_schema: Any = None):
+    text = generate_response(prompt, model=model, response_schema=response_schema)
     for word in text.split():
         yield word + " "
         await asyncio.sleep(0.01)

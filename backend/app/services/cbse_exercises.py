@@ -28,6 +28,7 @@ except ImportError:  # pragma: no cover - optional at import time
 
 
 PDF_ROOT = Path(__file__).resolve().parents[1] / "data" / "pdfs"
+GENAI_HTTP_TIMEOUT_MS = 300_000
 GRADE_10_PDF_CHAPTERS = {
     "real_numbers": 1,
     "polynomials": 2,
@@ -55,6 +56,7 @@ class PdfExercise:
     number: str
     prompt: str
     source_file: str
+    source_file_path: str | None = None
     figure_hint: str | None = None
 
     def as_problem(self) -> dict[str, Any]:
@@ -67,6 +69,8 @@ class PdfExercise:
             "source_file": self.source_file,
             "source": "cbse_pdf_exercise",
         }
+        if self.source_file_path:
+            payload["source_file_path"] = self.source_file_path
         if self.figure_hint:
             payload["figure_hint"] = self.figure_hint
         return payload
@@ -76,8 +80,14 @@ def _pdf_dir(grade: int) -> Path:
     return PDF_ROOT / f"std_{int(grade or 10)}"
 
 
-def _chapter_pdf_path(grade: int, chapter_index: int) -> Path | None:
+def _chapter_pdf_path(grade: int, chapter_index: int, phase: str = "practice") -> Path | None:
     directory = _pdf_dir(grade)
+
+    for ch_prefix in (f"ch_{chapter_index:02d}", f"ch_{chapter_index}", f"chapter_{chapter_index:02d}", f"chapter_{chapter_index}"):
+        phase_path = directory / ch_prefix / f"{phase}.pdf"
+        if phase_path.exists():
+            return phase_path
+
     preferred = directory / f"class{int(grade or 10)}_maths_ch{chapter_index}.pdf"
     if preferred.exists():
         return preferred
@@ -215,7 +225,7 @@ def load_chapter_pdf_exercises(
     chapter_index: int,
     chapter_title: str,
 ) -> list[dict[str, Any]]:
-    path = _chapter_pdf_path(grade, chapter_index)
+    path = _chapter_pdf_path(grade, chapter_index, "practice")
     if path is None:
         return []
 
@@ -234,6 +244,7 @@ def load_chapter_pdf_exercises(
                             number=f"{number}({roman})",
                             prompt=subprompt,
                             source_file=path.name,
+                            source_file_path=str(path),
                             figure_hint=_figure_hint_from_prompt(subprompt, chapter_title),
                         )
                     )
@@ -246,11 +257,22 @@ def load_chapter_pdf_exercises(
                         number=number,
                         prompt=prompt,
                         source_file=path.name,
+                        source_file_path=str(path),
                         figure_hint=_figure_hint_from_prompt(prompt, chapter_title),
                     )
                 )
     return [exercise.as_problem() for exercise in exercises]
 
+
+def load_chapter_pdf_theory(grade: int, chapter_index: int) -> str:
+    path = _chapter_pdf_path(grade, chapter_index, "theory")
+    if path is None:
+        return ""
+    try:
+        return _extract_pdf_text(str(path))
+    except Exception as error:
+        print(f"Failed to load theory PDF for grade {grade} chapter {chapter_index}: {error}")
+        return ""
 
 def load_all_pdf_exercises(grade: int, chapters: list[dict[str, Any]]) -> list[dict[str, Any]]:
     problems: list[dict[str, Any]] = []
@@ -332,6 +354,35 @@ def _prime_factors_of(n: int) -> list[int]:
         out.append(value)
     return out
 
+def _extract_figure_base64(pdf_path: str, prompt: str) -> str | None:
+    try:
+        import fitz  # PyMuPDF
+        import base64
+    except ImportError:
+        return None
+        
+    match = re.search(r'(?i)(?:fig\.|figure)\s*(\d+\.\d+)', prompt)
+    if not match:
+        return None
+        
+    fig_num = match.group(1)
+    
+    try:
+        doc = fitz.open(pdf_path)
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            text_instances = page.search_for(fig_num)
+            for rect in text_instances:
+                nearby_text = page.get_textbox(fitz.Rect(max(0, rect.x0 - 50), max(0, rect.y0 - 20), min(page.rect.width, rect.x1 + 50), min(page.rect.height, rect.y1 + 20)))
+                if "fig" in nearby_text.lower() or "figure" in nearby_text.lower():
+                    crop_rect = fitz.Rect(max(0, rect.x0 - 250), max(0, rect.y0 - 300), min(page.rect.width, rect.x1 + 250), min(page.rect.height, rect.y1 + 20))
+                    pix = page.get_pixmap(clip=crop_rect, matrix=fitz.Matrix(2, 2))
+                    img_bytes = pix.tobytes("png")
+                    return base64.b64encode(img_bytes).decode("utf-8")
+    except Exception as e:
+        print(f"Error extracting figure base64 for {fig_num}: {e}")
+        
+    return None
 
 def build_exercise_solution(
     problem: dict[str, Any],
@@ -357,6 +408,10 @@ def build_exercise_solution(
 
     euclid_match = re.search(r"write\s+(\d+)\s+in\s+the\s+form\s+(\d+)\s*q\s*\+\s*r", lowered)
     fraction_match = re.search(r"(\d+)\s*/\s*(\d+)", lowered)
+
+    extracted_image_base64 = None
+    if problem.get("source_file_path"):
+        extracted_image_base64 = _extract_figure_base64(problem["source_file_path"], prompt)
 
     if "euclid" in lowered and "division lemma" in lowered and euclid_match:
         dividend = int(euclid_match.group(1))
@@ -571,7 +626,7 @@ def build_exercise_solution(
             ]
             answer = f"sqrt({radicand}) is irrational."
     else:
-        ai_solution = _build_ai_exercise_solution(problem, session_id=session_id, current_chapter=current_chapter)
+        ai_solution = _build_ai_exercise_solution(problem, session_id=session_id, current_chapter=current_chapter, image_base64=extracted_image_base64)
         if ai_solution:
             steps = ai_solution["steps"]
             answer = ai_solution["answer"]
@@ -597,6 +652,9 @@ def build_exercise_solution(
     if "ai_solution" in locals() and ai_solution and "diagram" in ai_solution:
         result["diagram"] = ai_solution["diagram"]
     
+    if "extracted_image_base64" in locals() and extracted_image_base64:
+        result["image_base64"] = extracted_image_base64
+        
     return result
 
 
@@ -604,6 +662,7 @@ def _build_ai_exercise_solution(
     problem: dict[str, Any],
     session_id: str | None = None,
     current_chapter: str | None = None,
+    image_base64: str | None = None,
 ) -> dict[str, Any] | None:
     """Generate AI solution with session context to prevent cross-session contamination.
     
@@ -621,14 +680,18 @@ def _build_ai_exercise_solution(
     
     # CRITICAL: Include session_id in cache key to prevent cross-session contamination
     session_suffix = f"|{session_id}" if session_id else ""
+    img_suffix = "|img:1" if image_base64 else ""
     cache_key = (
         "cbse_pdf_solution_v2|"
         f"{chapter_for_solution}|{problem.get('exercise', '')}|"
-        f"{problem.get('number', '')}|{prompt}{session_suffix}"
+        f"{problem.get('number', '')}|{prompt}{session_suffix}{img_suffix}"
     )
     # CRITICAL: Enforce chapter context in prompt to prevent AI from drifting to wrong topics
     request = f"""
 Solve this CBSE Class 10 Mathematics NCERT exercise problem for a whiteboard tutor.
+
+The attached image contains the relevant figure for this problem (if any).
+If the question refers to a figure (e.g., "In Fig 10.11" or "see figure"), YOU MUST LOOK AT THE ATTACHED IMAGE to see its details (labels, angles, lengths, geometry) to solve the problem accurately.
 
 ⚠️ CRITICAL: You are solving ONLY problems from the "{chapter_for_solution}" chapter.
 ⚠️ Do NOT drift to concepts from other chapters like Polynomials, Real Numbers, Triangles, etc.
@@ -661,7 +724,7 @@ Rules:
 """.strip()
 
     try:
-        raw = _generate_raw_json_solution(cache_key, request)
+        raw = _generate_raw_json_solution(cache_key, request, image_base64)
         if not raw:
             return None
         data = _parse_json_object(raw)
@@ -680,18 +743,34 @@ Rules:
     return None
 
 
-def _generate_raw_json_solution(cache_key: str, prompt: str) -> str | None:
+def _generate_raw_json_solution(cache_key: str, prompt: str, image_base64: str | None = None) -> str | None:
     cached = get_cache(cache_key)
     if cached:
         return str(cached)
 
     text: str | None = None
+    contents = []
+    if image_base64:
+        try:
+            import base64
+            img_bytes = base64.b64decode(image_base64)
+            if google_genai is not None:
+                try:
+                    from google.genai import types
+                    contents.append(types.Part.from_bytes(data=img_bytes, mime_type="image/png"))
+                except ImportError:
+                    contents.append({"mime_type": "image/png", "data": img_bytes})
+        except Exception as e:
+            print("Could not attach image for gemini:", e)
+            
+    contents.append(prompt)
+    
     try:
         if GEMINI_API_KEY and google_genai is not None:
-            client = google_genai.Client(api_key=GEMINI_API_KEY)
+            client = google_genai.Client(api_key=GEMINI_API_KEY, http_options={"timeout": GENAI_HTTP_TIMEOUT_MS})
             response = client.models.generate_content(
                 model=GEMINI_TEXT_MODEL,
-                contents=prompt,
+                contents=contents,
             )
             text = getattr(response, "text", None)
     except Exception as error:
@@ -702,7 +781,18 @@ def _generate_raw_json_solution(cache_key: str, prompt: str) -> str | None:
             if GEMINI_API_KEY and legacy_genai is not None:
                 legacy_genai.configure(api_key=GEMINI_API_KEY)
                 model = legacy_genai.GenerativeModel(GEMINI_TEXT_MODEL)
-                response = model.generate_content(prompt)
+                
+                legacy_contents = []
+                if image_base64:
+                    try:
+                        import base64
+                        img_bytes = base64.b64decode(image_base64)
+                        legacy_contents.append({"mime_type": "image/png", "data": img_bytes})
+                    except Exception as e:
+                        print("Could not attach image for legacy gemini:", e)
+                legacy_contents.append(prompt)
+                
+                response = model.generate_content(legacy_contents, request_options={"timeout": 300.0})
                 text = getattr(response, "text", None)
         except Exception as error:
             print("Legacy GenAI exercise solver error:", error)

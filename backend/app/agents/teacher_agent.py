@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 from typing import Any
+from pydantic import BaseModel, Field
 
 from ..models.session import StudentSession
 from ..services.ai_gateway import generate_response
@@ -36,6 +37,31 @@ def _language_instruction(language: str) -> str:
         )
     return "Reply in clear Indian English. Whiteboard labels and all mathematics notation must stay in English."
 
+
+class TutorWhiteboardAction(BaseModel):
+    action: str = Field(description="Action type: draw_line, draw_angle, write_text, highlight_element, draw_shape, etc.")
+    content: str | None = None
+    label: str | None = None
+    x: float | None = None
+    y: float | None = None
+    x1: float | None = None
+    y1: float | None = None
+    x2: float | None = None
+    y2: float | None = None
+    radius: float | None = None
+    start_angle: float | None = None
+    end_angle: float | None = None
+    color: str | None = None
+    thickness: float | None = None
+    font_size: float | None = None
+    opacity: float | None = None
+
+class TutorResponseSchema(BaseModel):
+    internal_reasoning: str = Field(description="Step-by-step scratchpad for mathematical reasoning")
+    spoken_response: str = Field(description="The spoken explanation for the student")
+    whiteboard_actions: list[TutorWhiteboardAction] = Field(description="List of whiteboard actions")
+    advance_topic: bool = Field(default=False, description="Set to true if moving to the next topic")
+    widget: dict[str, Any] | None = Field(default=None, description="Optional widget payload")
 
 class TutorAgent:
     DEFAULT_CONFIGURATION: dict[str, Any] = {
@@ -135,7 +161,7 @@ class TutorAgent:
 
 **AVAILABLE KNOWLEDGE (RAG CONTEXT):**
 {rag_context}
-*You MUST base your syllabus, weightage, and problems strictly on the information provided above.*
+*You MUST base your syllabus, theory, examples, and problems strictly on the information provided above.*
 CURRENT PHASE: {phase}. Do not jump to solving problems or skipping theory until the engine issues a 'phase_transition' command.
 
 **LANGUAGE STYLE:**
@@ -150,8 +176,8 @@ For spoken_response, you MUST spell out symbols in words so the voice engine pro
 **IF THIS IS A NEW CHAPTER (`is_new_chapter` is True):**
 1. Enthusiastically welcome the student to Grade {grade} {exam} Math.
 2. Introduce the Chapter.
-3. **Exam Strategy:** Tell the student the historical weightage of this chapter in the {exam} exam and what kind of questions usually appear based on PYQs.
-4. **WHITEBOARD:** Use `whiteboard_actions` to write the Chapter Name and the Agenda/List of topics on the board.
+3. Start the first topic directly with a clear concept explanation.
+4. **WHITEBOARD:** Keep the board instructional only: Chapter name, Topic name, then the current Theory or Problem content. Do not write exam strategy, source names, weightage, agenda, roadmap, or other secondary information on the board.
 
 **IF THIS IS A CONTINUING CLASS (`is_new_chapter` is False, but `is_first_interaction` is True):**
 1. Welcome the student back.
@@ -193,20 +219,27 @@ Whenever a topic or word problem involves visual data, shapes, data tables, or c
 6. Do NOT assume the doubt is fully resolved until the student confirms it.
 
 **THE PEDAGOGICAL LOOP (HOW YOU TEACH - GUIDED EXPLAINER):**
-When teaching a topic or solving a problem, you MUST follow this sequence strictly:
+When teaching theory, follow the injected PDF order: theory first, examples next, and practice only after the practice phase starts. The board must show:
+- Chapter: <chapter name>
+- Topic: <topic name>
+- Theory: <main theorem/concept statement> using green/bold styling if supported by the client
+- Explanation: <student-facing explanation>
+- Proof: <proof or reasoning>, when the concept has a proof
+Do not label theory as "Step 1", "Step 2", or "Concept step".
 
-1. **Read & Explain Goal FIRST:** If given a problem image or text, your VERY FIRST step is to read the problem statement out loud to the student and explicitly state what you are trying to solve. Say "First, let us read the question carefully: [Question]. Let me explain the solution step by step." Do not start calculating yet.
+When solving a problem, you MUST follow this sequence strictly:
+
+1. **Read & Explain Goal FIRST:** If given a problem image or text, read the problem statement out loud to the student and explicitly state what you are trying to solve. Say "First, let us read the question carefully: [Question]. Let me explain the solution step by step." Do not start calculating yet.
 2. **The "Why" Before The "How":** Explain the real-world intuition or coordinate geometry mechanics before executing any mathematical rules or formulas.
 3. **Step-by-Step Visualization & Construction:** Build equations and visual layouts on the board step-by-step. Let your whiteboard actions match your spoken text fluidly.
 4. **Strategic Questioning:** Explain 2-3 logical steps, then pause your mathematical output and ask a clean checking question based strictly on what is currently drawn on the board (e.g., "Looking at our drawn graph, what point does the line cut across the Y-axis?").
 5. **The "Move On" Rule:** If the student is stuck, wrong, or silent, do NOT loop. Say, "That's okay," explain the step clearly, write it on the board, and continue smoothly.
 6. **CRITICAL ACCURACY RULE:** If the math logic is not found in the retrieved context, you are forbidden from guessing. You must state: 'I don't have the CBSE guidelines for that in my current notes, let's look at the concepts on the board.'
 
-**MUST DECODE PROBLEM GIVEN/REQUIRED (MANDATORY):**
-- Before producing any equations or algebraic manipulations on the whiteboard, you MUST explicitly decode the problem into two separate `write_text` whiteboard actions in this exact order:
-    1. `{"action": "write_text", "x": <num>, "y": <num>, "label": "What is given: <succinct list of givens>", "color": "black"}`
-    2. `{"action": "write_text", "x": <num>, "y": <num>, "label": "What needs to be found: <succinct target>", "color": "black"}`
-    The `What is given` and `What needs to be found` entries MUST appear before any `write_text` that contains an equation (a string with `=`) or before any `draw_line`/`draw_angle` that constructs the main geometry for the solution. Failing to include these two explicit decode actions is a protocol violation.
+**PROBLEM READOUT RULE:**
+- Read the problem statement aloud and explain what is given and what must be found in speech.
+- Do not write separate "What is given" or "What needs to be found" lines on the blackboard. Keep the board compact: one problem header, a figure if required, then solution lines.
+- In exercise mode, the board must show Chapter, Topic, a green/bold Problem statement, any required figure, then Step 1, Step 2, ... solution lines. Never write Source, exam strategy, agenda, weightage, or document names on the board.
 
 **STRICT WHITEBOARD JSON ACTIONS SCHEMA (MANDATORY):**
 Only use the following action names and properties. Do NOT invent new top-level action names or arbitrary nested keys — the frontend will reject unknown keys.
@@ -221,10 +254,10 @@ Only use the following action names and properties. Do NOT invent new top-level 
     Optional properties: `label` (string), `color` (string)
     Example: {"action":"draw_angle","x":50,"y":60,"radius":20,"start_angle":0,"end_angle":30,"label":"θ","color":"black"}
 
-- `write_text`: place a text label on board (use for problem statements, givens, equations)
+- `write_text`: place a short label on a diagram or write an equation
     Required properties: `action` ("write_text"), `x` (number), `y` (number), `label` (string)
     Optional properties: `font_size` (number), `color` (string)
-    Example: {"action":"write_text","x":120,"y":40,"label":"What is given: a=5","font_size":14,"color":"black"}
+    Example: {"action":"write_text","x":120,"y":40,"label":"O","font_size":14,"color":"black"}
 
 - `highlight_element`: highlight a region or element on the board
     Required properties: `action` ("highlight_element"), `x1` (number), `y1` (number), `x2` (number), `y2` (number), `color` (string)
@@ -232,7 +265,7 @@ Only use the following action names and properties. Do NOT invent new top-level 
     Example: {"action":"highlight_element","x1":10,"y1":10,"x2":100,"y2":50,"color":"green","label":"target"}
 
 ADDITIONAL RULES:
-- Maintain ordering: the decode pair (`What is given` / `What needs to be found`) MUST precede any equation-writing or geometry-building actions.
+- Maintain ordering: show the figure before the solution if the problem references a figure or diagram.
 - Do not output `draw_shape`, `draw_text` (legacy), `diagram` or any other action names unless you map them to the strict schema above.
 - If a single visual requires multiple primitive actions, emit them in the natural construction order (e.g., lines first, then angles, then labels, then highlights).
 - Always ensure coordinates are integers or floats and relative to the same board coordinate system.
@@ -244,7 +277,7 @@ ADDITIONAL RULES:
         self,
         session: StudentSession,
         user_message: str,
-        diagnostic_nudge: str = None,
+        diagnostic_nudge: str | None = None,
         rag_context: str = "",
     ) -> dict:
         was_first_interaction = session.is_first_interaction
@@ -265,7 +298,11 @@ ADDITIONAL RULES:
             diagnostic_nudge,
             rag_context=resolved_rag_context,
         )
-        raw_response = await asyncio.to_thread(generate_response, prompt)
+        raw_response = await asyncio.to_thread(
+            generate_response, 
+            prompt, 
+            response_schema=TutorResponseSchema
+        )
         result = self._parse_agent_response(raw_response)
 
         if not result["whiteboard_actions"]:
@@ -341,10 +378,10 @@ ADDITIONAL RULES:
                 f"IMMEDIATELY follow the 'IF THIS IS A NEW CHAPTER' flow:\n"
                 f"1. Enthusiastically welcome the student to Grade {grade_level} {exam_type} Math\n"
                 f"2. Introduce the Chapter: {chapter_title}\n"
-                f"3. Provide exam strategy and historical weightage for {exam_type} based on the RAG context.\n"
-                f"4. Use whiteboard_actions to write Chapter Name and full Agenda on board\n"
-                f"5. Begin with a clear explanation of the first topic\n"
+                f"3. Begin with a clear explanation of the first topic\n"
+                f"4. Use whiteboard_actions only for Chapter, Topic, Theory, Explanation, and Proof lines\n"
                 f"Agenda items: {agenda}\n"
+                f"Do not put agenda, source, weightage, exam strategy, or roadmap lines on the board.\n"
                 f"Do not ask questions yet - TEACH FIRST, ASK LATER."
             )
 
@@ -382,16 +419,17 @@ ADDITIONAL RULES:
         )
 
     def _opening_whiteboard_actions(self, session: StudentSession) -> list[dict[str, Any]]:
-        agenda_lines = [f"{index + 1}. {topic}" for index, topic in enumerate(session.agenda or [])]
-        agenda_text = "Agenda:\n" + ("\n".join(agenda_lines) if agenda_lines else "1. Topic overview")
-        exam_label = str(getattr(session, "exam", self._config("default_exam", "cbse"))).upper()
         chapter_label = self._resolve_current_chapter(session) or str(
             self._config("default_chapter_label", "Current Chapter")
         )
+        topic_label = (
+            str(session.current_topic).strip()
+            if getattr(session, "current_topic", None)
+            else str((session.agenda or ["Current Topic"])[0]).strip()
+        )
         return [
-            {"action": "draw_text", "content": f"Grade {session.grade} {exam_label} Mathematics"},
             {"action": "draw_text", "content": f"Chapter: {chapter_label}"},
-            {"action": "draw_text", "content": agenda_text},
+            {"action": "draw_text", "content": f"Topic: {topic_label}"},
         ]
 
     def _parse_agent_response(self, raw_response: str) -> dict[str, Any]:
@@ -476,6 +514,7 @@ ADDITIONAL RULES:
         - draw_angle: {action, x, y, radius, start_angle, end_angle, [label], [color]}
         - write_text: {action, x, y, label, [font_size], [color]}
         - highlight_element: {action, x1, y1, x2, y2, color, [label], [opacity]}
+        - draw_image: {action, base64, x, y, width, height, [metadata]}
 
         This function maps legacy names where possible, while preserving
         drawable figure actions needed by the current frontend.
@@ -484,12 +523,10 @@ ADDITIONAL RULES:
         y_cursor = 20
         def to_number(v, default=0):
             try:
-                return int(v) if isinstance(v, int) or (isinstance(v, str) and v.isdigit()) else float(v)
-            except Exception:
-                try:
-                    return float(v)
-                except Exception:
-                    return default
+                val = float(v)
+                return int(val) if val.is_integer() else val
+            except (ValueError, TypeError):
+                return default
 
         for raw in actions or []:
             if not isinstance(raw, dict):
@@ -605,6 +642,20 @@ ADDITIONAL RULES:
                 sanitized.append(clean)
                 continue
 
+            if action_name == "draw_image" or action_name == "image":
+                base64_data = raw.get("base64") or raw.get("url") or raw.get("content")
+                if base64_data:
+                    clean = {
+                        "action": "draw_image",
+                        "base64": str(base64_data),
+                        "x": to_number(raw.get("x"), 10),
+                        "y": to_number(raw.get("y"), 140),
+                        "width": to_number(raw.get("width"), 350),
+                        "height": to_number(raw.get("height"), 250),
+                    }
+                    sanitized.append(clean)
+                continue
+
             # Unknown actions are ignored — keep the whiteboard safe and predictable
         return sanitized
 
@@ -628,6 +679,6 @@ ADDITIONAL RULES:
             return " ".join(lines)
         topic = str(fallback_topic or "this concept").strip()
         return (
-            f"We finished the current board steps for {topic}. "
+            f"We finished the current board explanation for {topic}. "
             "Click Next when you are ready for the next explanation."
         )

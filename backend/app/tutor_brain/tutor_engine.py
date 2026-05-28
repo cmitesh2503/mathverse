@@ -1501,12 +1501,12 @@ class TutorEngine:
         return generated
 
     def _build_voice_text(self, explanation: str, steps: list[str] | None = None) -> str:
-        parts = ["Let's understand this step by step.", self._sentence(explanation)]
+        parts = ["Let's understand the idea clearly.", self._sentence(explanation)]
         clean_steps = [self._sentence(step) for step in (steps or []) if self._sentence(step)]
         if clean_steps:
-            parts.append("First, " + clean_steps[0].lstrip("Step 1: ").strip())
+            parts.append(clean_steps[0].lstrip("Step 1: ").strip())
             for step in clean_steps[1:4]:
-                parts.append("Then, " + re.sub(r"^Step\s*\d+\s*:\s*", "", step).strip())
+                parts.append(re.sub(r"^Step\s*\d+\s*:\s*", "", step).strip())
         return self._sentence(" ".join(parts))
 
     def _next_adaptive_problem(self, state: ClassroomState) -> dict[str, Any]:
@@ -3131,8 +3131,8 @@ Return ONLY JSON:
             explanation=explanation,
             steps=[
                 f"Topic: {topic_title}",
-                "Step 1: Understand the core concept.",
-                "Step 2: Build intuition with one simple example.",
+                "NCERT theory: Understand the core concept.",
+                "NCERT example: Build intuition with one simple example.",
             ],
             next_action="continue",
             voice_text=explanation,

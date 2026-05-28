@@ -2,7 +2,6 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PageKey } from "../App";
-import { TutorAvatar } from "../components/TutorAvatar";
 import { UpgradeNotice } from "../components/UpgradeNotice";
 import { Whiteboard } from "../components/Whiteboard";
 import { useTutorStream } from "../hooks/useTutorStream";
@@ -1252,52 +1251,15 @@ export default function Classroom({ onNavigate }: Props) {
           </div>
         </div>
       ) : (
-        <div className="grid min-h-[calc(100vh-10rem)] gap-4 px-4 py-4 lg:grid-cols-[minmax(280px,30%)_minmax(0,70%)]">
-          <aside className="flex min-h-[540px] flex-col rounded-lg border border-slate-800 bg-slate-900 shadow-2xl">
-            <div className="border-b border-slate-800 px-5 py-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Teacher Presence</p>
-                  <h1 className="mt-1 text-xl font-semibold tracking-normal text-white">Arvind Sir</h1>
-                </div>
-                <span className={`h-3 w-3 rounded-full ${isSpeaking ? "bg-emerald-400" : paused ? "bg-amber-400" : "bg-sky-400"}`} />
-              </div>
-            </div>
-
-            <div className="space-y-5 p-5">
-              <div className="rounded-lg border border-slate-700 bg-slate-950 p-4">
-                <TutorAvatar
-                  isSpeaking={isSpeaking}
-                  label={tutorLabel}
-                  text={loading ? "Preparing..." : micActive ? "Listening" : isSpeaking ? "Teaching live" : paused ? "Paused" : "Ready"}
-                />
-              </div>
-
-              <div className="rounded-lg border border-slate-700 bg-slate-950 p-4">
-                <div className="flex items-center gap-2">
-                  <span className={`h-2.5 w-2.5 rounded-full ${isSpeaking ? "bg-emerald-400" : paused ? "bg-amber-400" : "bg-sky-400"}`} />
-                  <p className="text-sm font-semibold tracking-normal text-slate-100">{status}</p>
-                </div>
-                <div className="mt-4 max-h-56 overflow-y-auto rounded-md bg-slate-900 px-4 py-3 text-sm leading-7 tracking-normal text-slate-200">
-                  {loading ? "One moment... setting up the next board move." : caption}
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-slate-700 bg-slate-950 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Current Focus</p>
-                <h2 className="mt-2 text-base font-semibold tracking-normal text-white">{chapter}</h2>
-                <p className="mt-1 text-sm leading-6 tracking-normal text-slate-300">{concept}</p>
-                <p className={`mt-2 text-xs font-semibold tracking-[0.12em] ${sessionExpired ? "text-rose-300" : "text-cyan-200"}`}>
-                  Session Time Left: {formatClock(sessionTimeLeftSeconds)} / {formatClock(sessionDurationSeconds)}
-                </p>
-              </div>
-
-              <label className="block rounded-lg border border-slate-700 bg-slate-950 p-4">
+        <div className="flex min-h-[calc(100vh-10rem)] flex-col gap-4 px-4 py-4">
+          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 shadow-2xl">
+            <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+              <label className="block">
                 <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Teaching language</span>
                 <select
                   value={teachingLanguage}
                   onChange={(event) => setTeachingLanguage(event.target.value as TeachingLanguage)}
-                  className="mt-2 w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-100 outline-none transition focus:border-cyan-300"
+                  className="mt-2 w-full rounded-md border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-100 outline-none transition focus:border-cyan-300"
                 >
                   {TEACHING_LANGUAGES.map((language) => (
                     <option key={language.value} value={language.value}>
@@ -1305,35 +1267,20 @@ export default function Classroom({ onNavigate }: Props) {
                     </option>
                   ))}
                 </select>
-                <p className="mt-2 text-xs leading-5 text-slate-400">
-                  Math terms and formulas stay in English for Hindi/Gujarati.
-                </p>
               </label>
 
-              {error && <div className="rounded-lg border border-rose-400/40 bg-rose-950/60 p-4 text-sm text-rose-100">{error}</div>}
-              {micError && <div className="rounded-lg border border-amber-400/40 bg-amber-950/60 p-4 text-sm text-amber-100">{micError}</div>}
-              {timeoutMessage && <div className="rounded-lg border border-amber-400/40 bg-amber-950/60 p-4 text-sm text-amber-100">{timeoutMessage}</div>}
-
-              <form onSubmit={askDoubt} className="rounded-lg border border-cyan-400/30 bg-cyan-950/25 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold tracking-normal text-cyan-100">Live Doubt</p>
-                    <p className="mt-1 text-xs leading-5 text-cyan-200/80">Ask while Arvind Sir is solving.</p>
-                  </div>
-                  {isSpeaking && (
-                    <span className="rounded-full bg-amber-400/15 px-3 py-1 text-xs font-semibold text-amber-100">
-                      Interrupt ready
-                    </span>
-                  )}
-                </div>
-                <div className="mt-3 flex items-end gap-2">
-                  <textarea
-                    value={doubtText}
-                    onChange={(event) => setDoubtText(event.target.value)}
-                    placeholder="Type your full doubt"
-                    rows={3}
-                    className="min-h-24 min-w-0 flex-1 resize-y rounded-md border border-cyan-500/40 bg-slate-950 px-3 py-2 text-sm leading-6 text-white outline-none focus:border-cyan-300"
-                  />
+              <form onSubmit={askDoubt} className="rounded-lg border border-cyan-400/30 bg-cyan-950/20 p-3">
+                <div className="flex flex-col gap-3 md:flex-row md:items-end">
+                  <label className="min-w-0 flex-1">
+                    <span className="text-sm font-semibold tracking-normal text-cyan-100">Live Doubt</span>
+                    <textarea
+                      value={doubtText}
+                      onChange={(event) => setDoubtText(event.target.value)}
+                      placeholder="Type your doubt"
+                      rows={2}
+                      className="mt-2 min-h-16 w-full resize-y rounded-md border border-cyan-500/40 bg-slate-950 px-3 py-2 text-sm leading-6 text-white outline-none focus:border-cyan-300"
+                    />
+                  </label>
                   <button
                     type="submit"
                     disabled={sessionExpired || !doubtText.trim()}
@@ -1356,145 +1303,69 @@ export default function Classroom({ onNavigate }: Props) {
                   ))}
                 </div>
               </form>
-
-              {discussionTurns.length > 0 && (
-                <div className="rounded-lg border border-slate-700 bg-slate-950 p-4">
-                  <p className="text-sm font-semibold tracking-normal text-white">Doubt Discussion</p>
-                  <div className="mt-3 max-h-52 space-y-3 overflow-y-auto pr-1">
-                    {discussionTurns.slice(-6).map((turn) => (
-                      <div
-                        key={turn.id}
-                        className={`rounded-md px-3 py-2 text-sm leading-6 ${
-                          turn.role === "student"
-                            ? "bg-cyan-400/10 text-cyan-50"
-                            : "bg-slate-800 text-slate-100"
-                        }`}
-                      >
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                          {turn.role === "student" ? "Student" : "Arvind Sir"}
-                        </p>
-                        <p className="mt-1">{turn.content || "Answering..."}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {isQuestion && (
-                <form onSubmit={submitClassAnswer} className="rounded-lg border border-slate-700 bg-slate-950 p-4">
-                  <p className="text-sm font-semibold tracking-normal text-white">Mini Check</p>
-                  <p className="mt-2 text-sm leading-6 tracking-normal text-slate-300">{response?.question || response?.content?.question}</p>
-                  <div className="mt-4 flex gap-2">
-                    <input
-                      value={answer}
-                      onChange={(event) => setAnswer(event.target.value)}
-                      placeholder="Type your answer"
-                      className="min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300"
-                    />
-                    <button
-                      type="submit"
-                      disabled={loading || !answer.trim()}
-                      className="rounded-md bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-400"
-                    >
-                      Submit
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              {notes.length > 0 && (
-                <div className="rounded-lg border border-slate-700 bg-slate-950 p-4">
-                  <p className="text-sm font-semibold tracking-normal text-white">Board Notes</p>
-                  <ul className="mt-3 space-y-2 text-sm leading-6 tracking-normal text-slate-300">
-                    {notes.slice(0, 4).map((note) => (
-                      <li key={note}>{note}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {examMode === "jee" && (
-                <div className="rounded-lg border border-slate-700 bg-slate-950 p-4">
-                  <p className="text-sm font-semibold tracking-normal text-white">JEE Pattern</p>
-                  <p className="mt-2 text-sm leading-6 tracking-normal text-slate-300">{pattern || speedHint || "Watch the structure before expanding."}</p>
-                  {shortcut && <p className="mt-2 text-sm leading-6 tracking-normal text-cyan-100">{shortcut}</p>}
-                </div>
-              )}
-
-              {response?.type === "homework" && (
-                <div className="rounded-lg border border-emerald-400/40 bg-emerald-950/50 p-4">
-                  <p className="text-sm font-semibold tracking-normal text-emerald-100">Homework Ready</p>
-                  <div className="mt-3 space-y-2">
-                    {homework.slice(0, 3).map((question, index) => (
-                      <p key={`${question.prompt || question.question || index}`} className="text-sm leading-6 tracking-normal text-emerald-50">
-                        {index + 1}. {question.prompt || question.question || "Practice question"}
-                      </p>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => onNavigate("homework")}
-                    className="mt-4 rounded-md bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300"
-                  >
-                    Open Homework
-                  </button>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-                <button
-                  type="button"
-                  onClick={() => void goNext()}
-                  disabled={loading || isQuestion || nextCoolingDown}
-                  className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
-                >
-                  {nextCoolingDown ? "Loading..." : nextLabel}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void goPrevious()}
-                  disabled={loading || isQuestion || sessionExpired || nextCoolingDown}
-                  className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void skipTopic()}
-                  disabled={loading || isQuestion || sessionExpired || nextCoolingDown}
-                  className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
-                >
-                  Skip Topic
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void refreshProblem()}
-                  disabled={loading || sessionExpired || nextCoolingDown}
-                  className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
-                >
-                  Refresh
-                </button>
-                <button
-                  type="button"
-                  onClick={pauseOrResume}
-                  disabled={loading || sessionExpired}
-                  className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
-                >
-                  {paused ? "Resume" : "Pause"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void start({ action: "homework", grade: selectedGrade, subject: "math" })}
-                  disabled={loading || sessionExpired}
-                  className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
-                >
-                  Homework
-                </button>
-              </div>
             </div>
-          </aside>
 
-          <section className="min-h-[540px]">
+            <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+              <button
+                type="button"
+                onClick={() => void goNext()}
+                disabled={loading || isQuestion || nextCoolingDown}
+                className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
+              >
+                {nextCoolingDown ? "Loading..." : nextLabel}
+              </button>
+              <button
+                type="button"
+                onClick={() => void goPrevious()}
+                disabled={loading || isQuestion || sessionExpired || nextCoolingDown}
+                className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                onClick={() => void skipTopic()}
+                disabled={loading || isQuestion || sessionExpired || nextCoolingDown}
+                className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
+              >
+                Skip Topic
+              </button>
+              <button
+                type="button"
+                onClick={() => void refreshProblem()}
+                disabled={loading || sessionExpired || nextCoolingDown}
+                className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
+              >
+                Refresh
+              </button>
+              <button
+                type="button"
+                onClick={pauseOrResume}
+                disabled={loading || sessionExpired}
+                className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
+              >
+                {paused ? "Resume" : "Pause"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void start({ action: "homework", grade: selectedGrade, subject: "math" })}
+                disabled={loading || sessionExpired}
+                className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:text-slate-500"
+              >
+                Homework
+              </button>
+            </div>
+
+            {(error || micError || timeoutMessage) && (
+              <div className="mt-3 grid gap-2 text-sm">
+                {error && <div className="rounded-lg border border-rose-400/40 bg-rose-950/60 p-3 text-rose-100">{error}</div>}
+                {micError && <div className="rounded-lg border border-amber-400/40 bg-amber-950/60 p-3 text-amber-100">{micError}</div>}
+                {timeoutMessage && <div className="rounded-lg border border-amber-400/40 bg-amber-950/60 p-3 text-amber-100">{timeoutMessage}</div>}
+              </div>
+            )}
+          </div>
+
+          <section className="min-h-[calc(100vh-18rem)]">
             <Whiteboard
               steps={visibleSteps}
               whiteboard={whiteboard}

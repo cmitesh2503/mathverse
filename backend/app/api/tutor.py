@@ -108,7 +108,7 @@ def _action_text(action: dict[str, Any]) -> str:
         return ""
 
     action_name = str(action.get("action") or "").strip().lower()
-    if action_name in {"clear", "clear_board", "erase", "reset_board"}:
+    if action_name in {"clear", "clear_board", "erase", "reset_board", "draw_image"}:
         return ""
 
     text = (
@@ -762,6 +762,30 @@ def _resolve_diagram_hint(prompt: str, solved_steps: list[str], diagram_hint: st
     if not lowered:
         return explicit_hint or None
 
+    if "circle" in lowered and "tangent" in lowered and (
+        "parallel tangent" in lowered
+        or "parallel tangents" in lowered
+        or ("diameter" in lowered and "perpendicular" in lowered)
+    ):
+        return (
+            "Draw a circle with centre O and a diameter PQ. "
+            "Draw tangent t1 at P and tangent t2 at Q, both perpendicular to the diameter, so t1 and t2 are parallel."
+        )
+    if "circle" in lowered and "tangent" in lowered and ("ab" in lowered or "right triangle oba" in lowered):
+        return (
+            "Draw a circle with centre O and tangent AB touching the circle at B. "
+            "Join OB as the radius r and OA as the 5 cm distance from centre to A; mark AB = 4 cm and angle OBA = 90°."
+        )
+    if "circle" in lowered and "tangent" in lowered and (
+        "how many" in lowered
+        or "infinitely many" in lowered
+        or "can a circle have" in lowered
+        or "number of tangents" in lowered
+    ):
+        return (
+            "Draw one circle and mark several different points on its circumference. "
+            "Draw a tangent line at each marked point to show that every boundary point gives one distinct tangent."
+        )
     if "circle" in lowered and ("tangent" in lowered or "chord" in lowered or "external point" in lowered):
         return (
             "Draw a circle with center O. Mark an external point A. Draw tangents AP and AQ touching the circle at P and Q. "
@@ -875,6 +899,68 @@ def _circle_comparison_primitives() -> list[dict[str, Any]]:
     ]
 
 
+def _single_tangent_circle_primitives() -> list[dict[str, Any]]:
+    # Scaled 3-4-5 right triangle OBA: OB is radius, AB is tangent, OA is distance from center.
+    return [
+        {"action": "draw_circle", "x": 72, "y": 106, "radius": 48, "color": "violet", "thickness": 3, "label": "circle", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 72, "y1": 106, "x2": 120, "y2": 106, "color": "green", "thickness": 3, "label": "OB = r", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 120, "y1": 106, "x2": 120, "y2": 42, "color": "skyblue", "thickness": 3, "label": "AB = 4 cm", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 72, "y1": 106, "x2": 120, "y2": 42, "color": "orange", "thickness": 3, "label": "OA = 5 cm", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 120, "y1": 106, "x2": 132, "y2": 106, "color": "yellow", "thickness": 2, "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 132, "y1": 106, "x2": 132, "y2": 94, "color": "yellow", "thickness": 2, "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 132, "y1": 94, "x2": 120, "y2": 94, "color": "yellow", "thickness": 2, "label": "90°", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 62, "y": 112, "label": "O", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 124, "y": 116, "label": "B", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 124, "y": 40, "label": "A", "metadata": {"diagram": True}},
+    ]
+
+
+def _many_tangents_circle_primitives() -> list[dict[str, Any]]:
+    return [
+        {"action": "draw_circle", "x": 118, "y": 88, "radius": 46, "color": "violet", "thickness": 3, "label": "circle", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 110, "y": 94, "label": "O", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 118, "y1": 30, "x2": 118, "y2": 146, "color": "skyblue", "thickness": 2, "label": "t1", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 62, "y1": 88, "x2": 174, "y2": 88, "color": "orange", "thickness": 2, "label": "t2", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 58, "y1": 42, "x2": 150, "y2": 134, "color": "green", "thickness": 2, "label": "t3", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 86, "y1": 142, "x2": 178, "y2": 50, "color": "yellow", "thickness": 2, "label": "t4", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 170, "y": 24, "label": "one tangent at each point", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 176, "y": 44, "label": "infinitely many points", "metadata": {"diagram": True}},
+    ]
+
+
+def _parallel_tangents_circle_primitives() -> list[dict[str, Any]]:
+    return [
+        {"action": "draw_circle", "x": 120, "y": 92, "radius": 46, "color": "violet", "thickness": 3, "label": "circle", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 74, "y1": 92, "x2": 166, "y2": 92, "color": "green", "thickness": 3, "label": "diameter PQ", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 74, "y1": 28, "x2": 74, "y2": 156, "color": "skyblue", "thickness": 3, "label": "t1", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 166, "y1": 28, "x2": 166, "y2": 156, "color": "skyblue", "thickness": 3, "label": "t2", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 74, "y1": 92, "x2": 84, "y2": 92, "color": "yellow", "thickness": 2, "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 84, "y1": 92, "x2": 84, "y2": 82, "color": "yellow", "thickness": 2, "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 84, "y1": 82, "x2": 74, "y2": 82, "color": "yellow", "thickness": 2, "label": "90°", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 166, "y1": 92, "x2": 156, "y2": 92, "color": "yellow", "thickness": 2, "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 156, "y1": 92, "x2": 156, "y2": 82, "color": "yellow", "thickness": 2, "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 156, "y1": 82, "x2": 166, "y2": 82, "color": "yellow", "thickness": 2, "label": "90°", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 116, "y": 86, "label": "O", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 60, "y": 94, "label": "P", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 170, "y": 94, "label": "Q", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 184, "y": 54, "label": "t1 || t2", "metadata": {"diagram": True}},
+    ]
+
+
+def _generic_circle_primitives(labels: list[str] | None = None) -> list[dict[str, Any]]:
+    pts = labels or ["O", "A", "B"]
+    center = pts[0] if pts else "O"
+    point = pts[1] if len(pts) > 1 else "A"
+    on_circle = pts[2] if len(pts) > 2 else "B"
+    return [
+        {"action": "draw_circle", "x": 92, "y": 88, "radius": 50, "color": "violet", "thickness": 3, "label": "circle", "metadata": {"diagram": True}},
+        {"action": "draw_line", "x1": 92, "y1": 88, "x2": 142, "y2": 88, "color": "green", "thickness": 3, "label": f"{center}{on_circle}", "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 84, "y": 94, "label": center, "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 146, "y": 94, "label": on_circle, "metadata": {"diagram": True}},
+        {"action": "write_text", "x": 152, "y": 42, "label": point, "metadata": {"diagram": True}},
+    ]
+
+
 def _triangle_similarity_primitives() -> list[dict[str, Any]]:
     return [
         {"action": "draw_line", "x1": 32, "y1": 134, "x2": 260, "y2": 134, "color": "skyblue", "thickness": 3, "label": "BC", "metadata": {"diagram": True}},
@@ -968,6 +1054,29 @@ def _manual_diagram_primitives(prompt: str, diagram_hint: str | None = None) -> 
             break
     if "circle" in text and ("different radii" in text or "different sizes" in text or "all circles" in text):
         return _circle_comparison_primitives()
+    if "circle" in text and "tangent" in text and (
+        "parallel tangent" in text
+        or "parallel tangents" in text
+        or ("diameter" in text and "perpendicular" in text)
+    ):
+        return _parallel_tangents_circle_primitives()
+    if "circle" in text and "tangent" in text and (
+        "how many" in text
+        or "infinitely many" in text
+        or "can a circle have" in text
+        or "number of tangents" in text
+        or "every boundary point" in text
+    ):
+        return _many_tangents_circle_primitives()
+    if "circle" in text and "tangent" in text and (
+        "single tangent" in text
+        or "right triangle" in text
+        or "point of contact" in text
+        or re.search(r"\b[A-Z]{2}\s*=\s*\d", f"{prompt or ''} {diagram_hint or ''}") is not None
+    ):
+        return _single_tangent_circle_primitives()
+    if "circle" in text:
+        return _generic_circle_primitives(labels[:3] if labels else None)
     if "non-similar" in text:
         return _non_similar_examples_primitives()
     if "rectangle" in text or ("polygon" in text and "similar" in text):
@@ -1049,6 +1158,7 @@ def _solution_actions(
     diagram_hint: str | None = None,
     chapter_no: str | None = None,
     chapter_name: str | None = None,
+    image_base64: str | None = None,
 ) -> list[dict[str, Any]]:
     """
     Generate board actions for problem solution with proper formatting.
@@ -1056,6 +1166,7 @@ def _solution_actions(
     - Includes figure/diagram rendering instructions
     - Provides step-by-step explanation flow
     """
+    _ = (source_label, chapter_no, chapter_name, image_base64)
     formatted_prompt = _format_for_display(prompt)
     cleaned_steps = [_clean_step_text(step) for step in solved_steps if _clean_step_text(step)]
     formatted_steps = [_format_for_display(step) for step in cleaned_steps]
@@ -1064,14 +1175,9 @@ def _solution_actions(
     formatted_diagram = _format_for_display(resolved_diagram_hint) if resolved_diagram_hint else None
 
     actions: list[dict[str, Any]] = [
-        {"action": "draw_text", "content": f"Chapter no: {chapter_no or '-'}"},
-        {"action": "draw_text", "content": f"Chapter name: {chapter_name or 'Current Topic'}"},
-        {"action": "draw_text", "content": f"Topic name: {chapter_name or 'Current Topic'}"},
         {"action": "draw_text", "content": f"Exercise no: {exercise_label}"},
-        {"action": "draw_text", "content": f"Problem no: {problem_number}"},
-        {"action": "draw_text", "content": f"Problem statement: {formatted_prompt}"},
+        {"action": "draw_text", "content": f"Problem no: {problem_number}: {formatted_prompt}"},
         {"action": "draw_text", "content": "Solution:"},
-        {"action": "draw_text", "content": f"Source: {source_label}"},
     ]
 
     diagram_primitives: list[dict[str, Any]] = []
@@ -1079,17 +1185,6 @@ def _solution_actions(
     primitive_construction_map: list[int | None] = []
 
     if formatted_diagram:
-        try:
-            given_label = f"What is given: {formatted_prompt.split('. ')[0][:120]}"
-        except Exception:
-            given_label = "What is given: (see problem statement)"
-        target = _word_problem_target(formatted_prompt) if formatted_prompt else "the required value"
-        need_label = f"What needs to be found: {target}"
-        actions.append({"action": "write_text", "x": 10, "y": 80, "label": given_label, "metadata": {"diagram": True, "diagram_phase": 0}})
-        actions.append({"action": "write_text", "x": 10, "y": 100, "label": need_label, "metadata": {"diagram": True, "diagram_phase": 0}})
-        actions.append({"action": "draw_text", "content": f"Diagram: {formatted_diagram}", "metadata": {"diagram": True, "diagram_phase": 0}})
-        actions.append({"action": "draw_shape", "content": formatted_diagram, "metadata": {"diagram": True, "diagram_phase": 0}})
-
         diagram_primitives = _manual_diagram_primitives(formatted_prompt, formatted_diagram)
         try:
             from ..services.geometry_translator import translate_diagram_to_primitives
@@ -1201,7 +1296,13 @@ def _extract_problem_metadata(actions: list[dict[str, Any]]) -> dict[str, str | 
         elif lowered.startswith("exercise no:"):
             exercise_no = value.split(":", 1)[1].strip() or None
         elif lowered.startswith("problem no:"):
-            problem_no = value.split(":", 1)[1].strip() or None
+            remainder = value.split(":", 1)[1].strip()
+            match = re.match(r"([^:]+):\s*(.+)", remainder)
+            if match:
+                problem_no = match.group(1).strip() or None
+                problem_statement = problem_statement or match.group(2).strip() or None
+            else:
+                problem_no = remainder or None
         elif lowered.startswith("problem statement:"):
             problem_statement = value.split(":", 1)[1].strip() or None
         elif lowered.startswith("problem:") and not problem_statement:
@@ -1344,6 +1445,7 @@ def _pdf_problem_actions_for_session(
         diagram_hint=problem.get("figure_hint") or solved.get("diagram"),
         chapter_no=str(chapter_no),
         chapter_name=chapter_title,
+        image_base64=solved.get("image_base64"),
     )
 
 
@@ -1354,9 +1456,6 @@ def _ensure_problem_headers(
     fallback_problem_no: str,
 ) -> list[dict[str, Any]]:
     problem_meta = _extract_problem_metadata(actions)
-    chapter_name = str(session.chapter_name or session.current_topic or "Current Chapter")
-    topic_name = str(session.current_topic or session.chapter_name or "Current Topic")
-    chapter_no = problem_meta.get("chapter_no") or _chapter_number_for_session(session)
     exercise_no = problem_meta.get("exercise_no") or "NCERT Exercise"
     problem_no = problem_meta.get("problem_no") or fallback_problem_no
     problem_statement = problem_meta.get("problem_statement") or _problem_prompt_from_actions(actions) or "-"
@@ -1364,12 +1463,10 @@ def _ensure_problem_headers(
     filtered: list[dict[str, Any]] = []
     for action in actions:
         text = _action_text(action).lower()
-        if text.startswith(("chapter no:", "chapter name:", "topic name:", "exercise no:", "problem no:", "problem statement:", "solution:")):
+        if text.startswith(("chapter no:", "chapter name:", "topic name:", "exercise no:", "problem no:", "problem statement:", "solution:", "source:")):
             continue
         filtered.append(action)
 
-    source_lines: list[str] = []
-    diagram_lines: list[str] = []
     final_answer_lines: list[str] = []
     raw_solution_lines: list[str] = []
     existing_step_actions: list[dict[str, Any]] = []
@@ -1399,13 +1496,10 @@ def _ensure_problem_headers(
         lowered = text.lower()
         if _is_diagram_action(action):
             preserved_diagram_actions.append(action)
+            continue
         if not text:
             continue
-        if lowered.startswith("source:"):
-            source_lines.append(text)
-            continue
         if lowered.startswith("diagram:"):
-            diagram_lines.append(text)
             continue
         if lowered.startswith("final answer:"):
             final_answer_lines.append(text)
@@ -1430,15 +1524,11 @@ def _ensure_problem_headers(
         ]
 
     headers = [
-        {"action": "draw_text", "content": f"Chapter no: {chapter_no}"},
-        {"action": "draw_text", "content": f"Chapter name: {chapter_name}"},
-        {"action": "draw_text", "content": f"Topic name: {topic_name}"},
         {"action": "draw_text", "content": f"Exercise no: {exercise_no}"},
-        {"action": "draw_text", "content": f"Problem no: {problem_no}"},
-        {"action": "draw_text", "content": f"Problem statement: {problem_statement}"},
+        {"action": "draw_text", "content": f"Problem no: {problem_no}: {problem_statement}"},
         {"action": "draw_text", "content": "Solution:"},
     ]
-    extras = [{"action": "draw_text", "content": line} for line in [*source_lines[:1], *diagram_lines[:1]]]
+    extras: list[dict[str, Any]] = []
     finals = [{"action": "draw_text", "content": line} for line in final_answer_lines[:1]]
     return [*headers, *extras, *preserved_diagram_actions, *step_actions, *finals]
 
@@ -1613,6 +1703,7 @@ def _pyq_problem_actions(topic: str, rag_context: str, variation: int = 0, sessi
         answer=answer,
         source_label=source_label,
         diagram_hint=solved.get("diagram") or "Map known values, choose the theorem/formula, then simplify to the final result.",
+        image_base64=solved.get("image_base64"),
     )
 
 
@@ -1646,6 +1737,7 @@ def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = ""
             answer=answer,
             source_label="Chapter Exercise",
             diagram_hint=solved.get("diagram") or "Use a = bq + r and split dividend into quotient-part plus remainder.",
+            image_base64=solved.get("image_base64"),
         )
 
     if "hcf" in lowered or "lcm" in lowered or "euclid algorithm" in lowered:
@@ -1674,6 +1766,7 @@ def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = ""
             answer=answer,
             source_label="Chapter Exercise",
             diagram_hint=solved.get("diagram") or "Create the Euclid remainder chain until remainder becomes zero.",
+            image_base64=solved.get("image_base64"),
         )
 
     if "decimal expansion" in lowered:
@@ -1705,6 +1798,7 @@ def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = ""
             answer=answer,
             source_label="Chapter Exercise",
             diagram_hint=solved.get("diagram") or "Prime-factor tree of denominator: keep only 2 and 5 for terminating decimals.",
+            image_base64=solved.get("image_base64"),
         )
 
     if "irrational" in lowered:
@@ -1734,6 +1828,7 @@ def _topic_problem_actions(topic: str, variation: int = 0, rag_context: str = ""
             answer=answer,
             source_label="Chapter Exercise",
             diagram_hint=solved.get("diagram") or "Contradiction flow: assume rational -> derive impossible statement -> conclude irrational.",
+            image_base64=solved.get("image_base64"),
         )
 
     if "set notation" in lowered or "representations" in lowered:
@@ -1998,6 +2093,13 @@ def _ensure_board_header_actions(
     include_headers: bool = True,
 ) -> list[dict[str, Any]]:
     if not include_headers:
+        return actions
+
+    if any(
+        _action_text(action).lower().startswith(("exercise no:", "problem no:"))
+        for action in actions
+        if isinstance(action, dict)
+    ):
         return actions
 
     chapter = str(session.chapter_name or "Current Chapter")
@@ -2284,20 +2386,20 @@ def _pdf_teaching_points(rag_context: str, topic: str, limit: int = 4) -> list[s
     return sentences[:limit]
 
 
-def _append_pdf_teaching_actions(actions: list[dict[str, Any]], rag_context: str, topic: str) -> None:
+def _append_pdf_teaching_actions(actions: list[dict[str, Any]], rag_context: str, topic: str, pdf_path: str | None = None) -> None:
+    _ = pdf_path
     points = _pdf_teaching_points(rag_context, topic)
     if not points:
         return
 
-    actions.append({"action": "draw_text", "content": "From NCERT PDF:"})
     for index, point in enumerate(points, start=1):
-        label = "PDF theorem/example" if index == 1 else "PDF note"
+        label = "Theorem/example" if index == 1 else "Note"
         actions.append({"action": "draw_text", "content": f"{label} {index}: {point}"})
 
     combined = " ".join(points)
+
     primitives = _manual_diagram_primitives(topic, combined)
     if primitives:
-        actions.append({"action": "draw_text", "content": "Diagram: NCERT-style figure reconstructed from the theorem/problem.", "metadata": {"diagram": True}})
         actions.extend(primitives)
 
 
@@ -2493,6 +2595,16 @@ def _chapter_teaching_phase_actions(session: StudentSession, rag_context: str = 
     if not topics:
         topics = [chapter_title]
 
+    from ..services.cbse_exercises import load_chapter_pdf_theory, get_pdf_chapter_number, _chapter_pdf_path
+    grade = int(getattr(session, "grade", 10) or 10)
+    fallback_index = int(getattr(session, "current_chapter_index", 0) or 0) + 1
+    chapter_no = get_pdf_chapter_number(grade, chapter, fallback_index)
+    
+    path = _chapter_pdf_path(grade, chapter_no, "theory")
+    pdf_path = str(path) if path else None
+    theory_text = load_chapter_pdf_theory(grade, chapter_no)
+    combined_context = theory_text if theory_text else rag_context
+
     if not getattr(session, "class_intro_done", False):
         session.class_intro_done = True
         session.concept_teaching_index = 0
@@ -2507,7 +2619,7 @@ def _chapter_teaching_phase_actions(session: StudentSession, rag_context: str = 
             actions.append({"action": "draw_text", "content": f"{index}. {topic}"})
         if chapter.get("summary"):
             actions.append({"action": "draw_text", "content": f"Chapter idea: {chapter.get('summary')}"})
-        _append_pdf_teaching_actions(actions, rag_context, chapter_title)
+        _append_pdf_teaching_actions(actions, combined_context, chapter_title, pdf_path)
         actions.append({"action": "draw_shape", "content": "Chapter roadmap with topic boxes connected left to right."})
         return actions
 
@@ -2543,7 +2655,7 @@ def _chapter_teaching_phase_actions(session: StudentSession, rag_context: str = 
                 actions.append({"action": "draw_text", "content": f"Mini example: {example.get('prompt')}"})
             for step_index, step in enumerate((example.get("steps") or [])[:3], start=1):
                 actions.append({"action": "draw_text", "content": f"Example step {step_index}: {step}"})
-        _append_pdf_teaching_actions(actions, rag_context, topic)
+        _append_pdf_teaching_actions(actions, combined_context, topic, pdf_path)
         actions.append({"action": "draw_text", "content": "Check: understand the idea before exercise practice."})
         actions.append({"action": "draw_text", "content": f"Diagram: {diagram_hint}"})
         actions.append({"action": "draw_shape", "content": diagram_hint})
@@ -2674,6 +2786,47 @@ def _rag_context_for_session(session: StudentSession, exam_type: str) -> str:
     if cached_context is not None:
         return cached_context
 
+    if normalized_exam == "cbse":
+        try:
+            from ..services.cbse_exercises import load_chapter_pdf_theory, get_pdf_chapter_number, _chapter_pdf_path, _extract_pdf_text
+            from ..tutor_brain.curriculum import get_grade_curriculum
+            
+            curriculum = get_grade_curriculum(grade, normalized_exam)
+            chapters = curriculum.get("chapters") if isinstance(curriculum, dict) else []
+            chapter_match = None
+            chapter_l = str(chapter or "").strip().lower()
+            topic_l = str(topic or "").strip().lower()
+            chapter_index = 1
+            
+            if isinstance(chapters, list):
+                for idx, item in enumerate(chapters, start=1):
+                    if not isinstance(item, dict):
+                        continue
+                    title = str(item.get("title") or item.get("chapter") or "").strip().lower()
+                    slug = str(item.get("slug") or "").strip().lower()
+                    if chapter_l and (chapter_l in title or title in chapter_l or chapter_l == slug):
+                        chapter_match = item
+                        chapter_index = idx
+                        break
+                    if topic_l and (topic_l in title or topic_l == slug):
+                        chapter_match = item
+                        chapter_index = idx
+                        break
+
+            if chapter_match:
+                pdf_chapter_no = get_pdf_chapter_number(grade, chapter_match, chapter_index)
+                target_phase = "practice" if phase == SessionPhase.PRACTICE.value else "theory"
+                path = _chapter_pdf_path(grade, pdf_chapter_no, target_phase)
+                if path:
+                    pdf_text = _extract_pdf_text(str(path))
+                    if pdf_text:
+                        scoped_context = _scope_rag_context_to_chapter(pdf_text, chapter=chapter, topic=topic)
+                        if scoped_context:
+                            _RAG_CONTEXT_CACHE[cache_key] = scoped_context
+                            return scoped_context
+        except Exception as error:
+            print(f"Failed to load phase-aware PDF context for RAG: {error}")
+
     source_hint = (
         "JEE concept explanation, worked examples, and step-by-step intuition"
         if normalized_exam == "jee"
@@ -2691,7 +2844,7 @@ def _rag_context_for_session(session: StudentSession, exam_type: str) -> str:
         raw_context = retrieve_context(
             query=query,
             exam_type=normalized_exam,
-            k=12,
+            k=6,
             grade=grade,
             chapter=chapter,
             phase=phase,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
@@ -9,6 +10,7 @@ import redis.asyncio as redis
 from redis.exceptions import RedisError
 
 from ..models.session import SessionPhase, StudentSession
+from ..services.ai_gateway import generate_response
 from ..tutor_brain.curriculum import list_chapters
 
 
@@ -17,6 +19,28 @@ class Orchestrator:
     HELP_KEYWORDS = ("hint", "help", "stuck")
     SESSION_TTL_SECONDS = 24 * 60 * 60
     _memory_sessions: dict[str, tuple[str, float]] = {}
+
+    ORCHESTRATOR_ROUTING_PROMPT = """
+You are the Orchestrator for an AI math tutoring system. Your job is to classify the user's latest input and route them to the correct specialist agent.
+
+AVAILABLE AGENTS:
+1. "tutor_agent": Handles theory teaching, concept explanations, follow-up doubts ("why?", "how?"), requests for the next topic, and general progression ("next", "continue").
+2. "diagnostic_agent": Handles the practice phase. Route here IF the user explicitly asks for questions, exercises, or a test, OR if the user provides an answer to a math problem (e.g., "42", "x=5", "option B").
+3. "proctor_agent": Handles completely off-topic chat, inappropriate behavior, or attempts to bypass the system.
+
+CURRENT SESSION CONTEXT:
+- Active Phase: {active_phase}
+- Current Topic: {current_topic}
+
+USER MESSAGE: "{user_message}"
+
+CRITICAL TRANSITION RULES:
+- If Active Phase is "teaching" but the user says "give me a question", "let's practice", "test me", "solve exercise", or inputs what looks like a math answer -> route to "diagnostic_agent" (Transition to Practice).
+- If Active Phase is "practice" but the user says "I don't understand", "teach me the theory again", "explain this concept", or "next topic" -> route to "tutor_agent" (Transition to Theory).
+- If the user simply says "next", "continue", or "ready", route based on the Active Phase.
+
+Based on the rules above, output ONLY the exact name of the agent to route to ("tutor_agent", "diagnostic_agent", or "proctor_agent"). Do not include any formatting, markdown, or other text.
+"""
 
     def __init__(self) -> None:
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -355,22 +379,27 @@ class Orchestrator:
             await self.set_session(session_id, session)
             return "proctor_agent"
 
-        if phase == SessionPhase.TEACHING.value:
-            await self.set_session(session_id, session)
-            return "tutor_agent"
-
         if phase == SessionPhase.TESTING.value:
             await self.set_session(session_id, session)
             return "proctor_agent"
 
-        if phase == SessionPhase.PRACTICE.value:
-            if any(keyword in message for keyword in self.ANSWER_KEYWORDS):
-                await self.set_session(session_id, session)
-                return "diagnostic_agent"
+        prompt = self.ORCHESTRATOR_ROUTING_PROMPT.format(
+            active_phase=phase,
+            current_topic=session.current_topic or "General",
+            user_message=message_text
+        )
+        
+        try:
+            raw_route = await asyncio.to_thread(generate_response, prompt)
+            agent_name = str(raw_route or "").replace("```", "").strip().lower()
+            if agent_name not in {"tutor_agent", "diagnostic_agent", "proctor_agent"}:
+                agent_name = "diagnostic_agent" if phase == SessionPhase.PRACTICE.value else "tutor_agent"
+        except Exception as error:
+            print(f"Orchestrator routing LLM failed: {error}")
+            agent_name = "diagnostic_agent" if phase == SessionPhase.PRACTICE.value else "tutor_agent"
 
-            if any(keyword in message for keyword in self.HELP_KEYWORDS):
-                await self.set_session(session_id, session)
-                return "tutor_agent"
+        if agent_name == "diagnostic_agent" and phase == SessionPhase.TEACHING.value:
+            self._set_active_phase(session, SessionPhase.PRACTICE)
 
         await self.set_session(session_id, session)
-        return "tutor_agent"
+        return agent_name

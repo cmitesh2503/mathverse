@@ -24,6 +24,9 @@ export type WhiteboardAction = {
   text?: string;
   value?: string;
   message?: string;
+  base64?: string;
+  width?: number;
+  height?: number;
   x?: number;
   y?: number;
   x1?: number;

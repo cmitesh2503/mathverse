@@ -1035,7 +1035,7 @@ class LiveTutorBridge:
 
     def _action_text(self, action: dict[str, object]) -> str:
         action_name = str(action.get("action") or "").strip().lower()
-        if action_name in {"clear", "clear_board", "erase", "reset_board"}:
+        if action_name in {"clear", "clear_board", "erase", "reset_board", "draw_image"}:
             return ""
         text = (
             action.get("content")
@@ -1288,8 +1288,6 @@ class LiveTutorBridge:
 
     # âœ… FIX 4: Entirely removed fake dummy steps!
     def _pyq_problem_actions(self, topic: str, rag_context: str, variation: int = 0) -> list[dict]:
-        sources = ["NCERT Textbook", "CBSE Exercise", "Similar Practice Problem"]
-        source_label = sources[variation % len(sources)]
         candidates = self._extract_problem_candidates(rag_context)
 
         if candidates:
@@ -1297,9 +1295,9 @@ class LiveTutorBridge:
         else:
             base_problem = f"Solve one step-by-step problem based on {topic or 'the current topic'}."
 
-        if source_label == "Similar Practice Problem":
+        if variation % 3 == 2:
             prompt = self._generate_similar_problem(base_problem, variation + 1)
-        elif source_label in ["NCERT Textbook", "CBSE Exercise"] and len(candidates) > 1:
+        elif len(candidates) > 1:
             prompt = candidates[(variation + 1) % len(candidates)]
         else:
             prompt = base_problem
@@ -1307,7 +1305,7 @@ class LiveTutorBridge:
         solved = build_exercise_solution(
             {
                 "chapter_title": topic or "Mathematics",
-                "exercise": source_label,
+                "exercise": "Practice",
                 "number": str(variation + 1),
                 "prompt": prompt,
             }
@@ -1316,7 +1314,6 @@ class LiveTutorBridge:
         answer = str(solved.get("answer") or "").strip()
 
         actions: list[dict] = [
-            {"action": "draw_text", "content": f"Source: {source_label}"},
             {"action": "draw_text", "content": f"Problem: {prompt}"},
         ]
         for index, step in enumerate(solved_steps[:8], start=1):

@@ -16,6 +16,7 @@ PROMPT_TEMPLATE = (
     "Input: a short textual description of a figure from a math problem (NCERT style).\n"
     "Output: a single JSON object with one key `whiteboard_actions` whose value is an array of primitive actions.\n"
     "Use only these primitive actions and properties: `draw_line` (x1,y1,x2,y2,color,thickness,label),"
+    " `draw_circle` (x,y,radius,color,thickness,label),"
     " `draw_angle` (x,y,radius,start_angle,end_angle,label,color), `write_text` (x,y,label,font_size,color),"
     " `highlight_element` (x1,y1,x2,y2,color,opacity,label).\n"
     "Do NOT output any prose. Return valid JSON only. Example:\n"
@@ -23,7 +24,7 @@ PROMPT_TEMPLATE = (
 )
 
 
-ALLOWED_ACTIONS = {"draw_line", "draw_angle", "write_text", "highlight_element"}
+ALLOWED_ACTIONS = {"draw_line", "draw_angle", "draw_circle", "write_text", "highlight_element"}
 
 
 def _extract_point_labels(text: str, max_count: int = 8) -> list[str]:
@@ -90,6 +91,11 @@ def _validate_action(action: dict[str, Any]) -> bool:
             if not isinstance(action.get(k), (int, float)):
                 return False
         return True
+    if name == "draw_circle":
+        for k in ("x", "y", "radius"):
+            if not isinstance(action.get(k), (int, float)):
+                return False
+        return True
     if name == "highlight_element":
         for k in ("x1", "y1", "x2", "y2"):
             if not isinstance(action.get(k), (int, float)):
@@ -151,7 +157,7 @@ def _circle_polyline(cx: int, cy: int, radius: int, segments: int = 28) -> list[
 
 def _has_drawable_primitives(actions: list[dict[str, Any]]) -> bool:
     return any(
-        str(item.get("action") or "").strip().lower() in {"draw_line", "draw_angle", "highlight_element"}
+        str(item.get("action") or "").strip().lower() in {"draw_line", "draw_angle", "draw_circle", "highlight_element"}
         for item in actions
         if isinstance(item, dict)
     )
@@ -162,6 +168,64 @@ def _heuristic_fallback(diagram_text: str) -> list[dict[str, Any]]:
     t = (diagram_text or "").lower()
     if "circle" in t and ("tangent" in t or "external point" in t or "chord" in t):
         point_labels = _extract_point_labels(diagram_text, max_count=4)
+        if (
+            "parallel tangent" in t
+            or "parallel tangents" in t
+            or ("diameter" in t and "perpendicular" in t)
+        ):
+            return [
+                {"action": "draw_circle", "x": 120, "y": 92, "radius": 46, "color": "violet", "thickness": 2, "label": "circle"},
+                {"action": "draw_line", "x1": 74, "y1": 92, "x2": 166, "y2": 92, "color": "green", "thickness": 2, "label": "diameter PQ"},
+                {"action": "draw_line", "x1": 74, "y1": 28, "x2": 74, "y2": 156, "color": "skyblue", "thickness": 2, "label": "t1"},
+                {"action": "draw_line", "x1": 166, "y1": 28, "x2": 166, "y2": 156, "color": "skyblue", "thickness": 2, "label": "t2"},
+                {"action": "draw_line", "x1": 74, "y1": 92, "x2": 84, "y2": 92, "color": "yellow", "thickness": 2},
+                {"action": "draw_line", "x1": 84, "y1": 92, "x2": 84, "y2": 82, "color": "yellow", "thickness": 2},
+                {"action": "draw_line", "x1": 84, "y1": 82, "x2": 74, "y2": 82, "color": "yellow", "thickness": 2, "label": "90°"},
+                {"action": "draw_line", "x1": 166, "y1": 92, "x2": 156, "y2": 92, "color": "yellow", "thickness": 2},
+                {"action": "draw_line", "x1": 156, "y1": 92, "x2": 156, "y2": 82, "color": "yellow", "thickness": 2},
+                {"action": "draw_line", "x1": 156, "y1": 82, "x2": 166, "y2": 82, "color": "yellow", "thickness": 2, "label": "90°"},
+                {"action": "write_text", "x": 116, "y": 86, "label": "O"},
+                {"action": "write_text", "x": 60, "y": 94, "label": "P"},
+                {"action": "write_text", "x": 170, "y": 94, "label": "Q"},
+                {"action": "write_text", "x": 184, "y": 54, "label": "t1 || t2"},
+            ]
+        if (
+            "how many" in t
+            or "infinitely many" in t
+            or "can a circle have" in t
+            or "number of tangents" in t
+            or "every boundary point" in t
+        ):
+            return [
+                {"action": "draw_circle", "x": 118, "y": 88, "radius": 46, "color": "violet", "thickness": 2, "label": "circle"},
+                {"action": "write_text", "x": 110, "y": 94, "label": "O"},
+                {"action": "draw_line", "x1": 118, "y1": 30, "x2": 118, "y2": 146, "color": "skyblue", "thickness": 2, "label": "t1"},
+                {"action": "draw_line", "x1": 62, "y1": 88, "x2": 174, "y2": 88, "color": "orange", "thickness": 2, "label": "t2"},
+                {"action": "draw_line", "x1": 58, "y1": 42, "x2": 150, "y2": 134, "color": "green", "thickness": 2, "label": "t3"},
+                {"action": "draw_line", "x1": 86, "y1": 142, "x2": 178, "y2": 50, "color": "yellow", "thickness": 2, "label": "t4"},
+                {"action": "write_text", "x": 170, "y": 24, "label": "one tangent at each point"},
+                {"action": "write_text", "x": 176, "y": 44, "label": "infinitely many points"},
+            ]
+        if (
+            "single tangent" in t
+            or "point of contact" in t
+            or "right triangle" in t
+            or re.search(r"\b[A-Z]{2}\s*=\s*\d", diagram_text or "") is not None
+        ):
+            O_label = point_labels[0] if len(point_labels) > 0 else "O"
+            A_label = point_labels[1] if len(point_labels) > 1 else "A"
+            B_label = point_labels[2] if len(point_labels) > 2 else "B"
+            return [
+                {"action": "draw_circle", "x": 84, "y": 100, "radius": 42, "color": "violet", "thickness": 2, "label": "circle"},
+                {"action": "draw_line", "x1": 84, "y1": 100, "x2": 126, "y2": 100, "color": "green", "thickness": 2, "label": f"{O_label}{B_label}"},
+                {"action": "draw_line", "x1": 126, "y1": 100, "x2": 126, "y2": 44, "color": "skyblue", "thickness": 2, "label": f"{A_label}{B_label}"},
+                {"action": "draw_line", "x1": 84, "y1": 100, "x2": 126, "y2": 44, "color": "orange", "thickness": 2, "label": f"{O_label}{A_label}"},
+                {"action": "write_text", "x": 76, "y": 106, "label": O_label},
+                {"action": "write_text", "x": 130, "y": 112, "label": B_label},
+                {"action": "write_text", "x": 130, "y": 42, "label": A_label},
+                {"action": "write_text", "x": 132, "y": 92, "label": "90°"},
+            ]
+
         labels = point_labels[:4] if len(point_labels) >= 4 else ["O", "A", "P", "Q"]
         O_label, A_label, P_label, Q_label = labels[0], labels[1], labels[2], labels[3]
 
@@ -172,8 +236,7 @@ def _heuristic_fallback(diagram_text: str) -> list[dict[str, Any]]:
         P = (int(round(O[0] + r * math.cos(theta))), int(round(O[1] - r * math.sin(theta))))
         Q = (int(round(O[0] + r * math.cos(theta))), int(round(O[1] + r * math.sin(theta))))
 
-        out: list[dict[str, Any]] = []
-        out.extend(_circle_polyline(O[0], O[1], r, segments=30))
+        out: list[dict[str, Any]] = [{"action": "draw_circle", "x": O[0], "y": O[1], "radius": r, "color": "violet", "thickness": 2, "label": "circle"}]
         out.extend(
             [
                 {"action": "draw_line", "x1": A[0], "y1": A[1], "x2": P[0], "y2": P[1], "color": "skyblue", "thickness": 2, "label": f"{A_label}{P_label}"},

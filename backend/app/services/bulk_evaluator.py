@@ -12,10 +12,11 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     google_genai = None
 
-from ..core.config import GEMINI_API_KEY
+from ..core.config import GEMINI_API_KEY, GEMINI_TEXT_MODEL
 
 
-MODEL_ID = "gemini-3.1-flash"
+MODEL_ID = GEMINI_TEXT_MODEL
+GENAI_HTTP_TIMEOUT_MS = 300_000
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -79,7 +80,7 @@ def evaluate_submission(
         context=context,
     )
 
-    client = google_genai.Client(api_key=GEMINI_API_KEY)
+    client = google_genai.Client(api_key=GEMINI_API_KEY, http_options={"timeout": GENAI_HTTP_TIMEOUT_MS})
     response = client.models.generate_content(
         model=MODEL_ID,
         contents=[

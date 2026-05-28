@@ -1,7 +1,19 @@
 import os
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-GEMINI_TEXT_MODEL = os.getenv("GEMINI_TEXT_MODEL", "gemini-3.1-flash-lite-preview")
+DEFAULT_GEMINI_TEXT_MODEL = "gemini-3.1-flash-lite-preview"
+FALLBACK_GEMINI_TEXT_MODEL = "gemini-2.5-flash"
+_DEPRECATED_GEMINI_TEXT_MODELS = {
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-8b",
+    "gemini-1.5-pro",
+}
+_configured_text_model = os.getenv("GEMINI_TEXT_MODEL", DEFAULT_GEMINI_TEXT_MODEL).strip()
+GEMINI_TEXT_MODEL = (
+    FALLBACK_GEMINI_TEXT_MODEL
+    if _configured_text_model in _DEPRECATED_GEMINI_TEXT_MODELS
+    else (_configured_text_model or DEFAULT_GEMINI_TEXT_MODEL)
+)
 DEFAULT_GEMINI_LIVE_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
 _configured_live_model = os.getenv("GEMINI_LIVE_MODEL", DEFAULT_GEMINI_LIVE_MODEL).strip()
 GEMINI_LIVE_MODEL = (

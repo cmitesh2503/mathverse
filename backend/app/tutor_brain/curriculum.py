@@ -80,15 +80,11 @@ def _augment_curriculum_from_pdf(payload: dict, grade: int, exam: str) -> dict:
             "book_topics": [title],
             "concepts": [
                 {
-                    "id": f"{slug}_pdf_exercises",
-                    "title": f"{title} Exercises",
-                    "definition": f"Practice problems from NCERT Chapter {chapter_no}.",
-                    "explanation": "Solve textbook exercises step by step and justify each step.",
-                    "board_work": [
-                        "Read the problem carefully.",
-                        "Identify theorem/formula and known values.",
-                        "Solve step by step and verify final answer.",
-                    ],
+                    "id": f"{slug}_introduction",
+                    "title": f"Introduction to {title}",
+                    "definition": f"Key ideas from NCERT Class 10 Chapter {chapter_no}: {title}.",
+                    "explanation": f"Understand the main definitions, properties, and theorems used in {title}.",
+                    "board_work": [],
                     "ncert_examples": [],
                 }
             ],
