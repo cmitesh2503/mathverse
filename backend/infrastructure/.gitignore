@@ -1,0 +1,11 @@
+# Local .terraform directories
+.terraform/
+.terraform.*
+
+# Hide password/secret files
+*.tfvars
+*.tfvars.json
+
+# Local state files
+*.tfstate
+*.tfstate.*
