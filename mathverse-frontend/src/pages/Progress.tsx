@@ -5,11 +5,105 @@ import { StatCard } from "../components/StatCard";
 import { getAttemptHistory, type AttemptRecord } from "../services/api";
 import { useTutorStore } from "../store/useTutorStore";
 
+const quickRevisionChapters = [
+  {
+    chapter: "Real Numbers",
+    theorem: ["Euclid's division lemma: a = bq + r, 0 <= r < b.", "HCF x LCM = product of two positive integers."],
+    formula: ["LCM(a,b) = ab / HCF(a,b)", "p/q terminates iff q has only factors 2 and/or 5 after reduction."],
+    tips: ["Reduce fractions before checking decimal expansion.", "Use prime factorisation when HCF/LCM identity is not enough."],
+  },
+  {
+    chapter: "Polynomials",
+    theorem: ["Remainder theorem idea: value at x = a gives remainder for division by x - a.", "Zero of polynomial means p(a) = 0."],
+    formula: ["For ax^2 + bx + c: sum of zeroes = -b/a.", "Product of zeroes = c/a."],
+    tips: ["Always compare coefficients after writing polynomial in standard form.", "Substitute to verify a claimed zero."],
+  },
+  {
+    chapter: "Pair of Linear Equations",
+    theorem: ["Two lines intersect, are parallel, or coincide depending on coefficient ratios."],
+    formula: ["a1/a2 != b1/b2: unique solution.", "a1/a2 = b1/b2 != c1/c2: no solution.", "a1/a2 = b1/b2 = c1/c2: infinitely many solutions."],
+    tips: ["Keep equations in a1x + b1y + c1 = 0 form before comparing.", "Graph meaning helps avoid ratio mistakes."],
+  },
+  {
+    chapter: "Quadratic Equations",
+    theorem: ["A quadratic can have two, one, or no real roots based on discriminant."],
+    formula: ["D = b^2 - 4ac", "x = (-b ± √D) / 2a"],
+    tips: ["Check if factorisation is easy before using formula.", "Use D to predict nature of roots first."],
+  },
+  {
+    chapter: "Arithmetic Progressions",
+    theorem: ["In an AP, consecutive terms have the same difference."],
+    formula: ["a_n = a + (n - 1)d", "S_n = n/2 [2a + (n - 1)d]"],
+    tips: ["Identify a, d, n before substitution.", "For word problems, translate term number carefully."],
+  },
+  {
+    chapter: "Triangles",
+    theorem: ["Basic Proportionality Theorem.", "AA, SAS, and SSS similarity criteria.", "Pythagoras theorem."],
+    formula: ["If DE || BC, then AD/DB = AE/EC.", "In right triangle: hypotenuse^2 = side1^2 + side2^2."],
+    tips: ["Mark corresponding vertices in the same order.", "Draw the figure before writing ratios."],
+  },
+  {
+    chapter: "Coordinate Geometry",
+    theorem: ["Distance, section, and area formulas connect geometry to coordinates."],
+    formula: ["Distance = √((x2-x1)^2 + (y2-y1)^2)", "Midpoint = ((x1+x2)/2, (y1+y2)/2)", "Area triangle = 1/2 |x1(y2-y3)+x2(y3-y1)+x3(y1-y2)|"],
+    tips: ["Plot rough positions first.", "Use absolute value in area formula."],
+  },
+  {
+    chapter: "Introduction to Trigonometry",
+    theorem: ["Trigonometric ratios depend on angle, not triangle size."],
+    formula: ["sin θ = opposite/hypotenuse", "cos θ = adjacent/hypotenuse", "tan θ = opposite/adjacent", "sin^2 θ + cos^2 θ = 1"],
+    tips: ["Name opposite and adjacent relative to the angle.", "Memorize standard values for 0°, 30°, 45°, 60°, 90°."],
+  },
+  {
+    chapter: "Applications of Trigonometry",
+    theorem: ["Heights and distances use right triangles formed from line of sight."],
+    formula: ["tan θ = height / distance", "sin θ and cos θ when hypotenuse is involved."],
+    tips: ["Draw the ground line and vertical height first.", "Angles of elevation/depression are measured from horizontal."],
+  },
+  {
+    chapter: "Circles",
+    theorem: ["Tangent at any point of a circle is perpendicular to the radius through point of contact.", "Tangents from an external point are equal."],
+    formula: ["If OP is radius and tangent touches at P, OP ⟂ tangent.", "From external A: AP = AQ."],
+    tips: ["Always draw radius to point of contact.", "For parallel tangents, use endpoints of a diameter."],
+  },
+  {
+    chapter: "Constructions",
+    theorem: ["Constructions rely on perpendicular bisectors, angle bisectors, similar triangles, and tangents."],
+    formula: ["Scale factor = required ratio / original ratio."],
+    tips: ["Use compass arcs carefully.", "Write construction steps in order: draw base, locate points, join, verify."],
+  },
+  {
+    chapter: "Areas Related to Circles",
+    theorem: ["Sector and segment areas come from fraction of full circle."],
+    formula: ["Area circle = πr^2", "Circumference = 2πr", "Area sector = θ/360 × πr^2", "Arc length = θ/360 × 2πr"],
+    tips: ["Check whether angle is in degrees.", "Segment area usually means sector minus triangle."],
+  },
+  {
+    chapter: "Surface Areas and Volumes",
+    theorem: ["Composite solids are solved by adding visible surface areas and matching volumes."],
+    formula: ["CSA cylinder = 2πrh", "Volume cylinder = πr^2h", "Volume cone = 1/3πr^2h", "Volume sphere = 4/3πr^3"],
+    tips: ["Draw the solid and mark hidden/common faces.", "Keep units squared for area and cubed for volume."],
+  },
+  {
+    chapter: "Statistics",
+    theorem: ["Mean, median, and mode summarize grouped data differently."],
+    formula: ["Mean = Σfixi / Σfi", "Mode = l + ((f1-f0)/(2f1-f0-f2))h", "Median = l + ((n/2-cf)/f)h"],
+    tips: ["Make a clean frequency table.", "Identify modal/median class before substituting."],
+  },
+  {
+    chapter: "Probability",
+    theorem: ["Probability of an event = favorable outcomes / total equally likely outcomes."],
+    formula: ["P(E) = n(E)/n(S)", "P(not E) = 1 - P(E)"],
+    tips: ["List sample space for small problems.", "Check outcomes are equally likely."],
+  },
+];
+
 export default function Progress() {
   const sessionId = useTutorStore((state) => state.session_id);
   const stats = useTutorStore((state) => state.stats);
   const [attempts, setAttempts] = useState<AttemptRecord[]>([]);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [revisionChapter, setRevisionChapter] = useState(quickRevisionChapters[0].chapter);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,6 +163,7 @@ export default function Progress() {
   const mistakes = Object.entries(effective.byMistake);
   const topics = Object.entries(effective.byTopic);
   const patterns = Object.entries(effective.byPattern);
+  const selectedRevision = quickRevisionChapters.find((item) => item.chapter === revisionChapter) || quickRevisionChapters[0];
   const predictedScore = Math.min(300, Math.round(effectiveAccuracy * 3));
   const sevenDayPlan = [
     "Day 1: Relearn the weakest concept using board examples.",
@@ -132,6 +227,47 @@ export default function Progress() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-md">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="font-semibold text-slate-950">Chapter Quick Revision</h2>
+            <p className="mt-1 text-sm text-slate-500">Theorems, formulas, and exam tips for fast review.</p>
+          </div>
+          <select
+            value={revisionChapter}
+            onChange={(event) => setRevisionChapter(event.target.value)}
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-400"
+          >
+            {quickRevisionChapters.map((item) => (
+              <option key={item.chapter} value={item.chapter}>
+                {item.chapter}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-3">
+          {[
+            ["Theorems", selectedRevision.theorem, "emerald"],
+            ["Formulas", selectedRevision.formula, "blue"],
+            ["Important Tips", selectedRevision.tips, "amber"],
+          ].map(([title, items, tone]) => (
+            <div key={String(title)} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <h3 className="text-sm font-bold uppercase tracking-wide text-slate-600">{String(title)}</h3>
+              <div className="mt-3 space-y-2">
+                {(items as string[]).map((item) => (
+                  <div key={item} className={`rounded-md bg-white px-3 py-2 text-sm leading-6 text-slate-800 shadow-sm border-l-4 ${
+                    tone === "emerald" ? "border-emerald-400" : tone === "blue" ? "border-blue-400" : "border-amber-400"
+                  }`}>
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 

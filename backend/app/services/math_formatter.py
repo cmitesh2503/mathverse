@@ -66,6 +66,26 @@ def convert_display_symbols_to_speech(text: str) -> str:
     }
     
     result = text
+    direct_replacements = {
+        "√(": " square root of (",
+        "√": " square root of ",
+        "π": " pi ",
+        "×": " times ",
+        "÷": " divided by ",
+        "°": " degrees ",
+        "≤": " less than or equal to ",
+        "≥": " greater than or equal to ",
+        "≠": " not equal to ",
+        "≈": " approximately equal to ",
+        "²": " squared ",
+        "³": " cubed ",
+        "∞": " infinity ",
+        "∝": " proportional to ",
+        "∠": " angle ",
+        "Δ": " triangle ",
+    }
+    for symbol, word in direct_replacements.items():
+        result = result.replace(symbol, word)
     for symbol, word in replacements.items():
         result = result.replace(symbol, word)
         

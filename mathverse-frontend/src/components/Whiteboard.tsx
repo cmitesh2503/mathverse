@@ -881,8 +881,13 @@ export function Whiteboard({
               </div>
 
               <div className="mt-4 rounded-md border border-slate-700 bg-slate-900 p-4">
+                <p className="text-xl font-bold leading-9 text-emerald-200">
+                  {boardModel.problemNo !== "-" ? `Problem no: ${boardModel.problemNo}: ` : "Problem statement: "}
+                  <MathText>{boardModel.problemStatement}</MathText>
+                </p>
+
                 {hasDiagramVisuals ? (
-                  <div className="mb-4 grid gap-3">
+                  <div className="mt-4 grid gap-3">
                     <div className="rounded-md border border-slate-700 bg-slate-900 p-3">
                       {diagramImageAction
                         ? renderImageFigure(diagramImageAction)
@@ -898,11 +903,6 @@ export function Whiteboard({
                     </div>
                   </div>
                 ) : null}
-
-                <p className="text-xl font-bold leading-9 text-emerald-200">
-                  {boardModel.problemNo !== "-" ? `Problem no: ${boardModel.problemNo}: ` : "Problem statement: "}
-                  <MathText>{boardModel.problemStatement}</MathText>
-                </p>
 
             <p className="mt-4 text-lg font-bold text-white">Solution</p>
             {boardModel.solutionSteps.length ? (
