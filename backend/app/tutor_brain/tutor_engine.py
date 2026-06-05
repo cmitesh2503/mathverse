@@ -2530,11 +2530,11 @@ INSTRUCTIONS (FOLLOW STRICTLY):
    - The specific answer with numbers/formulas
    - Why this matters for the current problem
 5. For any calculation, show the actual numbers and steps. Do NOT give formula-only answers.
-6. Use Hindi/Hinglish for explanation but keep mathematics terms in English.
+6. For Hindi mode, use natural Devanagari Hindi, not romanized Hinglish. Keep mathematics terms in English.
 7. Keep sentences short and simple for an Indian school student.
 8. Return ONLY valid JSON, no markdown, no code blocks.
 9. Use the relevant curriculum context above when it contains matching material.
-10. When answering a student's doubt, ALWAYS end by asking if they understood or if they need further clarification, for example: "Does that make sense?"
+10. When answering a student's doubt, ALWAYS end by asking if they understood or if they need further clarification. In Hindi mode, ask naturally, for example: "बेटा, यह बात समझ आई?"
 11. Do NOT assume the doubt is fully resolved until the student confirms it.
 
 Context from blackboard: {self._ai_doubt_context(state, student_doubt)}
@@ -3897,11 +3897,18 @@ Return ONLY JSON:
         state.active_problem = problem
         state.class_last_step = "pdf_exercise"
 
-        explanation = (
-            f"Now we will solve {problem.get('exercise')} question {problem.get('number')} from "
-            f"{problem.get('chapter_title')}. First, let us read the question carefully: {problem.get('prompt')}. "
-            "Let me explain the solution step by step."
-        )
+        if getattr(state, "teaching_language", "en-IN") == "hi-IN":
+            explanation = (
+                f"बेटा, अब हम {problem.get('chapter_title')} से {problem.get('exercise')} का question "
+                f"{problem.get('number')} solve करेंगे। पहले question ध्यान से पढ़ते हैं: {problem.get('prompt')}. "
+                "अब solution धीरे-धीरे step by step समझते हैं।"
+            )
+        else:
+            explanation = (
+                f"Now we will solve {problem.get('exercise')} question {problem.get('number')} from "
+                f"{problem.get('chapter_title')}. First, let us read the question carefully: {problem.get('prompt')}. "
+                "Let me explain the solution step by step."
+            )
         response = self._class_response(
             response_type="exercise_solution",
             state=state,

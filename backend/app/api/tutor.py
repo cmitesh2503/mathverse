@@ -2,9 +2,10 @@ import os
 import base64
 from typing import Any
 from datetime import timedelta
+from collections import Counter
 import re
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from ..agents.diagnostic_agent import DiagnosticAgent
 from ..agents.orchestrator import Orchestrator
@@ -25,6 +26,8 @@ from ..services.math_formatter import (
     convert_display_symbols_to_speech,
     convert_text_to_speech,
 )
+from ..core.config import GEMINI_LIVE_VOICE
+from ..core.guards import verify_tutor_action_access
 from ..tutor_brain.curriculum import get_grade_curriculum
 from .models import TutorRequest
 
@@ -132,6 +135,24 @@ def _steps_from_actions(whiteboard_actions: list[dict]) -> list[str]:
     return steps
 
 
+def _strip_teaching_label(text: str) -> str:
+    cleaned = str(text or "").strip()
+    cleaned = re.sub(
+        r"(?i)^(theory|explanation|reasoning|worked example|mini example|check|diagram|figure|board build)\s*:\s*",
+        "",
+        cleaned,
+    )
+    cleaned = re.sub(r"(?i)^board line\s+\d+\s*:\s*", "", cleaned)
+    cleaned = re.sub(r"(?i)^example step\s+\d+\s*:\s*", "", cleaned)
+    cleaned = re.sub(r"(?i)^important note\s+\d+\s*:\s*", "", cleaned)
+    cleaned = re.sub(r"(?i)^theory support\s+\d+\s*:\s*", "", cleaned)
+    cleaned = re.sub(r"(?i)^topic\s+\d+\s*/\s*\d+\s*:\s*", "", cleaned)
+    cleaned = re.sub(r"(?i)\bin\s+sections?\s+\d+(?:\.\d+)?(?:\s*(?:,|and)\s*\d+(?:\.\d+)?)*\b", "", cleaned)
+    cleaned = re.sub(r"(?i)\bsections?\s+\d+(?:\.\d+)?(?:\s*(?:,|and)\s*\d+(?:\.\d+)?)*\b", "", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return cleaned.strip()
+
+
 def _normalize_teaching_language(value: object) -> str:
     normalized = str(value or "").strip().lower().replace("_", "-")
     if normalized in {"hi", "hindi", "hi-in"}:
@@ -139,6 +160,16 @@ def _normalize_teaching_language(value: object) -> str:
     if normalized in {"gu", "gujarati", "gu-in"}:
         return "gu-IN"
     return "en-IN"
+
+
+def _speech_language_code(language: str) -> str | None:
+    if language == "hi-IN":
+        return "hi"
+    if language == "gu-IN":
+        return "gu"
+    if language == "en-IN":
+        return "en"
+    return None
 
 
 def _spoken_from_steps(
@@ -198,160 +229,95 @@ def _spoken_from_steps(
             figure_desc = figure_line.split(":", 1)[1].strip() if ":" in figure_line else figure_line
             if len(figure_desc) > 120:
                 figure_desc = figure_desc[:117].rstrip() + "..."
-            figure_ref = f" Look at the figure on the board. {figure_desc} "
+            if teaching_language == "hi-IN":
+                figure_ref = f" Board पर figure देखो। {figure_desc} "
+            else:
+                figure_ref = f" Look at the figure on the board. {figure_desc} "
         
-        question_intro = (
-            f"Now we will solve Problem no {problem_no_text}. First, let us read the question carefully: {spoken_prompt}. "
-            f"{figure_ref}"
-            f"We need to find {target}. Let me explain the solution step by step. "
-        )
+        if teaching_language == "hi-IN":
+            question_intro = (
+                f"बेटा, अब हम Problem number {problem_no_text} हल करेंगे। पहले question ध्यान से पढ़ते हैं: {spoken_prompt}. "
+                f"{figure_ref}"
+                f"हमें {target} निकालना है। चलो, इसे धीरे-धीरे step by step समझते हैं। "
+            )
+        else:
+            question_intro = (
+                f"Now we will solve Problem no {problem_no_text}. First, let us read the question carefully: {spoken_prompt}. "
+                f"{figure_ref}"
+                f"We need to find {target}. Let me explain the solution step by step. "
+            )
 
+    if narrated_steps:
+        narrated_text = " ".join(_sanitize_for_speech(line) for line in narrated_steps)
+        if spoken and not is_placeholder:
+            return f"{question_intro}{spoken} {narrated_text}".strip()
+        return f"{question_intro}{narrated_text}".strip()
     if spoken and not is_placeholder:
         return f"{question_intro}{spoken}".strip()
-    if narrated_steps:
-        return f"{question_intro}{' '.join(narrated_steps[:2])}".strip()
     if compact_steps:
-        return " ".join(compact_steps[:2])
+        return " ".join(_sanitize_for_speech(line) for line in compact_steps)
     if teaching_language == "hi-IN":
-        return f"{topic_title} ke current board steps complete ho gaye. Ab next explanation continue karte hain."
+        return f"बेटा, {topic_title} के current board steps पूरे हो गए। अब अगला point धीरे-धीरे समझते हैं।"
     if teaching_language == "gu-IN":
         return f"{topic_title} na current board steps complete thaya. Have next explanation continue kariye."
     return f"We finished the current board steps for {topic_title}. Now we will continue with the next explanation."
 
 
 def _spoken_for_concept_board(steps: list[str], topic_title: str, teaching_language: str = "en-IN") -> str:
-    lines = [str(step).strip() for step in steps if str(step).strip()]
-    chapter_name = next((line.split(":", 1)[1].strip() for line in lines if line.lower().startswith("chapter:")), "")
-    topic_line = next((line for line in lines if line.lower().startswith("topic ")), "")
-    meaning = next((line.split(":", 1)[1].strip() for line in lines if line.lower().startswith("meaning:")), "")
-    why = next((line.split(":", 1)[1].strip() for line in lines if line.lower().startswith("why it matters:")), "")
-    theory = next((line.split(":", 1)[1].strip() for line in lines if "theory:" in line.lower()), "")
-    explanation = next((line.split(":", 1)[1].strip() for line in lines if line.lower().startswith("explanation:")), "")
-    reasoning = next((line.split(":", 1)[1].strip() for line in lines if line.lower().startswith("reasoning:")), "")
-    worked_example = next((line.split(":", 1)[1].strip() for line in lines if line.lower().startswith("worked example:")), "")
-    chapter_flow = any("today's flow" in line.lower() for line in lines)
-    chapter_topic_list = [
-        line for line in lines
-        if re.match(r"^\d+\.\s+", line.strip())
-    ][:6]
-    concept_steps = [
-        line.split(":", 1)[1].strip()
+    raw_lines = [str(step).strip() for step in steps if str(step).strip()]
+    raw_lines = [
+        line
+        for line in raw_lines
+        if not line.lower().startswith(("chapter:", "topic:", "topic "))
+    ]
+    lines = [_strip_teaching_label(line) for line in raw_lines]
+    lines = [
+        line
         for line in lines
-        if line.lower().startswith("concept step ")
-    ][:4]
-    board_lines = [
-        line.split(":", 1)[1].strip()
-        for line in lines
-        if line.lower().startswith("board line ")
-    ][:4]
-    pdf_lines = [
-        line.split(":", 1)[1].strip()
-        for line in lines
-        if line.lower().startswith(("theory support", "important note"))
-    ][:4]
-    theorem_line = next(
-        (
-            line
-            for line in pdf_lines
-            if any(token in line.lower() for token in ("theorem", "criterion", "similarity", "pythagoras", "thales"))
-        ),
-        pdf_lines[0] if pdf_lines else "",
-    )
-
-    if chapter_flow:
-        topic_text = ", ".join(chapter_topic_list)
-        theorem_intro = f" The first theorem idea from the NCERT PDF is: {theorem_line}" if theorem_line else ""
-        if teaching_language == "hi-IN":
-            return (
-                f"Aaj hum {chapter_name or topic_title} chapter start kar rahe hain. "
-                "Pehle main chapter ka roadmap board par likhunga, phir har topic ka concept samjhaunga, "
-                "aur uske baad NCERT exercise solve karenge. "
-                f"Is chapter ke topics hain: {topic_text}.{theorem_intro}"
-            ).strip()
-        if teaching_language == "gu-IN":
-            return (
-                f"Aaje aapde {chapter_name or topic_title} chapter start kariye chhiye. "
-                "Pehla hu chapter no roadmap board par lakhish, pachi darek topic no concept samjavish, "
-                "ane tyaar baad NCERT exercise solve karishu. "
-                f"Aa chapter na topics chhe: {topic_text}.{theorem_intro}"
-            ).strip()
-        return (
-            f"Today we are starting the {chapter_name or topic_title} chapter. "
-            "First I am writing the chapter roadmap on the board, then I will explain each topic concept, "
-            "and after that we will solve the NCERT exercise. "
-            f"The topics in this chapter are: {topic_text}.{theorem_intro}"
-        ).strip()
+        if line
+        and not line.lower().startswith(("chapter:", "topic:", "diagram:", "figure:"))
+        and not re.search(r"(?i)\b(draw|show|plot|construct)\b", line)
+    ]
+    core = lines[:5] or [topic_title]
+    first = core[0]
+    second = core[1] if len(core) > 1 else ""
+    rest = core[2:5]
 
     if teaching_language == "hi-IN":
-        spoken_parts = [f"Ab {topic_title} samajhte hain."]
-        if topic_line:
-            spoken_parts.append(f"Board par main {topic_line} likh raha hoon.")
-        if theory:
-            spoken_parts.append(f"Main theorem ya concept yeh hai: {theory}")
-        if explanation:
-            spoken_parts.append(f"Iska matlab simple language mein: {explanation}")
-        if reasoning:
-            spoken_parts.append(f"Reasoning dekho: {reasoning}")
-        if worked_example:
-            spoken_parts.append(f"Chhota worked example: {worked_example}")
-        if meaning:
-            spoken_parts.append(f"Iska meaning hai: {meaning}")
-        if why:
-            spoken_parts.append(f"Intuition yeh hai: {why}")
-        if board_lines or concept_steps:
-            spoken_parts.append("Ab board work dekho: " + " ".join(board_lines or concept_steps))
-        spoken_parts.append("Is theory ko pakka samjho; exercise hum theory complete hone ke baad solve karenge.")
+        spoken_parts = [f"????? ????, ?? {topic_title} ?? ???? ?? ????? ????"]
+        spoken_parts.append(f"???? ???? ????? ??? ?? ??: {_sanitize_for_speech(first)}")
+        if second:
+            spoken_parts.append(f"???? ???? ???? ???? ??? ????: {_sanitize_for_speech(second)}")
+        if rest:
+            spoken_parts.append("?? board ?? ??? ???? steps ??? ????: " + " ".join(_sanitize_for_speech(item) for item in rest))
+        spoken_parts.append("????? ???, ??? ?? theory ??? ??? ???; exercises theory clear ???? ?? ??? ???????")
         return " ".join(spoken_parts)
+
     if teaching_language == "gu-IN":
-        spoken_parts = [f"Have {topic_title} samajiye."]
-        if topic_line:
-            spoken_parts.append(f"Board par hu {topic_line} lakhish.")
-        if theory:
-            spoken_parts.append(f"Main theorem athva concept aa chhe: {theory}")
-        if explanation:
-            spoken_parts.append(f"Simple rite arth aa chhe: {explanation}")
-        if reasoning:
-            spoken_parts.append(f"Reasoning jovo: {reasoning}")
-        if worked_example:
-            spoken_parts.append(f"Nanun worked example: {worked_example}")
-        if meaning:
-            spoken_parts.append(f"Aano meaning chhe: {meaning}")
-        if why:
-            spoken_parts.append(f"Intuition aa chhe: {why}")
-        if board_lines or concept_steps:
-            spoken_parts.append("Have board work jovo: " + " ".join(board_lines or concept_steps))
-        spoken_parts.append("Aa theory barabar samjo; exercise theory complete pachi solve karishu.")
+        spoken_parts = [f"Have {topic_title} shanti thi samajiye."]
+        spoken_parts.append(f"Main idea aa chhe: {_sanitize_for_speech(first)}")
+        if second:
+            spoken_parts.append(f"Simple rite arth aa chhe: {_sanitize_for_speech(second)}")
+        if rest:
+            spoken_parts.append("Board par aa steps jovo: " + " ".join(_sanitize_for_speech(item) for item in rest))
+        spoken_parts.append("Aa theory clear kariye; exercises theory pachi karishu.")
         return " ".join(spoken_parts)
 
-    spoken_parts = [f"Now let us understand {topic_title}."]
-    if topic_line:
-        spoken_parts.append(f"I am writing {topic_line} on the board.")
-    if theory:
-        spoken_parts.append(f"The central theory is: {theory}")
-    if explanation:
-        spoken_parts.append(f"In simple terms, {explanation}")
-    if reasoning:
-        spoken_parts.append(f"The reason is: {reasoning}")
-    if worked_example:
-        spoken_parts.append(f"Now connect it to a small worked example: {worked_example}")
-    if meaning:
-        spoken_parts.append(f"The meaning is: {meaning}")
-    if why:
-        spoken_parts.append(f"The intuition is: {why}")
-    if board_lines or concept_steps:
-        spoken_parts.append("Now look at the board work: " + " ".join(board_lines or concept_steps))
-    if theorem_line:
-        spoken_parts.append(f"From the NCERT PDF, the theorem or criterion we are learning is: {theorem_line}")
-    spoken_parts.append("Understand this theory first; after the theory sequence is complete, we will solve the NCERT exercises.")
+    spoken_parts = [f"Now let us understand {topic_title} clearly."]
+    spoken_parts.append(f"The main idea is: {_sanitize_for_speech(first)}")
+    if second:
+        spoken_parts.append(f"In simple terms, {_sanitize_for_speech(second)}")
+    if rest:
+        spoken_parts.append("Now look at the board steps: " + " ".join(_sanitize_for_speech(item) for item in rest))
+    spoken_parts.append("We are focusing on theory first; after this is clear, we will solve the exercises.")
     return " ".join(spoken_parts)
-
 
 def _steps_from_spoken_response(spoken_response: str, limit: int = 4) -> list[str]:
     if not isinstance(spoken_response, str):
         return []
     parts = [segment.strip() for segment in spoken_response.replace("\r", "\n").split("\n") if segment.strip()]
     if not parts:
-        parts = [segment.strip() for segment in spoken_response.split(".") if segment.strip()]
+        parts = [segment.strip() for segment in re.split(r"[.।]+", spoken_response) if segment.strip()]
     return parts[:limit]
 
 
@@ -585,7 +551,7 @@ def _word_problem_target(prompt: str) -> str:
     return "the exact quantity asked in the question"
 
 
-def _force_problem_readout_prefix(steps: list[str]) -> str:
+def _force_problem_readout_prefix(steps: list[str], teaching_language: str = "en-IN") -> str:
     compact_steps = [str(step).strip() for step in steps if str(step).strip()]
     problem_no, problem_statement = _problem_statement_from_step_lines(compact_steps)
     figure_line = next(
@@ -602,7 +568,17 @@ def _force_problem_readout_prefix(steps: list[str]) -> str:
     figure_part = ""
     if figure_line:
         figure_text = figure_line.split(":", 1)[1].strip() if ":" in figure_line else figure_line
-        figure_part = f" Look carefully at the figure on the board: {_sanitize_for_speech(figure_text)}."
+        if teaching_language == "hi-IN":
+            figure_part = f" Board पर figure ध्यान से देखो: {_sanitize_for_speech(figure_text)}."
+        else:
+            figure_part = f" Look carefully at the figure on the board: {_sanitize_for_speech(figure_text)}."
+    if teaching_language == "hi-IN":
+        return (
+            f"बेटा, अब हम Problem number {problem_no or '-'} हल करेंगे। "
+            f"पहले problem statement ध्यान से पढ़ते हैं: {spoken_problem}."
+            f"{figure_part} "
+            "अब मैं solution धीरे-धीरे step by step समझाऊंगा। "
+        )
     return (
         f"Now we will solve Problem no {problem_no or '-'}. "
         f"First, let us read the problem statement: {spoken_problem}."
@@ -704,6 +680,107 @@ def _equation_rhs_factors(step: str) -> list[str]:
         if token:
             factors.append(token)
     return factors
+
+
+def _prime_factor_row_visual_primitives(steps: list[str]) -> list[dict[str, Any]]:
+    factor_rows: list[tuple[str, list[str]]] = []
+    for step in steps:
+        value = str(step or "").strip()
+        if "=" not in value:
+            continue
+        left, right = value.split("=", 1)
+        number_matches = re.findall(r"\b\d+\b", left)
+        if not number_matches:
+            continue
+        factors = [item for item in _equation_rhs_factors(value) if item.isdigit()]
+        if len(factors) >= 2:
+            factor_rows.append((number_matches[-1], factors))
+        if len(factor_rows) >= 3:
+            break
+
+    if len(factor_rows) < 2:
+        return []
+
+    common = Counter(factor_rows[0][1])
+    for _, factors in factor_rows[1:]:
+        common &= Counter(factors)
+    if not common:
+        return []
+
+    primitives: list[dict[str, Any]] = []
+    used_by_row: list[Counter[str]] = [Counter() for _ in factor_rows]
+    y_start = 46
+    x_label = 24
+    x_start = 78
+    gap = 34
+
+    primitives.append(
+        {
+            "action": "write_text",
+            "x": 18,
+            "y": 20,
+            "label": "Common prime factors",
+            "font_size": 12,
+            "color": "white",
+            "metadata": {"diagram": True},
+        }
+    )
+
+    for row_index, (number, factors) in enumerate(factor_rows):
+        y = y_start + row_index * 44
+        primitives.append(
+            {
+                "action": "write_text",
+                "x": x_label,
+                "y": y,
+                "label": f"{number} =",
+                "font_size": 12,
+                "color": "white",
+                "metadata": {"diagram": True},
+            }
+        )
+        for factor_index, factor in enumerate(factors):
+            x = x_start + factor_index * gap
+            primitives.append(
+                {
+                    "action": "write_text",
+                    "x": x,
+                    "y": y,
+                    "label": factor,
+                    "font_size": 13,
+                    "color": "white",
+                    "metadata": {"diagram": True},
+                }
+            )
+            if used_by_row[row_index][factor] < common[factor]:
+                primitives.append(
+                    {
+                        "action": "draw_circle",
+                        "x": x + 5,
+                        "y": y - 4,
+                        "radius": 12,
+                        "color": "red",
+                        "thickness": 3,
+                        "metadata": {"diagram": True},
+                    }
+                )
+                used_by_row[row_index][factor] += 1
+
+    common_text = " x ".join(
+        factor for factor, count in sorted(common.items(), key=lambda item: int(item[0])) for _ in range(count)
+    )
+    primitives.append(
+        {
+            "action": "write_text",
+            "x": 24,
+            "y": y_start + len(factor_rows) * 44 + 8,
+            "label": f"HCF factors: {common_text}",
+            "font_size": 12,
+            "color": "red",
+            "metadata": {"diagram": True},
+        }
+    )
+    return primitives
 
 
 def _visualize_step_sequence(steps: list[str]) -> list[str]:
@@ -1264,6 +1341,17 @@ def _solution_actions(
     formatted_answer = _format_for_display(answer) if answer else ""
     resolved_diagram_hint = _resolve_diagram_hint(prompt, cleaned_steps, diagram_hint)
     formatted_diagram = _format_for_display(resolved_diagram_hint) if resolved_diagram_hint else None
+    factor_visual_primitives: list[dict[str, Any]] = []
+    factor_context = " ".join([formatted_prompt, *formatted_steps, formatted_answer]).lower()
+    if (
+        "hcf" in factor_context
+        or "gcd" in factor_context
+        or "common prime factor" in factor_context
+        or "common factor" in factor_context
+    ):
+        factor_visual_primitives = _prime_factor_row_visual_primitives(formatted_steps)
+        if factor_visual_primitives and not formatted_diagram:
+            formatted_diagram = "Circle the common prime factors in each factor row."
 
     actions: list[dict[str, Any]] = [
         {"action": "draw_text", "content": f"Exercise no: {exercise_label}"},
@@ -1310,6 +1398,9 @@ def _solution_actions(
         except Exception:
             diagram_primitives = diagram_primitives or []
 
+    if factor_visual_primitives:
+        diagram_primitives = [*factor_visual_primitives, *diagram_primitives]
+
     if formatted_diagram and diagram_primitives:
         if not any(_is_drawing_step_instruction(step) for step in formatted_steps[:6]):
             construction_steps, primitive_construction_map = _diagram_construction_steps(diagram_primitives)
@@ -1327,8 +1418,14 @@ def _solution_actions(
 
     if formatted_diagram and diagram_primitives:
         drawing_step_numbers = [number for number, line in step_entries if _is_drawing_step_instruction(line)]
+        factor_step_numbers = [
+            number
+            for number, line in step_entries
+            if "common prime factor" in line.lower() or "common factor" in line.lower() or "hcf" in line.lower()
+        ]
         if not drawing_step_numbers and step_entries:
             drawing_step_numbers = [step_entries[0][0]]
+        drawing_step_numbers = sorted(set([*drawing_step_numbers, *factor_step_numbers]))
         if not drawing_step_numbers:
             drawing_step_numbers = [1]
 
@@ -1781,7 +1878,18 @@ def _next_problem_actions_for_session(
 
 
 def _voice_chunks_from_steps(spoken_response: str, steps: list[str]) -> list[str]:
-    fallback = _steps_from_spoken_response(spoken_response, limit=12)
+    step_chunks = []
+    for step in steps:
+        line = str(step or "").strip()
+        if not line:
+            continue
+        lowered = line.lower()
+        if lowered.startswith(("chapter:", "chapter no:", "chapter name:", "topic:", "topic name:", "source:", "solution:")):
+            continue
+        step_chunks.append(_sanitize_for_speech(line))
+    if step_chunks:
+        return step_chunks
+    fallback = _steps_from_spoken_response(spoken_response, limit=20)
     if fallback:
         return [_sanitize_for_speech(chunk) for chunk in fallback if str(chunk).strip()]
     if spoken_response:
@@ -2898,6 +3006,13 @@ def _topic_teaching_fallback(topic: str, chapter: dict[str, Any]) -> tuple[str, 
     anchor = str(chapter.get("teaching_anchor") or "").strip()
     goal = str(chapter.get("classroom_goal") or "").strip()
 
+    if "euclid" in lowered or "division lemma" in lowered or "division algorithm" in lowered:
+        return (
+            "Euclid's division lemma says every positive integer can be split as a = bq + r, where 0 <= r < b.",
+            "Think of a as the total amount. We make equal groups of size b, count q groups, and whatever is left is r.",
+            ["a = bq + r", "26 = 5 x 5 + 1", "Here r = 1 and it is smaller than b = 5."],
+            "Show a = bq + r as a dividend bar split into b x q and remainder r.",
+        )
     if "hcf" in lowered or "lcm" in lowered:
         return (
             "HCF is the greatest common factor; LCM is the least common multiple.",
@@ -2982,38 +3097,37 @@ def _chapter_teaching_phase_actions(session: StudentSession, rag_context: str = 
         explanation_line = str(pdf_lesson.get("explanation") or explanation).strip()
         proof_line = str(pdf_lesson.get("proof") or "").strip()
         example_line = str(pdf_lesson.get("example") or "").strip()
-        intro_prefix = "Theory first, then exercises. " if index == 0 else ""
-
         actions = [
-            {"action": "draw_text", "content": f"Chapter: {chapter_title}"},
-            {"action": "draw_text", "content": f"Topic {index + 1}/{len(topics)}: {topic}"},
-            {"action": "draw_text", "content": f"{intro_prefix}Theory: {theory_line}"},
-            {"action": "draw_text", "content": f"Explanation: {explanation_line}"},
+            {"action": "draw_text", "content": f"Theory: {_strip_teaching_label(theory_line)}"},
+            {"action": "draw_text", "content": f"Explanation: {_strip_teaching_label(explanation_line)}"},
         ]
         if proof_line:
-            actions.append({"action": "draw_text", "content": f"Reasoning: {proof_line}"})
+            actions.append({"action": "draw_text", "content": f"Reasoning: {_strip_teaching_label(proof_line)}"})
         if example_line:
-            actions.append({"action": "draw_text", "content": f"Worked example: {example_line}"})
-        actions.append({"action": "draw_text", "content": "Board build:"})
+            actions.append({"action": "draw_text", "content": f"Worked example: {_strip_teaching_label(example_line)}"})
         for step_index, item in enumerate(board_work[:5], start=1):
             text = str(item or "").strip()
             if text:
-                actions.append({"action": "draw_text", "content": f"Board line {step_index}: {text}"})
+                action_name = "write_equation" if _is_equation_line(text) else "draw_text"
+                actions.append({"action": action_name, "content": f"Board line {step_index}: {_strip_teaching_label(text)}"})
 
         examples = concept.get("ncert_examples") if isinstance(concept.get("ncert_examples"), list) else []
         if examples and isinstance(examples[0], dict):
             example = examples[0]
             if example.get("prompt"):
-                actions.append({"action": "draw_text", "content": f"Mini example: {example.get('prompt')}"})
+                actions.append({"action": "draw_text", "content": f"Mini example: {_strip_teaching_label(str(example.get('prompt') or ''))}"})
             for step_index, step in enumerate((example.get("steps") or [])[:3], start=1):
-                actions.append({"action": "draw_text", "content": f"Example step {step_index}: {step}"})
+                text = _strip_teaching_label(str(step or ""))
+                if text:
+                    action_name = "write_equation" if _is_equation_line(text) else "draw_text"
+                    actions.append({"action": action_name, "content": f"Example step {step_index}: {text}"})
         for extra_index, extra in enumerate((pdf_lesson.get("extra") or [])[:2], start=1):
-            actions.append({"action": "draw_text", "content": f"Important note {extra_index}: {extra}"})
-        actions.append({"action": "draw_text", "content": "Check: first understand this theory; exercise solving starts after theory is complete."})
-        actions.append({"action": "draw_text", "content": f"Diagram: {diagram_hint}"})
-        actions.append({"action": "draw_shape", "content": diagram_hint})
+            text = _strip_teaching_label(str(extra or ""))
+            if text:
+                actions.append({"action": "draw_text", "content": f"Important note {extra_index}: {text}"})
+        actions.append({"action": "draw_shape", "content": diagram_hint, "metadata": {"diagram": True}})
         if any(word in _normalize_teaching_text(topic) for word in ["coordinate", "graph", "polynomial", "zero"]):
-            actions.append({"action": "draw_coordinate_axes", "content": diagram_hint})
+            actions.append({"action": "draw_coordinate_axes", "content": diagram_hint, "metadata": {"diagram": True}})
 
         session.concept_teaching_index = index + 1
         if session.concept_teaching_index >= len(topics):
@@ -3066,10 +3180,16 @@ def _is_class_time_over(session: StudentSession) -> bool:
 
 
 def _class_expired_payload(session: StudentSession) -> dict:
-    spoken_response = (
-        f"Our {session.class_duration_minutes}-minute class session is complete for today. "
-        "Great effort. Please review today's board notes and continue in a new class session."
-    )
+    if getattr(session, "teaching_language", "en-IN") == "hi-IN":
+        spoken_response = (
+            f"बेटा, आज की {session.class_duration_minutes}-minute class यहीं पूरी होती है। "
+            "बहुत अच्छा काम किया। आज के board notes revise करना, फिर नई class में आगे बढ़ेंगे।"
+        )
+    else:
+        spoken_response = (
+            f"Our {session.class_duration_minutes}-minute class session is complete for today. "
+            "Great effort. Please review today's board notes and continue in a new class session."
+        )
     return {
         "type": "chapter_complete",
         "chapter": session.current_topic,
@@ -3292,6 +3412,18 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
     if input_data.get("chapter_slug") is not None:
         route_context["chapter_slug"] = input_data.get("chapter_slug")
 
+    action = _normalize_action(input_data)
+    access_grade = route_context.get("grade") or input_data.get("grade")
+    access_exam = route_context.get("exam") or req.get_exam() or "cbse"
+    verify_tutor_action_access(
+        user_id=route_context.get("user_id") or input_data.get("user_id"),
+        requested_grade=access_grade,
+        session=session,
+        action=action,
+        topic_slug=route_context.get("chapter_slug") or input_data.get("chapter_slug"),
+        exam=access_exam,
+    )
+
     if route_context.get("grade") is not None:
         try:
             session.grade = int(route_context["grade"])
@@ -3304,7 +3436,6 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         or getattr(session, "teaching_language", "en-IN")
     )
 
-    action = _normalize_action(input_data)
     if action == "start":
         session = await orchestrator.start_session(
             req.session_id,
@@ -3500,7 +3631,11 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
             whiteboard_actions,
             fallback_problem_no=str(turn_index + 1),
         )
-    include_headers = concept_phase_used or action in {"start", "next_topic", "next_chapter", "skip_topic", "skip_chapter"} or turn_index == 0
+    include_headers = (
+        False
+        if concept_phase_used
+        else action in {"start", "next_topic", "next_chapter", "skip_topic", "skip_chapter"} or turn_index == 0
+    )
     whiteboard_actions = _ensure_board_header_actions(session, whiteboard_actions, include_headers=include_headers)
     steps = _steps_from_actions(whiteboard_actions)
     if not steps:
@@ -3529,18 +3664,27 @@ async def _handle_multi_agent_class(req: TutorRequest, input_data: dict[str, Any
         if concept_phase_used
         else _spoken_from_steps(spoken_response, steps, topic_title, session.teaching_language)
     )
-    forced_prefix = None if concept_phase_used else _force_problem_readout_prefix(steps)
+    forced_prefix = None if concept_phase_used else _force_problem_readout_prefix(steps, session.teaching_language)
     if forced_prefix:
         lowered_spoken = str(spoken_response or "").lower()
         prompt_anchor = forced_prefix.lower().split("let us read the problem statement:", 1)[-1][:60]
-        if "let us read the problem statement" not in lowered_spoken and prompt_anchor.strip() not in lowered_spoken:
+        has_readout = (
+            "let us read the problem statement" in lowered_spoken
+            or "problem statement ध्यान से पढ़ते हैं" in lowered_spoken
+            or "question ध्यान से पढ़ते हैं" in lowered_spoken
+        )
+        if not has_readout and prompt_anchor.strip() not in lowered_spoken:
             spoken_response = f"{forced_prefix}{spoken_response}".strip()
     spoken_response = _sanitize_for_speech(spoken_response)
     voice_chunks = _voice_chunks_from_steps(spoken_response, steps)
     audio_base64 = None
     if TTS_ENABLED and str(spoken_response or "").strip():
         try:
-            audio_bytes = await generate_audio(spoken_response)
+            audio_bytes = await generate_audio(
+                spoken_response,
+                voice_name=GEMINI_LIVE_VOICE,
+                language_code=_speech_language_code(session.teaching_language),
+            )
             if audio_bytes:
                 audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
         except Exception as error:
@@ -3657,6 +3801,8 @@ async def tutor_api(req: TutorRequest):
             _safe_save_attempt(attempt)
 
         return response
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"ERROR in /tutor/ask: {type(e).__name__}: {str(e)}")
         import traceback

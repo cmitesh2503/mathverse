@@ -1,19 +1,41 @@
-import os
-from google.cloud import firestore
-from google.cloud.firestore_v1.vector import Vector
-from vertexai.language_models import TextEmbeddingModel
+from functools import lru_cache
+
+from ..core.firestore_client import FIRESTORE_TIMEOUT_SECONDS, get_firestore_client
 
 # 1. Initialize GCP Clients
-PROJECT_ID = os.environ.get("PROJECT_ID", "mathverse-live-ai")
-db = firestore.Client(project=PROJECT_ID)
-collection_ref = db.collection("pdf_chunks")
 
-# 2. Initialize the exact same Embedding Model used in the Cloud Function
-EMBEDDING_MODEL = TextEmbeddingModel.from_pretrained("text-embedding-004")
+
+@lru_cache(maxsize=1)
+def _firestore_module():
+    from google.cloud import firestore
+
+    return firestore
+
+
+@lru_cache(maxsize=1)
+def _vector_class():
+    from google.cloud.firestore_v1.vector import Vector
+
+    return Vector
+
+
+@lru_cache(maxsize=1)
+def _firestore_client():
+    return get_firestore_client()
+
+
+def _collection_ref():
+    return _firestore_client().collection("pdf_chunks")
+
+@lru_cache(maxsize=1)
+def _embedding_model():
+    from vertexai.language_models import TextEmbeddingModel
+
+    return TextEmbeddingModel.from_pretrained("text-embedding-004")
 
 def get_query_embedding(text: str) -> list[float]:
     """Converts text into a vector embedding."""
-    embeddings = EMBEDDING_MODEL.get_embeddings([text])
+    embeddings = _embedding_model().get_embeddings([text])
     return embeddings[0].values
 
 def retrieve_context(query: str, grade: str, chapter: str, top_k: int = 4) -> str:
@@ -22,11 +44,14 @@ def retrieve_context(query: str, grade: str, chapter: str, top_k: int = 4) -> st
     based on the student's exact question and current chapter.
     """
     try:
+        firestore = _firestore_module()
+        Vector = _vector_class()
+
         # Convert the student's question into a vector
         query_vector = get_query_embedding(query)
 
         # Native Vector Search on Firestore bounded by Grade and Chapter
-        docs = collection_ref.where(
+        docs = _collection_ref().where(
             filter=firestore.FieldFilter("metadata.grade", "==", grade)
         ).where(
             filter=firestore.FieldFilter("metadata.chapter", "==", chapter)
@@ -35,7 +60,7 @@ def retrieve_context(query: str, grade: str, chapter: str, top_k: int = 4) -> st
             query_vector=Vector(query_vector),
             distance_measure=firestore.DistanceMeasure.COSINE,
             limit=top_k
-        ).stream()
+        ).stream(timeout=FIRESTORE_TIMEOUT_SECONDS)
 
         # Compile the retrieved chunks into a single context string
         context_chunks = []

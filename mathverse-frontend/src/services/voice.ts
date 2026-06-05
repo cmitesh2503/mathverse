@@ -1,5 +1,6 @@
 type VoiceOptions = {
   chunks?: string[];
+  lang?: string;
   rate?: number;
   pauseMs?: number;
   onStart?: () => void;
@@ -15,7 +16,7 @@ export type VoiceController = {
 
 function splitText(text: string) {
   return text
-    .split(/(?<=[.!?])\s+/)
+    .split(/(?<=[.!?।])\s+/)
     .map((chunk) => chunk.trim())
     .filter(Boolean);
 }
@@ -30,6 +31,16 @@ function sanitizeSpokenChunk(chunk: string) {
     .trim();
 }
 
+function preferredVoice(lang?: string) {
+  if (typeof window === "undefined" || !("speechSynthesis" in window) || !lang) {
+    return undefined;
+  }
+  const normalized = lang.toLowerCase();
+  return window.speechSynthesis
+    .getVoices()
+    .find((voice) => voice.lang.toLowerCase() === normalized || voice.lang.toLowerCase().startsWith(normalized.split("-")[0]));
+}
+
 export function playVoiceStream(text: string, options: VoiceOptions = {}): VoiceController {
   const chunks = (options.chunks?.length ? options.chunks : splitText(text))
     .map((chunk) => sanitizeSpokenChunk(chunk))
@@ -38,6 +49,7 @@ export function playVoiceStream(text: string, options: VoiceOptions = {}): Voice
   const pauseMs = typeof options.pauseMs === "number" ? Math.max(120, options.pauseMs) : 420;
   let stopped = false;
   let index = 0;
+  const voice = preferredVoice(options.lang);
 
   options.onStart?.();
 
@@ -58,6 +70,12 @@ export function playVoiceStream(text: string, options: VoiceOptions = {}): Voice
 
     const chunkIndex = index;
     const utterance = new SpeechSynthesisUtterance(chunks[chunkIndex]);
+    if (options.lang) {
+      utterance.lang = options.lang;
+    }
+    if (voice) {
+      utterance.voice = voice;
+    }
     utterance.rate = rate;
     utterance.pitch = 1;
     utterance.onstart = () => options.onChunkStart?.(chunkIndex, chunks[chunkIndex]);

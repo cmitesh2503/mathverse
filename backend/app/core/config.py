@@ -21,7 +21,7 @@ GEMINI_LIVE_MODEL = (
     if "live" in _configured_live_model.lower() or "native-audio" in _configured_live_model.lower()
     else DEFAULT_GEMINI_LIVE_MODEL
 )
-GEMINI_LIVE_VOICE = os.getenv("GEMINI_LIVE_VOICE", "Sulafat")
+GEMINI_LIVE_VOICE = os.getenv("GEMINI_LIVE_VOICE", "Puck")
 GEMINI_LIVE_INPUT_LANGUAGE = os.getenv("GEMINI_LIVE_INPUT_LANGUAGE", "en-IN")
 GEMINI_LIVE_OUTPUT_LANGUAGE = os.getenv("GEMINI_LIVE_OUTPUT_LANGUAGE", "en-IN")
 

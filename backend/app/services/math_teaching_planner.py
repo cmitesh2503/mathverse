@@ -35,16 +35,35 @@ def _json_object(text: str) -> dict[str, Any]:
     cleaned = str(text or "").strip()
     cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\s*```$", "", cleaned)
-    try:
-        parsed = json.loads(cleaned)
+    candidates = [cleaned]
+
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start >= 0 and end > start:
+        extracted = cleaned[start : end + 1]
+        candidates.append(extracted)
+        candidates.append(_repair_json_text(extracted))
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
         return parsed if isinstance(parsed, dict) else {}
-    except json.JSONDecodeError:
-        start = cleaned.find("{")
-        end = cleaned.rfind("}")
-        if start >= 0 and end > start:
-            parsed = json.loads(cleaned[start : end + 1])
-            return parsed if isinstance(parsed, dict) else {}
+
     return {}
+
+
+def _repair_json_text(text: str) -> str:
+    repaired = str(text or "").strip()
+    repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
+    repaired = re.sub(r'([}\]"]) *\n\s*("[A-Za-z_][A-Za-z0-9_ -]*"\s*:)', r"\1,\n\2", repaired)
+    repaired = re.sub(r"([}\]])\s*\n\s*({)", r"\1,\n\2", repaired)
+    return repaired
 
 
 def _normalize_object(raw: Any) -> dict[str, Any] | None:

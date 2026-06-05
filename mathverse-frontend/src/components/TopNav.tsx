@@ -1,6 +1,7 @@
 "use client";
 
 import type { PageKey } from "../App";
+import type { MathverseSession } from "../services/firestoreAuth";
 import { planLabels, type PlanKey, useTutorStore } from "../store/useTutorStore";
 
 const navItems: { key: PageKey; label: string }[] = [
@@ -13,14 +14,17 @@ const navItems: { key: PageKey; label: string }[] = [
   { key: "exam", label: "Exam" },
   { key: "progress", label: "Progress" },
   { key: "report", label: "Reports" },
+  { key: "subscription", label: "Subscription" },
 ];
 
 type Props = {
   active: PageKey;
   onNavigate: (page: PageKey) => void;
+  session?: MathverseSession | null;
+  onLogout?: () => void;
 };
 
-export function TopNav({ active, onNavigate }: Props) {
+export function TopNav({ active, onNavigate, session, onLogout }: Props) {
   const examMode = useTutorStore((state) => state.exam_mode);
   const plan = useTutorStore((state) => state.plan);
   const setExamMode = useTutorStore((state) => state.setExamMode);
@@ -56,6 +60,21 @@ export function TopNav({ active, onNavigate }: Props) {
         </div>
 
         <div className="flex items-center gap-3">
+          {session && (
+            <div className="flex items-center gap-2">
+              <span className="hidden max-w-32 truncate text-xs font-medium text-slate-600 sm:block lg:max-w-44">
+                {session.fullName || session.email}
+              </span>
+              <button
+                type="button"
+                onClick={onLogout}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                Logout
+              </button>
+            </div>
+          )}
+
           <select
             value={plan}
             onChange={(event) => setPlan(event.target.value as PlanKey)}

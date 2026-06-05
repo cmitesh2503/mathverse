@@ -6,15 +6,17 @@ import os
 import sys
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from .api.routes import auth, auth_firestore
+from .core.guards import verify_access_privileges
 
 load_dotenv()
 
 #sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from .api.routes import avatar, evaluation, session
+from .api.routes import avatar, evaluation, payments, session
 from .core.stream_manager import cancel_stream, end_stream, is_cancelled, start_stream
 from .services.firebase_service import get_homework
 from .api.practice import router as practice_router
@@ -34,11 +36,13 @@ app.include_router(session.router, prefix="/session")
 #app.include_router(session.router)
 app.include_router(avatar.router)
 app.include_router(evaluation.router)
+app.include_router(payments.router)
 app.include_router(tutor_router, prefix="/api/tutor")
 uploads_root = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "evaluation_uploads")
 os.makedirs(uploads_root, exist_ok=True)
 app.mount("/uploads/evaluation", StaticFiles(directory=uploads_root), name="evaluation_uploads")
-
+app.include_router(auth.router)
+app.include_router(auth_firestore.router)
 
 @app.get("/")
 def root():
@@ -125,6 +129,20 @@ def _serialize_lesson_state(snapshot):
 @app.websocket("/ws/tutor")
 async def tutor_ws(websocket: WebSocket):
     await websocket.accept()
+    
+    params = websocket.query_params
+    grade = params.get("grade")
+    user_id = params.get("user_id")
+    topic_slug = params.get("topic_slug")
+    exam = params.get("exam") or "cbse"
+
+    try:
+        verify_access_privileges(user_id=user_id, requested_grade=grade, topic_slug=topic_slug, exam=exam)
+        print(f"Subscription Verified! WebSocket open for user: {user_id}")
+    except HTTPException as e:
+        await websocket.send_json({"type": "error", "message": e.detail})
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
 
     from .services.session_service import session_service
     from .services.ai_gateway import live_api_available
@@ -172,6 +190,17 @@ async def tutor_ws(websocket: WebSocket):
     asyncio.create_task(push_prefetched_class_problem())
 
     live_bridge = LiveTutorBridge(session_id, safe_send_json)
+    live_bridge.update_context(
+        {
+            "context": {
+                "user_id": user_id,
+                "grade": grade,
+                "exam": exam,
+                "topic_slug": topic_slug,
+                "chapter_slug": topic_slug,
+            }
+        }
+    )
     live_connected = False
     live_connect_retry_after = 0.0
     voice_processor = VoiceProcessor()
@@ -262,6 +291,8 @@ async def tutor_ws(websocket: WebSocket):
         bootstrap_context: dict[str, object] = {}
         if initial_exam:
             bootstrap_context["exam"] = initial_exam
+        if user_id:
+            bootstrap_context["user_id"] = user_id
         grade_param = websocket.query_params.get("grade")
         if grade_param is not None:
             with contextlib.suppress(ValueError):

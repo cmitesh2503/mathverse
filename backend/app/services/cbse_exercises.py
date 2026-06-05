@@ -12,16 +12,6 @@ from app.cache.cache_manager import get_cache, set_cache
 from app.core.config import GEMINI_API_KEY, GEMINI_TEXT_MODEL
 
 try:
-    from google import genai as google_genai
-except ImportError:  # pragma: no cover - optional dependency
-    google_genai = None
-
-try:
-    import google.generativeai as legacy_genai
-except ImportError:  # pragma: no cover - optional dependency
-    legacy_genai = None
-
-try:
     from PyPDF2 import PdfReader
 except ImportError:  # pragma: no cover - optional at import time
     PdfReader = None
@@ -46,6 +36,24 @@ GRADE_10_PDF_CHAPTERS = {
     "statistics": 13,
     "probability": 14,
 }
+
+
+@lru_cache(maxsize=1)
+def _google_genai_module():
+    try:
+        from google import genai as google_genai
+    except ImportError:  # pragma: no cover - optional dependency
+        return None
+    return google_genai
+
+
+@lru_cache(maxsize=1)
+def _legacy_genai_module():
+    try:
+        import google.generativeai as legacy_genai
+    except ImportError:  # pragma: no cover - optional dependency
+        return None
+    return legacy_genai
 
 
 @dataclass(frozen=True)
@@ -754,6 +762,7 @@ def _generate_raw_json_solution(cache_key: str, prompt: str, image_base64: str |
         try:
             import base64
             img_bytes = base64.b64decode(image_base64)
+            google_genai = _google_genai_module()
             if google_genai is not None:
                 try:
                     from google.genai import types
@@ -766,6 +775,7 @@ def _generate_raw_json_solution(cache_key: str, prompt: str, image_base64: str |
     contents.append(prompt)
     
     try:
+        google_genai = _google_genai_module()
         if GEMINI_API_KEY and google_genai is not None:
             client = google_genai.Client(api_key=GEMINI_API_KEY, http_options={"timeout": GENAI_HTTP_TIMEOUT_MS})
             response = client.models.generate_content(
@@ -778,6 +788,7 @@ def _generate_raw_json_solution(cache_key: str, prompt: str, image_base64: str |
 
     if text is None:
         try:
+            legacy_genai = _legacy_genai_module()
             if GEMINI_API_KEY and legacy_genai is not None:
                 legacy_genai.configure(api_key=GEMINI_API_KEY)
                 model = legacy_genai.GenerativeModel(GEMINI_TEXT_MODEL)

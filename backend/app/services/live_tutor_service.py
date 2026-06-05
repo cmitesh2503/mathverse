@@ -14,6 +14,7 @@ from ..core.config import (
     GEMINI_LIVE_MODEL,
     GEMINI_LIVE_VOICE,
 )
+from ..core.guards import verify_tutor_action_access
 from ..services.ai_gateway import generate_audio, get_live_client, live_api_available
 from ..services.cbse_exercises import build_exercise_solution
 from ..services.rag_service import retrieve_context as rag_get_context
@@ -45,6 +46,31 @@ EventSink = Callable[[dict], Awaitable[None]]
 LIVE_INPUT_SAMPLE_RATE = 16000
 LIVE_OUTPUT_SAMPLE_RATE = 24000
 CLASS_SESSION_MINUTES = 45
+
+HINDI_CLASS_TUTOR_PROMPT = (
+    "You are MathVerse, a friendly, empathetic digital avatar math tutor. "
+    "You are conducting a structured class session. You must deliver all responses "
+    "using the real-time audio stream natively.\n\n"
+    "CRITICAL BEHAVIORAL & LANGUAGE RULES:\n"
+    "1. SOCRATIC APPROACH: Do not give away solutions instantly. Guide the student step-by-step "
+    "using short, encouraging questions based on the textbook context provided to you.\n"
+    "2. MANDATORY LANGUAGE: You must speak and respond entirely in fluid, natural Hindi "
+    "using clear Devanagari phrasing (\u0939\u093f\u0902\u0926\u0940).\n"
+    "3. MATH KEYWORDS: To match the CBSE curriculum, keep core mathematical terminology "
+    "in English (e.g., use terms like 'Circles', 'Radius', 'Tangent', 'Hypotenuse', 'Equation') "
+    "but embed them naturally inside your Hindi sentences.\n"
+    "4. NO ENGLISH SENTENCES: Do not speak full English sentences. Every instructional, "
+    "conversational, and welcoming phrase must be delivered in fluent Hindi audio.\n"
+    "5. DESI HINDI TUTOR STYLE: Do not sound like a US English tutor translating into Hindi. "
+    "Sound like an Indian Hindi-medium math teacher speaking naturally to a student in class. "
+    "Use Hindi-first sentence rhythm, common Indian classroom phrasing, and simple spoken Hindi. "
+    "Avoid awkward literal translations from English.\n"
+    "6. NATURAL INDIAN TUTOR VOICE: Speak like a patient Indian human math teacher in a classroom. "
+    "Use warm, natural Hindi phrases such as '\u092c\u0947\u091f\u093e', '\u0905\u091a\u094d\u091b\u093e', "
+    "'\u0938\u094b\u091a\u094b', and '\u0927\u0940\u0930\u0947-\u0927\u0940\u0930\u0947 \u0938\u092e\u091d\u0924\u0947 \u0939\u0948\u0902' where appropriate.\n"
+    "7. SLOW PACING & PAUSES: Speak a little slowly. Add clear pauses after each important idea, "
+    "after every question, and before moving to the next step. Keep turns concise, but do not rush."
+)
 
 
 class LiveTutorConnectionError(RuntimeError):
@@ -104,9 +130,12 @@ def _normalize_teaching_language(value: object) -> str:
 def _language_instruction(language: str) -> str:
     if language == "hi-IN":
         return (
-            "LANGUAGE STYLE: Speak in Hindi/Hinglish. Keep every mathematics term in English: "
+            "LANGUAGE STYLE: Speak entirely in fluid, natural Hindi using clear Devanagari phrasing. "
+            "Do not use full English sentences. Keep core mathematics terms in English when they match CBSE usage: "
             "probability, outcome, sample space, event, formula, theorem, equation, numerator, denominator, "
-            "factor, HCF, LCM, triangle, coordinate, chapter names, symbols, and formulas. "
+            "factor, HCF, LCM, triangle, coordinate, Circles, Radius, Tangent, Hypotenuse, chapter names, symbols, and formulas. "
+            "Embed those English math terms naturally inside Hindi sentences. "
+            "Speak like a patient Indian human tutor: warm, natural, slightly slow, with clear pauses after key ideas and questions. "
             "Board labels must use actual math symbols (√, π, ×). For your spoken audio, ALWAYS spell out symbols in words (e.g. 'square root' instead of 'sqrt', 'squared' instead of '^2', 'pi' instead of 'π') so the TTS engine pronounces them correctly."
         )
     if language == "gu-IN":
@@ -120,6 +149,16 @@ def _language_instruction(language: str) -> str:
         "LANGUAGE STYLE: Speak in clear Indian English. Keep board labels and all mathematics notation in English using actual math symbols (√, π, ×). "
         "For your spoken audio, ALWAYS spell out symbols in words (e.g. 'square root' instead of 'sqrt', 'squared' instead of '^2', 'pi' instead of 'π') so the TTS engine pronounces them correctly."
     )
+
+
+def _speech_language_code(language: str) -> str | None:
+    if language == "hi-IN":
+        return "hi"
+    if language == "gu-IN":
+        return "gu"
+    if language == "en-IN":
+        return "en"
+    return None
 
 
 class LiveTutorBridge:
@@ -402,8 +441,15 @@ class LiveTutorBridge:
         agenda_text = "\n".join(f"{i+1}. {topic}" for i, topic in enumerate(agenda_list)) if agenda_list else f"1. {topic_title}"
         teaching_language = _normalize_teaching_language(getattr(self.student_session, "teaching_language", "en-IN"))
         language_instruction = _language_instruction(teaching_language)
+        speech_language_code = _speech_language_code(teaching_language)
+        class_mode_prompt = (
+            f"{HINDI_CLASS_TUTOR_PROMPT}\n\n"
+            if teaching_language == "hi-IN"
+            else ""
+        )
 
         system_prompt = (
+            f"{class_mode_prompt}"
             f"{resolved_system_prompt}\n\n"
             "LIVE AUDIO & CLASSROOM RULES:\n"
             "1. YOU ARE THE DRIVER: You are leading a continuous 45-minute class. DO NOT wait for the user to explicitly ask to move on.\n"
@@ -415,7 +461,7 @@ class LiveTutorBridge:
             "FOLLOW-UP DOUBTS: If the student asks a doubt or follow-up question, pause the planned lesson, "
             "answer that doubt directly with one small example, update the whiteboard, then connect the answer "
             "back to the current chapter/topic before continuing.\n"
-            "READ PROBLEMS ALOUD FIRST: When giving an exercise or example problem, ALWAYS read the full question text clearly to the student first, then say 'Let me explain the solution step by step' before solving.\n"
+            "READ PROBLEMS ALOUD FIRST: When giving an exercise or example problem, ALWAYS read the full question text clearly to the student first, then explain in the active teaching language that you will solve it step by step. In Hindi mode, use natural Devanagari Hindi such as 'बेटा, अब solution धीरे-धीरे समझते हैं.'\n"
             "For vague follow-ups like 'this step', 'that formula', or 'why did we do this', treat the question "
             "as referring to the CURRENT BLACKBOARD CONTEXT below. If the blackboard context is insufficient, "
             "ask one short clarification or counter-question before solving. Do not switch to Real Numbers, "
@@ -435,14 +481,19 @@ class LiveTutorBridge:
                 parts=[live_types.Part(text=system_prompt)]
             ),
             speech_config=live_types.SpeechConfig(
+                language_code=speech_language_code,
                 voice_config=live_types.VoiceConfig(
                     prebuilt_voice_config=live_types.PrebuiltVoiceConfig(
                         voice_name=GEMINI_LIVE_VOICE
                     )
                 ),
             ),
-            input_audio_transcription=live_types.AudioTranscriptionConfig(),
-            output_audio_transcription=live_types.AudioTranscriptionConfig(),
+            input_audio_transcription=live_types.AudioTranscriptionConfig(
+                language_codes=[teaching_language]
+            ),
+            output_audio_transcription=live_types.AudioTranscriptionConfig(
+                language_codes=[teaching_language]
+            ),
             realtime_input_config=live_types.RealtimeInputConfig(
                 activity_handling=live_types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
                 turn_coverage=live_types.TurnCoverage.TURN_INCLUDES_ALL_INPUT,
@@ -618,11 +669,28 @@ class LiveTutorBridge:
             whiteboard_actions = tutor_payload.get("whiteboard_actions", [])
 
         if route != "proctor_agent" and tutor_payload.get("advance_topic"):
-            next_topic = self.orchestrator._advance_to_next_topic(self.student_session)
-            whiteboard_actions = [
-                *whiteboard_actions,
-                {"action": "draw_text", "content": f"Topic complete. Next topic: {next_topic}"},
-            ]
+            try:
+                verify_tutor_action_access(
+                    user_id=str(effective_context.get("user_id") or "").strip() or None,
+                    requested_grade=getattr(self.student_session, "grade", None),
+                    session=self.student_session,
+                    action="next_topic",
+                    topic_slug=effective_context.get("chapter_slug"),
+                    exam=getattr(self.student_session, "exam", "cbse"),
+                )
+            except Exception as error:
+                detail = getattr(error, "detail", None) or "Access locked. Active subscription required for the next chapter."
+                spoken_response = str(detail)
+                whiteboard_actions = [
+                    *whiteboard_actions,
+                    {"action": "draw_text", "content": str(detail)},
+                ]
+            else:
+                next_topic = self.orchestrator._advance_to_next_topic(self.student_session)
+                whiteboard_actions = [
+                    *whiteboard_actions,
+                    {"action": "draw_text", "content": f"Topic complete. Next topic: {next_topic}"},
+                ]
 
         whiteboard_actions = self._prepare_problem_whiteboard_actions(
             topic=self._resolve_current_topic(),
@@ -972,7 +1040,14 @@ class LiveTutorBridge:
 
         if self._assistant_transcript.strip() and not self._assistant_audio_emitted:
             with contextlib.suppress(Exception):
-                audio_bytes = await generate_audio(_sanitize_for_speech(self._assistant_transcript.strip()))
+                teaching_language = _normalize_teaching_language(
+                    getattr(self.student_session, "teaching_language", "en-IN")
+                )
+                audio_bytes = await generate_audio(
+                    _sanitize_for_speech(self._assistant_transcript.strip()),
+                    voice_name=GEMINI_LIVE_VOICE,
+                    language_code=_speech_language_code(teaching_language),
+                )
                 if audio_bytes:
                     self._assistant_audio_emitted = True
                     await self.emit_event(
@@ -1061,6 +1136,11 @@ class LiveTutorBridge:
         lines = [line for line in lines if line]
         if lines:
             return " ".join(lines[:4])
+        if _normalize_teaching_language(getattr(self.student_session, "teaching_language", "en-IN")) == "hi-IN":
+            return (
+                f"बेटा, {topic} के current board steps पूरे हो गए। "
+                "अब अगला point धीरे-धीरे समझते हैं।"
+            )
         return (
             f"We finished the current board steps for {topic}. "
             "Click Next when you are ready for the next explanation."
@@ -1451,10 +1531,16 @@ class LiveTutorBridge:
         )
 
     def _class_expired_turn(self) -> dict:
-        spoken_response = (
-            f"Our {self.student_session.class_duration_minutes}-minute class session is complete for today. "
-            "Great effort. Please review today's notes and start a new class to continue."
-        )
+        if getattr(self.student_session, "teaching_language", "en-IN") == "hi-IN":
+            spoken_response = (
+                f"बेटा, आज की {self.student_session.class_duration_minutes}-minute class यहीं पूरी होती है। "
+                "बहुत अच्छा काम किया। आज के notes revise करना, फिर नई class में आगे बढ़ेंगे।"
+            )
+        else:
+            spoken_response = (
+                f"Our {self.student_session.class_duration_minutes}-minute class session is complete for today. "
+                "Great effort. Please review today's notes and start a new class to continue."
+            )
         whiteboard_actions = [
             {"action": "draw_text", "content": f"Session complete ({self.student_session.class_duration_minutes} minutes)"},
             {"action": "draw_text", "content": "Review notes and start a new class session."},

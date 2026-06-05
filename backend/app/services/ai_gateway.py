@@ -15,16 +15,6 @@ from ..core.config import GEMINI_API_KEY, GEMINI_LIVE_MODEL, GEMINI_TEXT_MODEL
 from ..guardrails.ai_guardrail import validate_response
 
 try:
-    from google import genai as google_genai
-except ImportError:  # pragma: no cover - optional dependency
-    google_genai = None
-
-try:
-    import google.generativeai as legacy_genai
-except ImportError:  # pragma: no cover - optional dependency
-    legacy_genai = None
-
-try:
     from google.api_core.exceptions import ResourceExhausted
 except ImportError:  # pragma: no cover - optional dependency
     ResourceExhausted = None
@@ -47,6 +37,25 @@ DEFAULT_LIVE_MODEL = GEMINI_LIVE_MODEL
 GENAI_HTTP_TIMEOUT_MS = 300_000
 _tts_retry_after = 0.0
 
+
+@lru_cache(maxsize=1)
+def _google_genai_module():
+    try:
+        from google import genai as google_genai
+    except ImportError:  # pragma: no cover - optional dependency
+        return None
+    return google_genai
+
+
+@lru_cache(maxsize=1)
+def _legacy_genai_module():
+    try:
+        import google.generativeai as legacy_genai
+    except ImportError:  # pragma: no cover - optional dependency
+        return None
+    return legacy_genai
+
+
 SAFE_FALLBACK_AGENT_RESPONSE = {
     "spoken_response": "I'm sorry, I'm experiencing heavy traffic right now and need a moment to catch my breath. Let's pause for a minute.",
     "whiteboard_actions": [],
@@ -55,11 +64,12 @@ FALLBACK_TEXT = json.dumps(SAFE_FALLBACK_AGENT_RESPONSE)
 
 
 def live_api_available() -> bool:
-    return bool(GEMINI_API_KEY and google_genai is not None)
+    return bool(GEMINI_API_KEY and _google_genai_module() is not None)
 
 
 @lru_cache(maxsize=1)
 def _new_sdk_client():
+    google_genai = _google_genai_module()
     if not GEMINI_API_KEY or google_genai is None:
         return None
     return google_genai.Client(api_key=GEMINI_API_KEY, http_options={"timeout": GENAI_HTTP_TIMEOUT_MS})
@@ -70,6 +80,7 @@ def get_live_client():
 
 
 def _configure_legacy_sdk() -> bool:
+    legacy_genai = _legacy_genai_module()
     if not GEMINI_API_KEY or legacy_genai is None:
         return False
     legacy_genai.configure(api_key=GEMINI_API_KEY)
@@ -147,6 +158,7 @@ def generate_response(
     if text is None:
         try:
             if _configure_legacy_sdk():
+                legacy_genai = _legacy_genai_module()
                 legacy_model = legacy_genai.GenerativeModel(model_id)
                 gen_config = {"temperature": 0.0, "response_mime_type": "application/json"}
                 if response_schema:
@@ -205,7 +217,7 @@ def _extract_audio_bytes_from_response(response: object) -> bytes:
     return b""
 
 
-def _generate_audio_sync(transcript: str, voice_name: str) -> bytes:
+def _generate_audio_sync(transcript: str, voice_name: str, language_code: str | None = None) -> bytes:
     global _tts_retry_after
     if time.monotonic() < _tts_retry_after:
         return b""
@@ -216,6 +228,7 @@ def _generate_audio_sync(transcript: str, voice_name: str) -> bytes:
 
     tts_prompt = (
         "You are Arvind Sir, an Indian Math Tutor. "
+        "If the transcript is Hindi, speak it like a natural Indian Hindi teacher, not like English text. "
         f"Deliver this transcript naturally: {transcript}"
     )
 
@@ -228,6 +241,7 @@ def _generate_audio_sync(transcript: str, voice_name: str) -> bytes:
             temperature=0.0,
             response_modalities=["AUDIO"],
             speech_config=genai_types.SpeechConfig(
+                language_code=language_code,
                 voice_config=genai_types.VoiceConfig(
                     prebuilt_voice_config=genai_types.PrebuiltVoiceConfig(
                         voice_name=voice_name
@@ -240,6 +254,7 @@ def _generate_audio_sync(transcript: str, voice_name: str) -> bytes:
             "temperature": 0.0,
             "response_modalities": ["AUDIO"],
             "speech_config": {
+                "language_code": language_code,
                 "voice_config": {
                     "prebuilt_voice_config": {
                         "voice_name": voice_name,
@@ -267,8 +282,8 @@ def _generate_audio_sync(transcript: str, voice_name: str) -> bytes:
         return b""
 
 
-async def generate_audio(transcript: str, voice_name: str = "Algenib") -> bytes:
+async def generate_audio(transcript: str, voice_name: str = "Algenib", language_code: str | None = None) -> bytes:
     text = str(transcript or "").strip()
     if not text:
         return b""
-    return await asyncio.to_thread(_generate_audio_sync, text, voice_name)
+    return await asyncio.to_thread(_generate_audio_sync, text, voice_name, language_code)

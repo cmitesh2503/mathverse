@@ -116,6 +116,10 @@ function tutorWsUrl(sessionId: string, grade: ClassroomGrade, examMode: ExamMode
     mode: "class",
     exam: examMode,
   });
+  const userId = localStorage.getItem("mathverse_user_id");
+  if (userId) {
+    params.set("user_id", userId);
+  }
   if (topicSlug) {
     params.set("topic_slug", topicSlug);
   }
@@ -237,6 +241,15 @@ export default function Classroom({ onNavigate }: Props) {
 
   const onResponse = useCallback(
     (data: ClassResponse) => {
+      const responseChapter = data.chapter || data.content?.chapter;
+      const responseChapterSlug = CBSE_GRADE_10_CHAPTERS.find(
+        (item) =>
+          item.slug === responseChapter ||
+          item.title.toLowerCase() === String(responseChapter || "").toLowerCase(),
+      )?.slug;
+      if (responseChapterSlug) {
+        setSelectedChapterSlug(responseChapterSlug);
+      }
       const nextTopic = data.topic || data.chapter || data.content?.chapter;
       if (nextTopic) {
         setCurrentTopic(nextTopic);
@@ -285,12 +298,15 @@ export default function Classroom({ onNavigate }: Props) {
     }
   }, [examMode, selectedGrade]);
 
-  const classAllowed = examMode === "cbse" ? canUseFeature(plan, "cbse_class") : canUseFeature(plan, "jee_practice");
   const gradeOptions: ClassroomGrade[] = examMode === "cbse" ? [10] : [...CLASSROOM_GRADES];
   const examLabel = examMode.toUpperCase();
   const tutorLabel = examMode === "cbse" ? "CBSE Tutor" : "JEE Tutor";
   const selectedChapter =
     CBSE_GRADE_10_CHAPTERS.find((chapter) => chapter.slug === selectedChapterSlug) ?? CBSE_GRADE_10_CHAPTERS[0];
+  const selectedChapterIndex = CBSE_GRADE_10_CHAPTERS.findIndex((chapter) => chapter.slug === selectedChapter.slug);
+  const selectedChapterIsFree = examMode === "cbse" && selectedChapterIndex === 0;
+  const hasFullClassAccess = examMode === "cbse" ? canUseFeature(plan, "cbse_class") : canUseFeature(plan, "jee_practice");
+  const classAllowed = hasFullClassAccess || selectedChapterIsFree;
   const selectedTeachingLanguage =
     TEACHING_LANGUAGES.find((language) => language.value === teachingLanguage) ?? TEACHING_LANGUAGES[0];
   const selectedChapterInput = useMemo(
@@ -560,7 +576,14 @@ export default function Classroom({ onNavigate }: Props) {
     setNextCoolingDown(true);
     window.setTimeout(() => setNextCoolingDown(false), 2000);
     try {
-      await start({ action: "next_topic", grade: selectedGrade, subject: "math" });
+      await start({
+        action: "next_topic",
+        grade: selectedGrade,
+        subject: "math",
+        chapter,
+        chapter_slug: liveChapterSlug,
+        topic: concept,
+      });
     } catch (error) {
       console.error("Failed to skip to the next topic.", error);
     }
@@ -606,12 +629,13 @@ export default function Classroom({ onNavigate }: Props) {
 
   const sendStopListeningSignal = useCallback((transcript = "") => {
     const cleanedTranscript = transcript.trim();
+    const userId = localStorage.getItem("mathverse_user_id") || undefined;
     sendSocketPayload({
       type: "control",
       action: "stop_listening",
       transcript: cleanedTranscript || undefined,
       mode: "class",
-      context: { exam: examMode, grade: selectedGrade, teaching_language: teachingLanguage, chapter, chapter_slug: liveChapterSlug, topic: concept },
+      context: { exam: examMode, grade: selectedGrade, user_id: userId, teaching_language: teachingLanguage, chapter, chapter_slug: liveChapterSlug, topic: concept },
     });
     sendSocketPayload({ type: "audio_stream_end" });
   }, [chapter, concept, examMode, liveChapterSlug, selectedGrade, sendSocketPayload, teachingLanguage]);
@@ -954,6 +978,7 @@ export default function Classroom({ onNavigate }: Props) {
           context: {
             exam: examMode,
             grade: selectedGrade,
+            user_id: localStorage.getItem("mathverse_user_id") || undefined,
             teaching_language: teachingLanguage,
             chapter,
             chapter_slug: liveChapterSlug,
@@ -1175,10 +1200,32 @@ export default function Classroom({ onNavigate }: Props) {
       {!classAllowed ? (
         <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
           <UpgradeNotice
-            title={examMode === "jee" ? "JEE class mode is included in JEE Pro" : "Full voice classroom is included in CBSE Pro"}
-            description="Free includes basic CBSE practice. Upgrade the active plan to unlock guided whiteboard classes, synced avatar voice, and saved class notes."
+            title={examMode === "jee" ? "JEE class mode needs a subscription" : "Subscribe to continue after Chapter 1"}
+            description={
+              examMode === "jee"
+                ? "JEE class mode is included in JEE Pro."
+                : `Chapter 1 is free. Chapter ${selectedChapterIndex + 1}: ${selectedChapter.title} requires an active grade subscription.`
+            }
             recommendedPlan={examMode === "jee" ? "jee_pro" : "cbse_pro"}
           />
+          <div className="mt-4 flex flex-wrap gap-3">
+            {examMode === "cbse" ? (
+              <button
+                type="button"
+                onClick={() => setSelectedChapterSlug(CBSE_GRADE_10_CHAPTERS[0].slug)}
+                className="rounded-lg border border-slate-600 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-900"
+              >
+                Open free Chapter 1
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => onNavigate("subscription")}
+              className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-cyan-300"
+            >
+              Subscribe
+            </button>
+          </div>
         </div>
       ) : !classStarted ? (
         <div className="mx-auto flex min-h-[calc(100vh-12rem)] w-full max-w-xl items-center px-4 py-8 sm:px-6">

@@ -75,13 +75,16 @@ export function useTutorStream({ sessionId, examMode, teachingLanguage, onRespon
 
       try {
         const requestedGrade = typeof input.grade === "number" ? input.grade : undefined;
+        const userId = localStorage.getItem("mathverse_user_id") || undefined;
         const stream = await startClassStream({
           session_id: sessionId,
           input,
           context: {
             exam: examMode,
             grade: requestedGrade,
+            user_id: userId,
             teaching_language: teachingLanguage,
+            chapter_slug: typeof input.chapter_slug === "string" ? input.chapter_slug : undefined,
           },
         });
         silentRetryRef.current = 0;
@@ -114,6 +117,7 @@ export function useTutorStream({ sessionId, examMode, teachingLanguage, onRespon
         }
         voiceRef.current = playVoiceStream(stream.voice_chunks.join(". "), {
           chunks: stream.voice_chunks,
+          lang: teachingLanguage,
           rate: voiceRate,
           pauseMs,
           onStart: () => setIsSpeaking(true),

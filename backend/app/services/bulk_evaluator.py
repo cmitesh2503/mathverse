@@ -2,21 +2,26 @@ from __future__ import annotations
 
 import json
 import re
+from functools import lru_cache
 from typing import Any
 
 from .evaluation_service import build_bulk_evaluation_prompt, normalize_bulk_evaluation_payload
 from .rag_service import retrieve_context
-
-try:
-    from google import genai as google_genai
-except ImportError:  # pragma: no cover - optional dependency
-    google_genai = None
 
 from ..core.config import GEMINI_API_KEY, GEMINI_TEXT_MODEL
 
 
 MODEL_ID = GEMINI_TEXT_MODEL
 GENAI_HTTP_TIMEOUT_MS = 300_000
+
+
+@lru_cache(maxsize=1)
+def _google_genai_module():
+    try:
+        from google import genai as google_genai
+    except ImportError:  # pragma: no cover - optional dependency
+        return None
+    return google_genai
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -60,6 +65,7 @@ def evaluate_submission(
 ) -> dict[str, Any]:
     if not GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY/GOOGLE_API_KEY is not configured.")
+    google_genai = _google_genai_module()
     if google_genai is None:
         raise RuntimeError("google-genai package is required for multimodal bulk evaluation.")
     if not raw_image_bytes:

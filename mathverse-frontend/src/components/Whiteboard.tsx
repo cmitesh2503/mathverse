@@ -144,7 +144,12 @@ function isShortDiagramLabel(value: string) {
 }
 
 function isDrawingStepLine(value: string) {
-  return /(draw|mark|join|label|construct|figure|diagram|tangent|chord|radius|point)/i.test(String(value || ""));
+  return /(draw|mark|join|label|construct|figure|diagram|tangent|chord|radius|point|common factor|common prime|hcf|gcd)/i.test(String(value || ""));
+}
+
+function startsWithAny(value: string, prefixes: string[]) {
+  const lower = String(value || "").trim().toLowerCase();
+  return prefixes.some((prefix) => lower.startsWith(prefix));
 }
 
 function toFiniteNumber(value: unknown, fallback = 0) {
@@ -280,7 +285,7 @@ function renderSVGFromPrimitives(
     }
     if (name === "write_text") {
       const label = String(action.label || "");
-      if (isShortDiagramLabel(label)) {
+      if (isShortDiagramLabel(label) || isDiagramTagged(action)) {
         touch(toFiniteNumber(action.x), toFiniteNumber(action.y));
       }
     }
@@ -404,7 +409,7 @@ function renderSVGFromPrimitives(
 
         if (name === "write_text") {
           const label = String(action.label || "").trim();
-          if (!isShortDiagramLabel(label)) return null;
+          if (!isShortDiagramLabel(label) && !isDiagramTagged(action)) return null;
           return (
             <text
               key={`diagram-text-${index}`}
@@ -769,7 +774,7 @@ export function Whiteboard({
       .filter((action) => {
         if (isDiagramTagged(action)) return false;
         const name = String(action?.action || "").toLowerCase();
-        return ["draw_text", "write", "write_text", "add_text", "text"].includes(name);
+        return ["draw_text", "write", "write_text", "add_text", "text", "write_equation"].includes(name);
       })
       .map((action) =>
         String(
@@ -783,7 +788,22 @@ export function Whiteboard({
         ).trim(),
       )
       .filter(Boolean)
-      .filter((line) => !line.toLowerCase().startsWith(("chapter no:", "chapter name:", "topic name:", "exercise no:", "problem no:", "solution:", "diagram:", "source:")));
+      .filter((line) =>
+        !startsWithAny(line, [
+          "chapter no:",
+          "chapter name:",
+          "chapter:",
+          "topic name:",
+          "topic:",
+          "exercise no:",
+          "problem no:",
+          "solution:",
+          "diagram:",
+          "figure:",
+          "source:",
+          "board build:",
+        ]),
+      );
   }, [incomingActions]);
   const hasExerciseProblem =
     boardModel.exerciseNo !== "-" ||
@@ -813,11 +833,6 @@ export function Whiteboard({
         <div className="mx-auto w-full max-w-none rounded-lg border-4 border-slate-700 bg-slate-950 p-5">
           {isConceptBoard ? (
             <div className="space-y-4">
-              <div className="grid gap-3 border-b border-slate-700 pb-4 text-base text-slate-200 md:grid-cols-2">
-                <p><span className="font-semibold text-emerald-200">Chapter:</span> {boardModel.chapterName !== "-" ? boardModel.chapterName : whiteboard?.title?.split("|")[0]?.trim() || "Current chapter"}</p>
-                <p><span className="font-semibold text-emerald-200">Topic:</span> {boardModel.topicName !== "-" ? boardModel.topicName : whiteboard?.title?.split("|")[1]?.trim() || "Current topic"}</p>
-              </div>
-
               {hasDiagramVisuals ? (
                 <div className="grid gap-3">
                   <div className="rounded-md border border-slate-700 bg-slate-900 p-3">

@@ -7,8 +7,10 @@ type StartClassPayload = {
   context?: {
     exam?: ExamMode;
     student_id?: string;
+    user_id?: string;
     grade?: number;
     teaching_language?: TeachingLanguage;
+    chapter_slug?: string;
   };
 };
 
@@ -21,7 +23,7 @@ export type TutorStreamData = {
 function splitText(text: string) {
   const chunks: string[] = [];
   text
-    .split(/(?<=[.!?])\s+/)
+    .split(/(?<=[.!?।])\s+/)
     .map((sentence) => sentence.trim())
     .filter(Boolean)
     .forEach((sentence) => {

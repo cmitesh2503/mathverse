@@ -45,7 +45,12 @@ Based on the rules above, output ONLY the exact name of the agent to route to ("
     def __init__(self) -> None:
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         self._redis_key_prefix = os.getenv("ORCHESTRATOR_SESSION_KEY_PREFIX", "orchestrator:session:")
-        self.redis_client = redis.from_url(redis_url, decode_responses=True)
+        self.redis_client = redis.from_url(
+            redis_url,
+            decode_responses=True,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+        )
         self._use_memory_store = os.getenv("ORCHESTRATOR_STORE", "").lower() == "memory"
         self._require_redis = os.getenv("ORCHESTRATOR_REQUIRE_REDIS", "").lower() in {"1", "true", "yes"}
 
@@ -85,8 +90,8 @@ Based on the rules above, output ONLY the exact name of the agent to route to ("
         if self._use_memory_store:
             return True
         try:
-            return bool(await self.redis_client.ping())
-        except (OSError, RedisError) as error:
+            return bool(await asyncio.wait_for(self.redis_client.ping(), timeout=2))
+        except (OSError, RedisError, TimeoutError, asyncio.TimeoutError) as error:
             self._fallback_to_memory(error)
             print(f"Redis unavailable; using in-memory orchestrator sessions ({type(error).__name__}: {error})")
             return True
@@ -204,6 +209,7 @@ Based on the rules above, output ONLY the exact name of the agent to route to ("
         if not chapters:
             session.current_chapter_index = 0
             session.chapter_name = "Welcome"
+            session.current_chapter = session.chapter_name
             session.agenda = ["Introduction"]
             session.current_topic_index = 0
             session.current_topic = "Introduction"
@@ -213,6 +219,7 @@ Based on the rules above, output ONLY the exact name of the agent to route to ("
         selected_chapter = chapters[chapter_index]
         session.current_chapter_index = chapter_index
         session.chapter_name = selected_chapter.get("title") or selected_chapter.get("chapter") or f"Chapter {chapter_index + 1}"
+        session.current_chapter = session.chapter_name
         agenda = self._chapter_agenda(selected_chapter, fallback=session.chapter_name)
 
         session.agenda = agenda if agenda else [session.chapter_name]
@@ -233,6 +240,14 @@ Based on the rules above, output ONLY the exact name of the agent to route to ("
                 if isinstance(item, dict) and str(item.get("title", "")).strip()
             ]
         return agenda if agenda else [fallback]
+
+    def _reset_chapter_teaching_state(self, session: StudentSession) -> None:
+        self._set_active_phase(session, SessionPhase.TEACHING)
+        session.class_intro_done = False
+        session.concept_teaching_index = 0
+        session.concept_teaching_complete = False
+        session.exercise_phase_started = False
+        session.next_problem_actions = []
 
     def _advance_to_next_topic(self, session: StudentSession) -> str:
         if not session.agenda:
@@ -256,11 +271,13 @@ Based on the rules above, output ONLY the exact name of the agent to route to ("
                     or next_chapter.get("chapter")
                     or f"Chapter {next_chapter_index + 1}"
                 )
+                session.current_chapter = session.chapter_name
                 chapter_changed = True
                 agenda = self._chapter_agenda(next_chapter, fallback=session.chapter_name)
 
                 session.agenda = agenda if agenda else [session.chapter_name]
                 session.current_topic_index = 0
+                self._reset_chapter_teaching_state(session)
             else:
                 session.current_topic_index = max(0, len(session.agenda) - 1)
 
@@ -283,6 +300,11 @@ Based on the rules above, output ONLY the exact name of the agent to route to ("
                 "Also introduce the chapter topic list clearly."
             )
         else:
+            self._set_active_phase(session, SessionPhase.TEACHING)
+            session.concept_teaching_index = max(0, session.current_topic_index)
+            session.concept_teaching_complete = False
+            session.exercise_phase_started = False
+            session.next_problem_actions = []
             session.chapter_transition = None
             session.next_system_note = (
                 "SYSTEM NOTE: The student pressed Next. You MUST move on to the next topic on the agenda: "

@@ -1,2 +1,2 @@
-project_id = "mathverse-live-ai"
+project_id = "matverse"
 region    = "us-central1"

@@ -1,5 +1,37 @@
 import re
 
+_ROMAN_NUMERAL_WORDS = {
+    "i": "one",
+    "ii": "two",
+    "iii": "three",
+    "iv": "four",
+    "v": "five",
+    "vi": "six",
+    "vii": "seven",
+    "viii": "eight",
+    "ix": "nine",
+    "x": "ten",
+}
+
+
+def _convert_roman_markers_to_speech(text: str) -> str:
+    """Speak exercise subparts like (iv) as numbers, not letters."""
+    if not text:
+        return text
+
+    def replace_parenthesized(match: re.Match) -> str:
+        roman = match.group(1).lower()
+        return f"({_ROMAN_NUMERAL_WORDS.get(roman, roman)})"
+
+    def replace_problem_suffix(match: re.Match) -> str:
+        prefix = match.group(1)
+        roman = match.group(2).lower()
+        return f"{prefix} part {_ROMAN_NUMERAL_WORDS.get(roman, roman)}"
+
+    result = re.sub(r"(\b\d+)\s*\(([ivx]{1,4})\)", replace_problem_suffix, text, flags=re.IGNORECASE)
+    result = re.sub(r"\(([ivx]{1,4})\)", replace_parenthesized, result, flags=re.IGNORECASE)
+    return result
+
 def convert_text_to_display_symbols(text: str) -> str:
     """
     Converts text-based math notation to proper display symbols.
@@ -110,7 +142,7 @@ def convert_text_to_speech(text: str) -> str:
         "^": " to the power of ",
     }
     
-    result = text
+    result = _convert_roman_markers_to_speech(text)
     for symbol, word in replacements.items():
         result = result.replace(symbol, word)
         
