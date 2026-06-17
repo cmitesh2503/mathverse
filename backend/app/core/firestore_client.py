@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,12 @@ _SERVICE_ACCOUNT_ENV_VARS = (
     "FIREBASE_SERVICE_ACCOUNT_PATH",
 )
 _BUNDLED_SERVICE_ACCOUNT_PATH = Path(__file__).with_name("firebase_key.json")
+_AUTH_MODE_ENV_VAR = "MATHVERSE_FIRESTORE_AUTH_MODE"
+_REQUIRED_GCLOUD_ACCOUNT_ENV_VAR = "MATHVERSE_REQUIRED_GCLOUD_ACCOUNT"
+
+_AUTH_MODE_ADC = "adc"
+_AUTH_MODE_SERVICE_ACCOUNT = "service_account"
+_AUTH_MODE_BUNDLED_SERVICE_ACCOUNT = "bundled_service_account"
 
 
 def _clean_env_value(value: str | None) -> str:
@@ -26,13 +33,38 @@ def _clean_env_value(value: str | None) -> str:
 
 
 @lru_cache(maxsize=1)
+def resolve_firestore_auth_mode() -> str:
+    auth_mode = _clean_env_value(os.getenv(_AUTH_MODE_ENV_VAR)).lower()
+    if not auth_mode:
+        for env_name in _SERVICE_ACCOUNT_ENV_VARS:
+            configured_path = _clean_env_value(os.getenv(env_name))
+            if configured_path and Path(configured_path).expanduser().exists():
+                return _AUTH_MODE_SERVICE_ACCOUNT
+        return _AUTH_MODE_ADC
+    if auth_mode in {_AUTH_MODE_ADC, "google_adc", "gcloud", "application_default"}:
+        return _AUTH_MODE_ADC
+    if auth_mode in {_AUTH_MODE_SERVICE_ACCOUNT, "service-account", "serviceaccount"}:
+        return _AUTH_MODE_SERVICE_ACCOUNT
+    if auth_mode in {"bundled", "bundled-key", "bundled_service_account"}:
+        return _AUTH_MODE_BUNDLED_SERVICE_ACCOUNT
+    raise RuntimeError(
+        f"Unsupported {_AUTH_MODE_ENV_VAR}={auth_mode!r}. "
+        "Use adc, service_account, or bundled_service_account."
+    )
+
+
+@lru_cache(maxsize=1)
 def get_firestore_service_account_path() -> str | None:
+    auth_mode = resolve_firestore_auth_mode()
+    if auth_mode == _AUTH_MODE_ADC:
+        return None
+
     for env_name in _SERVICE_ACCOUNT_ENV_VARS:
         configured_path = _clean_env_value(os.getenv(env_name))
         if configured_path and Path(configured_path).expanduser().exists():
             return str(Path(configured_path).expanduser())
 
-    if _BUNDLED_SERVICE_ACCOUNT_PATH.exists():
+    if auth_mode == _AUTH_MODE_BUNDLED_SERVICE_ACCOUNT and _BUNDLED_SERVICE_ACCOUNT_PATH.exists():
         return str(_BUNDLED_SERVICE_ACCOUNT_PATH)
 
     return None
@@ -65,6 +97,35 @@ def resolve_firestore_project_id() -> str | None:
 
 
 @lru_cache(maxsize=1)
+def validate_required_gcloud_account() -> None:
+    required_account = _clean_env_value(os.getenv(_REQUIRED_GCLOUD_ACCOUNT_ENV_VAR, "miteshc@gmail.com"))
+    if not required_account:
+        return
+
+    executable = "gcloud.cmd" if os.name == "nt" else "gcloud"
+    try:
+        result = subprocess.run(
+            [executable, "config", "get-value", "account"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except Exception as error:
+        raise RuntimeError(
+            f"{_REQUIRED_GCLOUD_ACCOUNT_ENV_VAR} is set to {required_account}, "
+            "but the active gcloud account could not be verified."
+        ) from error
+
+    active_account = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
+    if active_account != required_account:
+        raise RuntimeError(
+            f"Refusing Firestore access with gcloud account {active_account or '<unknown>'}. "
+            f"Expected {required_account}."
+        )
+
+
+@lru_cache(maxsize=1)
 def get_firestore_client():
     from google.cloud import firestore
 
@@ -77,7 +138,11 @@ def get_firestore_client():
         credentials = service_account.Credentials.from_service_account_file(service_account_path)
         return firestore.Client(project=project_id or credentials.project_id, credentials=credentials)
 
-    if project_id:
-        return firestore.Client(project=project_id)
+    if not project_id:
+        raise RuntimeError(
+            "FIRESTORE_PROJECT_ID or GOOGLE_CLOUD_PROJECT must be set. "
+            "The backend will not infer a Firestore project from another account."
+        )
 
-    return firestore.Client()
+    validate_required_gcloud_account()
+    return firestore.Client(project=project_id)

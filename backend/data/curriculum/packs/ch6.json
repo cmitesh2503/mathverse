@@ -1,0 +1,383 @@
+{
+  "chapter_name": "Ch6",
+  "concepts": [
+    {
+      "concept_id": "6_1",
+      "concept_name": "6.1 Introduction",
+      "definition_text": "6.1 Introduction\nYou are familiar with triangles and many of their properties from your earlier classes.\nIn Class IX, you have studied congruence of triangles in detail. Recall that two figures\nare said to be congruent, if they have the same shape and the same size. In this\nchapter, we shall study about those figures which have the same shape but not necessarily\nthe same size. Two figures having the same shape (and not necessarily the same size)\nare called similar figures. In particular, we shall discuss the similarity of triangles and\napply this knowledge in giving a simple proof of Pythagoras Theorem learnt earlier.\nCan you guess how heights of mountains (say Mount Everest) or distances of\nsome long distant objects (say moon) have been found out? Do you think these have\nTRIANGLES\nReprint 2026-27",
+      "source_paragraphs": [
+        "6.1 Introduction\nYou are familiar with triangles and many of their properties from your earlier classes.\nIn Class IX, you have studied congruence of triangles in detail. Recall that two figures\nare said to be congruent, if they have the same shape and the same size. In this\nchapter, we shall study about those figures which have the same shape but not necessarily\nthe same size. Two figures having the same shape (and not necessarily the same size)\nare called similar figures. In particular, we shall discuss the similarity of triangles and\napply this knowledge in giving a simple proof of Pythagoras Theorem learnt earlier.\nCan you guess how heights of mountains (say Mount Everest) or distances of\nsome long distant objects (say moon) have been found out? Do you think these have\nTRIANGLES\nReprint 2026-27",
+        "74\nMATHEMATICS\nbeen measured directly with the help of a measuring tape? In fact, all these heights\nand distances have been found out using the idea of indirect measurements, which is\nbased on the principle of similarity of figures (see Example 7, Q.15 of Exercise 6.3\nand also Chapters 8 and 9 of this book)."
+      ],
+      "formulas": [],
+      "theorems": [],
+      "properties": [],
+      "examples": []
+    },
+    {
+      "concept_id": "6_2",
+      "concept_name": "6.2 Similar Figures",
+      "definition_text": "6.2 Similar Figures\nIn Class IX, you have seen that all circles with the same radii are congruent, all\nsquares with the same side lengths are congruent and all equilateral triangles with the\nsame side lengths are congruent.\nNow consider any two (or more)\ncircles [see Fig. 6.1 (i)]. Are they\ncongruent? Since all of them do not\nhave the same radius, they are not\ncongruent to each other. Note that\nsome are congruent and some are not,\nbut all of them have the same shape.\nSo they all are, what we call, similar.\nTwo similar figures have the same\nshape but not necessarily the same\nsize. Therefore, all circles are similar.\nWhat about two (or more) squares or\ntwo (or more) equilateral triangles\n[see Fig. 6.1 (ii) and (iii)]? As observed\nin the case of circles, here also all\nsquares are similar and all equilateral\ntriangles are similar.\nFrom the above, we can say\nthat all congruent figures are\nsimilar but the similar figures need\nnot be congruent.\nCan a circle and a square be\nsimilar? Can a triangle and a square\nbe similar? These questions can be\nanswered by just looking at the\nfigures (see Fig. 6.1). Evidently\nthese figures are not similar. (Why?)\nFig. 6.1\nFig. 6.2\nReprint 2026-27",
+      "source_paragraphs": [
+        "6.2 Similar Figures\nIn Class IX, you have seen that all circles with the same radii are congruent, all\nsquares with the same side lengths are congruent and all equilateral triangles with the\nsame side lengths are congruent.\nNow consider any two (or more)\ncircles [see Fig. 6.1 (i)]. Are they\ncongruent? Since all of them do not\nhave the same radius, they are not\ncongruent to each other. Note that\nsome are congruent and some are not,\nbut all of them have the same shape.\nSo they all are, what we call, similar.\nTwo similar figures have the same\nshape but not necessarily the same\nsize. Therefore, all circles are similar.\nWhat about two (or more) squares or\ntwo (or more) equilateral triangles\n[see Fig. 6.1 (ii) and (iii)]? As observed\nin the case of circles, here also all\nsquares are similar and all equilateral\ntriangles are similar.\nFrom the above, we can say\nthat all congruent figures are\nsimilar but the similar figures need\nnot be congruent.\nCan a circle and a square be\nsimilar? Can a triangle and a square\nbe similar? These questions can be\nanswered by just looking at the\nfigures (see Fig. 6.1). Evidently\nthese figures are not similar. (Why?)\nFig. 6.1\nFig. 6.2\nReprint 2026-27",
+        "TRIANGLES\n75\nWhat can you say about the two quadrilaterals ABCD and PQRS\n(see Fig 6.2)?Are they similar? These  figures appear to be similar but we cannot be\ncertain about it.Therefore, we must have some definition of similarity of figures and\nbased on this definition some rules to decide whether the two given figures are similar\nor not. For this, let us look at the photographs given in Fig. 6.3:\nFig. 6.3\nYou will at once say that they are the photographs of the same monument\n(Taj Mahal) but are in different sizes. Would you say that the three photographs  are\nsimilar? Yes,they are.\nWhat can you say about the two photographs of the same size of the same\nperson one at the age of 10 years and the other at the age of 40 years? Are these\nphotographs similar? These photographs are of the same size but certainly they are\nnot of the same shape. So, they are not similar.\nWhat does the photographer do when she prints photographs of different sizes\nfrom the same negative? You must  have heard about the stamp size, passport size and\npostcard size photographs. She generally takes a photograph on a small size film, say\nof 35mm size and then enlarges it into a bigger size, say 45mm (or 55mm). Thus, if we\nconsider any line segment in the smaller photograph (figure), its corresponding line\nsegment in the bigger photograph (figure) will be 45\n35\n55\nor 35\n\n\n\n\n\n of that of the line segment.\nThis really means that every line segment of the smaller photograph is enlarged\n(increased) in the ratio 35:45 (or 35:55).  It can also be said that every line segment\nof the bigger photograph is reduced (decreased) in the ratio 45:35 (or 55:35). Further,\nif you consider inclinations (or angles) between any pair of corresponding line segments\nin the two photographs of different sizes, you shall see that these inclinations(or angles)\nare always equal. This is the essence of the similarity of two figures and in particular\nof two polygons. We say that:\nTwo polygons of the same number of sides are similar, if (i) their\ncorresponding angles are equal and (ii) their corresponding sides are in the\nsame ratio (or proportion).\nReprint 2026-27",
+        "76\nMATHEMATICS\nNote that the same ratio of the corresponding sides is referred to as the scale\nfactor (or the Representative Fraction) for the polygons. You must have heard that\nworld maps (i.e., global maps) and blue prints for the construction of a building are\nprepared using a suitable scale factor and observing certain conventions.\nIn order to understand similarity of figures more clearly, let us perform the following\nactivity:\nActivity 1 :  Place a lighted bulb at a\npoint O on the ceiling  and directly below\nit a table in your classroom. Let us cut a\npolygon, say a quadrilateral ABCD, from\na plane cardboard and place this\ncardboard parallel to the ground between\nthe lighted bulb  and the table. Then a\nshadow of ABCD is cast on the table.\nMark the outline of this shadow as\nABCD (see Fig.6.4).\nNote that the quadrilateral ABCD  is\nan enlargement (or magnification) of  the\nquadrilateral ABCD. This is because of\nthe property of light that light propogates\nin a straight line. You may also note that\nA lies on ray OA, B lies on ray OB, C\nlies on  OC and D lies on OD.  Thus, quadrilaterals ABCD  and ABCD are of the\nsame shape but of different sizes.\nSo, quadrilateral  ABCD  is similiar to quadrilateral ABCD. We can also say\nthat quadrilateral ABCD is similar to the quadrilateral ABCD.\nHere, you can also note that vertex A corresponds to vertex A, vertex B\ncorresponds to vertex B, vertex C corresponds to vertex C and vertex  D corresponds\nto vertex D. Symbolically, these correspondences are represented as A A, B B,\nC C and D D. By actually measuring the angles and the sides of the two\nquadrilaterals, you may verify that\n(i)  A =  A,  B =  B,  C =  C,  D =  D and\n(ii)  AB\nBC\nCD\nDA\nA B\nB C\nC D\nD A\n\n\n\n\n\n\n\n\n\n.\nThis again emphasises that two polygons of the same number of sides are\nsimilar, if (i) all the corresponding angles are equal and (ii) all the corresponding\nsides are in the same ratio (or proportion).\nFig. 6.4\nReprint 2026-27",
+        "TRIANGLES\n77\nFrom the above, you can easily say that quadrilaterals ABCD and PQRS of\nFig. 6.5 are similar.\nFig. 6.5\nRemark : You can verify that if one polygon is similar to another polygon and this\nsecond polygon is similar to a third polygon, then the first polygon is similar to the third\npolygon.\nYou may note that in the two quadrilaterals (a square and a rectangle) of\nFig. 6.6, corresponding angles are equal, but their corresponding sides are not in the\nsame ratio.\nFig. 6.6\nSo, the two quadrilaterals are not similar. Similarly, you may note that in the two\nquadrilaterals (a square and a rhombus) of Fig. 6.7, corresponding sides are in the\nsame ratio, but their corresponding angles are not equal. Again, the two polygons\n(quadrilaterals) are not similar.\nReprint 2026-27",
+        "78\nMATHEMATICS\nFig. 6.7\nThus, either of the above two conditions (i) and (ii) of similarity of two\npolygons is not sufficient for them to be similar.\nEXERCISE 6.1\n1. Fill in the blanks using the correct word given in brackets :\n(i) All circles are \n. (congruent, similar)\n(ii) All squares are \n. (similar, congruent)\n(iii) All \n triangles are similar. (isosceles, equilateral)\n(iv) Two polygons of the same number of sides are similar, if (a) their corresponding\nangles are \n and (b) their corresponding sides are \n.(equal,\nproportional)\n2. Give two different examples of pair of\n(i) similar figures.\n(ii) non-similar figures.\n3. State whether the following quadrilaterals are similar or not:\nFig. 6.8\nReprint 2026-27"
+      ],
+      "formulas": [],
+      "theorems": [],
+      "properties": [],
+      "examples": []
+    },
+    {
+      "concept_id": "6_3",
+      "concept_name": "6.3 Similarity of Triangles",
+      "definition_text": "6.3 Similarity of Triangles\nWhat can you say about the similarity of two triangles?\nYou may recall that triangle is also a polygon. So, we can state the same conditions\nfor the similarity of two triangles. That is:\nTwo triangles are similiar, if\n(i) their corresponding angles are equal and\n(ii) their corresponding sides are in the same ratio (or proportion).\nNote that if corresponding angles of two\ntriangles are equal, then they are known as\nequiangular triangles. A famous Greek\nmathematician Thales gave an important truth relating\nto two equiangular triangles which is as follows:\nThe ratio of any two corresponding sides in\ntwo equiangular triangles is always the same.\nIt is believed that he had used a result called\nthe Basic Proportionality Theorem (now known as\nthe Thales Theorem) for the same.\nTo understand the Basic Proportionality\nTheorem, let us perform the following activity:\nActivity 2 : Draw any angle XAY and on its one\narm AX, mark points (say five points) P, Q, D, R and\nB such that AP = PQ = QD = DR = RB.\nNow, through B, draw any line intersecting arm\nAY at C (see Fig. 6.9).\nAlso, through the point D, draw a line parallel\nto BC to intersect AC at E. Do you observe from\nyour constructions that AD\n3\nDB\n2\n\n? Measure AE and\nEC. What about AE\nEC ? Observe that AE\nEC  is also equal to 3\n2 . Thus, you can see that\nin  ABC, DE || BC and AD\nAE\nDB\nEC\n\n. Is it a coincidence? No, it is due to the following\ntheorem (known as the Basic Proportionality Theorem):\nThales\n(640 – 546 B.C.)\nFig. 6.9\nReprint 2026-27",
+      "source_paragraphs": [
+        "6.3 Similarity of Triangles\nWhat can you say about the similarity of two triangles?\nYou may recall that triangle is also a polygon. So, we can state the same conditions\nfor the similarity of two triangles. That is:\nTwo triangles are similiar, if\n(i) their corresponding angles are equal and\n(ii) their corresponding sides are in the same ratio (or proportion).\nNote that if corresponding angles of two\ntriangles are equal, then they are known as\nequiangular triangles. A famous Greek\nmathematician Thales gave an important truth relating\nto two equiangular triangles which is as follows:\nThe ratio of any two corresponding sides in\ntwo equiangular triangles is always the same.\nIt is believed that he had used a result called\nthe Basic Proportionality Theorem (now known as\nthe Thales Theorem) for the same.\nTo understand the Basic Proportionality\nTheorem, let us perform the following activity:\nActivity 2 : Draw any angle XAY and on its one\narm AX, mark points (say five points) P, Q, D, R and\nB such that AP = PQ = QD = DR = RB.\nNow, through B, draw any line intersecting arm\nAY at C (see Fig. 6.9).\nAlso, through the point D, draw a line parallel\nto BC to intersect AC at E. Do you observe from\nyour constructions that AD\n3\nDB\n2\n\n? Measure AE and\nEC. What about AE\nEC ? Observe that AE\nEC  is also equal to 3\n2 . Thus, you can see that\nin  ABC, DE || BC and AD\nAE\nDB\nEC\n\n. Is it a coincidence? No, it is due to the following\ntheorem (known as the Basic Proportionality Theorem):\nThales\n(640 – 546 B.C.)\nFig. 6.9\nReprint 2026-27",
+        "80\nMATHEMATICS\nTheorem 6.1 : If a line is drawn parallel to one side of a triangle to intersect the\nother two sides in distinct points, the other two sides are divided in the same\nratio.\nProof : We are given a triangle ABC in which a line\nparallel to side BC intersects other two sides AB and\nAC at D and E respectively (see Fig. 6.10).\nWe need to prove that AD\nAE\nDB\nEC\n\n.\nLet us join BE and CD and then draw DM  AC and\nEN  AB.\nNow, area of  ADE (= 1\n2  base  height) = 1\n2  AD  EN.\nRecall from Class IX, that area of  ADE is denoted as ar(ADE).\nSo,\nar(ADE) = 1\n2  AD  EN\nSimilarly,\nar(BDE) = 1\n2  DB  EN,\nar(ADE) = 1\n2  AE  DM and ar(DEC) = 1\n2  EC  DM.\nTherefore,\nar(ADE)\nar(BDE)  =\n1 AD  EN\nAD\n2\n1\nDB\nDB  EN\n2\n\n(1)\nand\nar(ADE)\nar(DEC)  =\n1 AE  DM\nAE\n2\n1\nEC\nEC  DM\n2\n\n(2)\nNote that  BDE and DEC are on the same base DE and between the same parallels\nBC and DE.\nSo,\nar(BDE) = ar(DEC)\n(3)\nFig. 6.10\nReprint 2026-27",
+        "TRIANGLES\n81\nTherefore, from (1), (2) and (3), we have :\nAD\nDB  = AE\nEC\nIs the converse of this theorem also true (For the meaning of converse, see\nAppendix 1)? To examine this, let us perform the following activity:\nActivity 3 :  Draw an angle XAY on your\nnotebook and on ray AX, mark points B1, B2,\nB3, B4 and B such that AB1 = B1B2 = B2B3 =\nB3B4 = B4B.\nSimilarly, on ray AY, mark points\nC1, C2, C3, C4 and C such that AC1 = C1C2 =\nC2C3 = C3C4 = C4C. Then join B1C1 and BC\n(see Fig. 6.11).\nNote that\n1\n1\nAB\nB B  =\n1\n1\nAC\nC C\n(Each equal to 1\n4 )\nYou can also see that lines B1C1 and BC are parallel to each other, i.e.,\nB1C1 || BC\n(1)\nSimilarly, by joining B2C2, B3C3 and B4C4, you can see that:\n2\n2\nAB\nB B  =\n2\n2\nAC\nC C  \n2\n3\n\n\n\n\n\n\nand B2C2 || BC\n(2)\n3\n3\nAB\nB B  =\n3\n3\nAC\nC C  \n3\n2\n\n\n\n\n\n\nand B3C3 || BC\n(3)\n4\n4\nAB\nB B  =\n4\n4\nAC\nC C  \n4\n1\n\n\n\n\n\n\nand B4C4 || BC\n(4)\nFrom (1), (2), (3) and (4), it can be observed that if a line divides two sides of a\ntriangle in the same ratio, then the line is parallel to the third side.\nYou can repeat this activity by drawing any angle XAY of different measure and\ntaking any  number of equal parts on arms AX and AY . Each time, you will arrive at\nthe same result. Thus, we obtain the following theorem, which is the converse of\nTheorem 6.1:\nFig. 6.11\nReprint 2026-27",
+        "82\nMATHEMATICS\nFig. 6.13\nTheorem 6.2 : If a line divides any two sides of a\ntriangle in the same ratio, then the line is parallel\nto the third side.\nThis theorem can be proved by taking a line DE such\nthat AD\nAE\nDB\nEC\n\n and assuming that DE is not parallel\nto BC (see Fig. 6.12).\nIf DE is not parallel to BC, draw a line DE\nparallel to BC.\nSo,\nAD\nDB  = AE\nE C\n\n\n(Why ?)\nTherefore,\nAE\nEC  = AE\nE C\n\n\n(Why ?)\nAdding 1 to both sides of above, you can see that E and E must coincide.\n(Why ?)\nLet us take some examples to illustrate the use of the above theorems.\nExample 1 : If a line intersects sides AB and AC of a  ABC at D and E respectively\nand is parallel to BC, prove that AD\nAB  = AE\nAC  (see Fig. 6.13).\nSolution :\nDE || BC\n(Given)\nSo,\nAD\nDB  = AE\nEC\n(Theorem 6.1)\nor,\nDB\nAD  = EC\nAE\nor,\nDB\n1\nAD  = EC\n1\nAE \nor,\nAB\nAD  = AC\nAE\nSo,\nAD\nAB  = AE\nAC\nFig. 6.12\nReprint 2026-27",
+        "TRIANGLES\n83\nExample 2 : ABCD is a trapezium with AB || DC. E\nand F are points on non-parallel sides AD and BC\nrespectively such that EF is parallel to AB\n(see Fig. 6.14). Show that AE\nBF\nED\nFC\n\n.\nSolution : Let us join AC to intersect EF at G\n(see Fig. 6.15).\nAB || DC and EF || AB\n(Given)\nSo,\nEF || DC\n(Lines parallel to the same line are\nparallel to each other)\nNow, in  ADC,\nEG || DC\n(As EF || DC)\nSo, AE\nED  = AG\nGC\n(Theorem 6.1)\n (1)\nSimilarly, from  CAB,\nCG\nAG  = CF\nBF\ni.e.,\nAG\nGC  = BF\nFC\n(2)\nTherefore, from (1) and (2),\nAE\nED  = BF\nFC\nExample 3 : In Fig. 6.16, \nPS\nSQ  = PT\nTR  and  PST =\n PRQ. Prove that PQR is an isosceles triangle.\nSolution : It is given that \nPS\nPT\nSQ\nTR\n\n\nSo,\nST || QR\n(Theorem 6.2)\nTherefore,\n PST =  PQR\n(Corresponding angles)\n(1)\nFig. 6.14\nFig. 6.15\nFig. 6.16\nReprint 2026-27"
+      ],
+      "formulas": [
+        "2  base  height) = 1",
+        "ar(ADE) = 1\n2  AD  EN",
+        "ar(BDE) = 1",
+        "ar(ADE) = 1",
+        "ar(ADE)\nar(BDE)  =\n1 AD  EN\nAD\n2\n1\nDB\nDB  EN\n2",
+        "(1)\nand\nar(ADE)\nar(DEC)  =\n1 AE  DM\nAE\n2\n1\nEC\nEC  DM\n2",
+        "ar(BDE) = ar(DEC)\n(3)",
+        "AD\nDB  = AE\nEC",
+        "Note that\n1\n1\nAB\nB B  =\n1\n1\nAC\nC C\n(Each equal to 1\n4 )",
+        "2\n2\nAB\nB B  =\n2\n2\nAC\nC C  \n2\n3",
+        "(2)\n3\n3\nAB\nB B  =\n3\n3\nAC\nC C  \n3\n2",
+        "(3)\n4\n4\nAB\nB B  =\n4\n4\nAC\nC C  \n4\n1",
+        "AD\nDB  = AE\nE C",
+        "AE\nEC  = AE\nE C",
+        "AB  = AE",
+        "DB\nAD  = EC\nAE",
+        "AB\nAD  = AC\nAE",
+        "AD\nAB  = AE\nAC",
+        "ED  = AG\nGC",
+        "CG\nAG  = CF\nBF",
+        "AG\nGC  = BF\nFC\n(2)",
+        "AE\nED  = BF\nFC",
+        "PS\nSQ  = PT",
+        "PQ = PR\n(Sides opposite the equal angles)"
+      ],
+      "theorems": [
+        "If a line is drawn parallel to one side of a triangle to intersect the other two sides in distinct points, the other two sides are divided in the same ratio.",
+        "Fig. 6.11 Reprint 2026-27 82 MATHEMATICS Fig. 6.13 Theorem 6.2 : If a line divides any two sides of a triangle in the same ratio, then the line is parallel to the third side. This theorem can be proved by taking a line DE such that AD AE DB EC  and assuming that DE is not parallel to BC (see Fig. 6.12). If DE is not parallel to BC, draw a line DE parallel to BC. So, AD DB = AE E C   (Why ?) Therefore, AE EC = AE E C   (Why ?) Adding 1 to both sides of above, you can see that E and E must coincide. (Why ?)"
+      ],
+      "properties": [],
+      "examples": [
+        {
+          "question": "If a line intersects sides AB and AC of a  ABC at D and E respectively and is parallel to BC, prove that AD AB = AE AC (see Fig. 6.13).",
+          "solution_text": "DE || BC\n(Given)\nSo,\nAD\nDB  = AE\nEC\n(Theorem 6.1)\nor,\nDB\nAD  = EC\nAE\nor,\nDB\n1\nAD  = EC\n1\nAE \nor,\nAB\nAD  = AC\nAE\nSo,\nAD\nAB  = AE\nAC\nFig. 6.12\nReprint 2026-27\n\nTRIANGLES\n83"
+        },
+        {
+          "question": "ABCD is a trapezium with AB || DC. E and F are points on non-parallel sides AD and BC respectively such that EF is parallel to AB (see Fig. 6.14). Show that AE BF ED FC  .",
+          "solution_text": "Let us join AC to intersect EF at G\n(see Fig. 6.15).\nAB || DC and EF || AB\n(Given)\nSo,\nEF || DC\n(Lines parallel to the same line are\nparallel to each other)\nNow, in  ADC,\nEG || DC\n(As EF || DC)\nSo, AE\nED  = AG\nGC\n(Theorem 6.1)\n (1)\nSimilarly, from  CAB,\nCG\nAG  = CF\nBF\ni.e.,\nAG\nGC  = BF\nFC\n(2)\nTherefore, from (1) and (2),\nAE\nED  = BF\nFC"
+        },
+        {
+          "question": "In Fig. 6.16, PS SQ = PT TR and  PST =  PRQ. Prove that PQR is an isosceles triangle.",
+          "solution_text": "It is given that \nPS\nPT\nSQ\nTR\n\n\nSo,\nST || QR\n(Theorem 6.2)\nTherefore,\n PST =  PQR\n(Corresponding angles)\n(1)\nFig. 6.14\nFig. 6.15\nFig. 6.16\nReprint 2026-27\n\n84\nMATHEMATICS\nAlso, it is given that\n PST =  PRQ\n(2)\nSo,\n PRQ =  PQR [From (1) and (2)]\nTherefore,\nPQ = PR\n(Sides opposite the equal angles)\ni.e.,\nPQR is an isosceles triangle."
+        }
+      ]
+    },
+    {
+      "concept_id": "6_4",
+      "concept_name": "6.4 Criteria for Similarity of Triangles",
+      "definition_text": "6.4 Criteria for Similarity of Triangles\nIn the previous section, we stated that two triangles are similar, if (i) their corresponding\nangles are equal and (ii) their corresponding sides are in the same ratio (or proportion).\nThat is, in  ABC and  DEF, if\n(i)  A =  D,  B =  E,  C =  F and\n(ii) AB\nBC\nCA ,\nDE\nEF\nFD\n\n\n then the two triangles are similar (see Fig. 6.22).\nFig. 6.22\nFig. 6.20\nFig. 6.21\nReprint 2026-27",
+      "source_paragraphs": [
+        "6.4 Criteria for Similarity of Triangles\nIn the previous section, we stated that two triangles are similar, if (i) their corresponding\nangles are equal and (ii) their corresponding sides are in the same ratio (or proportion).\nThat is, in  ABC and  DEF, if\n(i)  A =  D,  B =  E,  C =  F and\n(ii) AB\nBC\nCA ,\nDE\nEF\nFD\n\n\n then the two triangles are similar (see Fig. 6.22).\nFig. 6.22\nFig. 6.20\nFig. 6.21\nReprint 2026-27",
+        "86\nMATHEMATICS\nHere, you can see that A corresponds to D, B corresponds to E and C\ncorresponds to F. Symbolically, we write the similarity of these two triangles as\n‘ ABC ~  DEF’ and read it as ‘triangle ABC is similar to triangle DEF’. The\nsymbol ‘~’ stands for ‘is similar to’. Recall that you have used the symbol ‘’ for\n‘is congruent to’ in Class IX.\nIt must be noted that as done in the case of congruency of two triangles, the\nsimilarity of two triangles should also be expressed symbolically, using correct\ncorrespondence of their vertices. For example, for the triangles ABC and DEF of\nFig. 6.22, we cannot write  ABC ~  EDF or  ABC ~  FED. However, we\ncan write  BAC ~  EDF.\nNow a natural question arises : For checking the similarity of two triangles, say\nABC and DEF, should we always look for all the equality relations of their corresponding\nangles ( A =  D,  B =  E,  C =  F) and all the equality relations of the ratios\nof their corresponding sides \nAB\nBC\nCA\nDE\nEF\nFD\n\n\n\n\n\n\n\n? Let us examine. You may recall that\nin Class IX, you have obtained some criteria for congruency of two triangles involving\nonly three pairs of corresponding parts (or elements) of the two triangles. Here also,\nlet us make an attempt to arrive at certain criteria for similarity of two triangles involving\nrelationship between less number of pairs of corresponding parts of the two triangles,\ninstead of all the six pairs of corresponding parts. For this, let us perform the following\nactivity:\nActivity 4 : Draw two line segments BC and EF of two different lengths, say 3 cm\nand 5 cm respectively. Then, at the points B and C respectively, construct angles PBC\nand QCB of some measures, say, 60 and 40. Also, at the points E and F, construct\nangles REF and SFE of 60 and 40 respectively (see Fig. 6.23).\nFig. 6.23\nReprint 2026-27",
+        "TRIANGLES\n87\nLet rays BP and CQ intersect each other at A and rays ER and FS intersect each\nother at D. In the two triangles ABC and DEF, you can see that\n B =  E,  C =  F and  A =  D. That is, corresponding angles of these two\ntriangles are equal. What can you say about their corresponding sides ? Note that\nBC\n3\n0.6.\nEF\n5\n\n\n What about AB\nDE  and CA\nFD ? On measuring AB, DE, CA and FD, you\nwill find that AB\nDE  and CA\nFD  are also equal to 0.6 (or nearly equal to 0.6, if there is some\nerror in the measurement). Thus, AB\nBC\nCA\nDE\nEF\nFD\n\n\n You can repeat this activity by\nconstructing several pairs of triangles having their corresponding angles equal. Every\ntime, you will find that their corresponding sides are in the same ratio (or proportion).\nThis activity leads us to the following criterion for similarity of two triangles.\nTheorem 6.3 : If in two triangles, corresponding angles are equal, then their\ncorresponding sides are in the same ratio (or proportion) and hence the two\ntriangles are similar.\nThis criterion is referred to as the AAA\n(Angle–Angle–Angle) criterion of\nsimilarity of two triangles.\nThis theorem can be proved by taking two\ntriangles ABC and DEF such that\n A =  D,  B =  E and  C =  F\n(see Fig. 6.24)\nCut DP = AB and DQ = AC and join PQ.\nSo,\n ABC  DPQ\n(Why ?)\nThis gives\n B =  P =  E and PQ || EF\n(How?)\nTherefore,\nDP\nPE  =\nDQ\nQF\n(Why?)\ni.e.,\nAB\nDE  =\nAC\nDF\n(Why?)\nSimilarly,\nAB\nDE  = BC\nEF\nand so AB\nBC\nAC\nDE\nEF\nDF\n\n\n.\nRemark : If two angles of a triangle are respectively equal to two angles of another\ntriangle, then by the angle sum property of a triangle their third angles will also be\nequal. Therefore, AAA similarity criterion can also be stated as follows:\nFig. 6.24\nReprint 2026-27",
+        "88\nMATHEMATICS\nIf two angles of one triangle are respectively equal to two angles of another\ntriangle, then the two triangles are similar.\nThis may be referred to as the AA similarity criterion for two triangles.\nYou have seen above that if the three angles of one triangle are respectively\nequal to the three angles of another triangle, then their corresponding sides are\nproportional (i.e., in the same ratio). What about the converse of this statement? Is the\nconverse true? In other words, if the sides of a triangle are respectively proportional to\nthe sides of another triangle, is it true that their corresponding angles are equal? Let us\nexamine it through an activity :\nActivity 5 : Draw two triangles ABC and DEF such that AB = 3 cm, BC = 6 cm,\nCA = 8 cm, DE = 4.5 cm, EF = 9 cm and FD = 12 cm (see Fig. 6.25).\nFig. 6.25\nSo, you have : \nAB\nBC\nCA\nDE\nEF\nFD\n\n\n(each equal to 2\n3 )\nNow measure  A,  B,  C,  D,  E and  F. You will observe that\n A =  D,  B =  E and  C =  F, i.e., the corresponding angles of the two\ntriangles are equal.\nYou can repeat this activity by drawing several such triangles (having their sides\nin the same ratio). Everytime  you shall see that their corresponding angles are equal.\nIt is due to the following criterion of similarity of two triangles:\nTheorem 6.4 : If in two triangles, sides of one triangle are proportional to\n(i.e., in the same ratio of ) the sides of the other triangle, then their corresponding\nangles are equal and hence the two triangles are similiar.\nThis criterion is referred to as the SSS (Side–Side–Side) similarity criterion for\ntwo triangles.\nThis theorem can be proved by taking two triangles ABC and DEF such that\nAB\nBC\nCA\nDE\nEF\nFD\n\n\n (< 1) (see Fig. 6.26):\nReprint 2026-27",
+        "TRIANGLES\n89\nFig. 6.26\nCut DP = AB and DQ = AC and join PQ.\nIt can be seen that\nDP\nPE  = \nDQ\nQF\nand PQ || EF\n(How?)\nSo,\n P = E\nand\n Q =  F.\nTherefore,\nDP\nDE  = DQ\nDF  = PQ\nEF\nSo,\nDP\nDE  = DQ\nDF  = BC\nEF\n(Why?)\nSo,\nBC = PQ\n(Why?)\nThus,\n ABC  DPQ\n(Why ?)\nSo,\n A =  D,  B =  E\nand\n C =  F\n(How ?)\nRemark : You may recall that either of the two conditions namely, (i) corresponding\nangles are equal and (ii) corresponding sides are in the same ratio is not sufficient for\ntwo polygons to be similar. However, on the basis of Theorems 6.3 and 6.4, you can\nnow say that in case of similarity of the two triangles, it is not necessary to check both\nthe conditions as one condition implies the other.\nLet us now recall the various criteria for congruency of two triangles learnt in\nClass IX. You may observe that SSS similarity criterion can be compared with the SSS\ncongruency criterion.This suggests us to look for a similarity criterion comparable to\nSAS congruency criterion of triangles. For this, let us perform an activity.\nActivity 6 : Draw two triangles ABC and DEF such that AB = 2 cm,  A = 50,\nAC = 4 cm, DE = 3 cm,  D = 50 and DF = 6 cm (see Fig.6.27).\nReprint 2026-27"
+      ],
+      "formulas": [
+        "DP\nPE  =\nDQ\nQF",
+        "AB\nDE  =\nAC\nDF",
+        "AB\nDE  = BC\nEF\nand so AB\nBC\nAC\nDE\nEF\nDF",
+        "It can be seen that\nDP\nPE  = \nDQ\nQF",
+        "DP\nDE  = DQ",
+        "BC = PQ",
+        "DE  = AC\nDF  (each equal to 2",
+        "OA\nOC  = OD\nOB\n(1)",
+        "BE\nDE  = AB\nCD",
+        "(90 cm = 90",
+        "AB\nPQ  =\nBC\nCA\nQR\nRP",
+        "2AM\n2PN  = CA\nRP\nReprint 2026-27\n\n94\nMATHEMATICS",
+        "AM\nPN  = CA\nRP\n(3)",
+        "CM\nRN  = CA\nRP\n(6)\nBut\nCA",
+        "CM\nRN  =\nAB\nPQ",
+        "AB\nPQ  =\nBC\nQR",
+        "CM\nRN  = BC\nQR",
+        "CM\nRN  = AB\n2 BM\nPQ\n2 QN",
+        "CM\nRN  =\nBM\nQN\n(10)",
+        "CM\nRN  =\nBC\nBM\nQR\nQN"
+      ],
+      "theorems": [
+        "If in two triangles, corresponding angles are equal, then their corresponding sides are in the same ratio (or proportion) and hence the two triangles are similar. This criterion is referred to as the AAA (Angle–Angle–Angle) criterion of similarity of two triangles. This theorem can be proved by taking two triangles ABC and DEF such that  A =  D,  B =  E and  C =  F (see Fig. 6.24) Cut DP = AB and DQ = AC and join PQ. So,  ABC  DPQ (Why ?) This gives  B =  P =  E and PQ || EF (How?) Therefore, DP PE = DQ QF (Why?) i.e., AB DE = AC DF (Why?) Similarly, AB DE = BC EF and so AB BC AC DE EF DF   .",
+        "If in two triangles, sides of one triangle are proportional to (i.e., in the same ratio of ) the sides of the other triangle, then their corresponding angles are equal and hence the two triangles are similiar. This criterion is referred to as the SSS (Side–Side–Side) similarity criterion for two triangles. This theorem can be proved by taking two triangles ABC and DEF such that AB BC CA DE EF FD   (< 1) (see Fig. 6.26): Reprint 2026-27 TRIANGLES 89 Fig. 6.26 Cut DP = AB and DQ = AC and join PQ. It can be seen that DP PE = DQ QF and PQ || EF (How?) So,  P = E and  Q =  F. Therefore, DP DE = DQ DF = PQ EF So, DP DE = DQ DF = BC EF (Why?) So, BC = PQ (Why?) Thus,  ABC  DPQ (Why ?) So,  A =  D,  B =  E and  C =  F (How ?)",
+        "If one angle of a triangle is equal to one angle of the other triangle and the sides including these angles are proportional, then the two triangles are similar. This criterion is referred to as the SAS (Side–Angle–Side) similarity criterion for two triangles. As before, this theorem can be proved by taking two triangles ABC and DEF such that AB AC DE DF  ( 1) and  A =  D (see Fig. 6.28). Cut DP = AB, DQ = AC and join PQ. Fig. 6.28 Reprint 2026-27 TRIANGLES 91 Now, PQ || EF and  ABC  DPQ (How ?) So,  A =  D,  B =  P and  C =  Q Therefore,  ABC ~  DEF (Why?)"
+      ],
+      "properties": [],
+      "examples": [
+        {
+          "question": "In Fig. 6.29, if PQ || RS, prove that  POQ ~  SOR. Fig. 6.29",
+          "solution_text": "PQ || RS\n(Given)\nSo,\n P =  S\n(Alternate angles)\nand\n Q =  R\nAlso,\n POQ =  SOR\n(Vertically opposite angles)\nTherefore,\n POQ ~  SOR\n(AAA similarity criterion)"
+        },
+        {
+          "question": "Observe Fig. 6.30 and then find  P. Fig. 6.30",
+          "solution_text": "In  ABC and  PQR,\nReprint 2026-27\n\n92\nMATHEMATICS\nAB\n3.8\n1 ,\nRQ\n7.6\n2\n\n\nBC\n6\n1\nQP\n12\n2\n\n\n and \nCA\n3 3\n1\nPR\n2\n6 3\n\n\nThat is,\nAB\nBC\nCA\nRQ\nQP\nPR\n\n\nSo,\n ABC ~  RQP\n(SSS similarity)\nTherefore,\n C =  P\n(Corresponding angles of similar triangles)\nBut\n C = 180 –  A –  B\n(Angle sum property)\n= 180 – 80 – 60 = 40\nSo,\n P = 40"
+        },
+        {
+          "question": "In Fig. 6.31, OA . OB = OC . OD. Show that  A =  C and  B =  D.",
+          "solution_text": "OA . OB = OC . OD\n(Given)\nSo,\nOA\nOC  = OD\nOB\n(1)\nAlso, we have\n AOD =  COB\n(Vertically opposite angles) (2)\nTherefore, from (1) and (2),\n AOD ~  COB     (SAS similarity criterion)\nSo,\n A =  C and  D =  B\n(Corresponding angles of similar triangles)"
+        },
+        {
+          "question": "A girl of height 90 cm is walking away from the base of a lamp-post at a speed of 1.2 m/s. If the lamp is 3.6 m above the ground, find the length of her shadow after 4 seconds.",
+          "solution_text": "Let AB denote the lamp-post\nand CD the girl after walking for 4 seconds\naway from the lamp-post (see Fig. 6.32).\nFrom the figure, you can see that DE is the\nshadow of the girl. Let DE be x metres.\nFig. 6.31\nFig. 6.32\nReprint 2026-27\n\nTRIANGLES\n93\nFig. 6.33\nNow, BD = 1.2 m  4 = 4.8 m.\nNote that in  ABE and  CDE,\n B =  D\n(Each is of 90 because lamp-post\nas well as the girl are standing\nvertical to the ground)\nand\n E =  E\n(Same angle)\nSo,\n ABE ~  CDE\n(AA similarity criterion)\nTherefore,\nBE\nDE  = AB\nCD\ni.e.,\n4.8 + x\nx\n = 3.6\n0.9\n(90 cm = 90\n100  m = 0.9 m)\ni.e.,\n4.8 + x = 4x\ni.e.,\n3x = 4.8\ni.e.,\nx = 1.6\nSo, the shadow of the girl after walking for 4 seconds is 1.6 m long."
+        },
+        {
+          "question": "In Fig. 6.33, CM and RN are respectively the medians of  ABC and  PQR. If  ABC ~  PQR, prove that : (i)  AMC ~  PNR (ii) CM AB RN PQ  (iii)  CMB ~  RNQ",
+          "solution_text": "(i)\n ABC ~  PQR\n(Given)\nSo,\nAB\nPQ  =\nBC\nCA\nQR\nRP\n\n(1)\nand\n A =  P,  B =  Q and  C =  R\n(2)\nBut\nAB = 2 AM and PQ = 2 PN\n(As CM and RN are medians)\nSo, from (1),\n2AM\n2PN  = CA\nRP\nReprint 2026-27\n\n94\nMATHEMATICS\ni.e.,\nAM\nPN  = CA\nRP\n(3)\nAlso,\n MAC =  NPR\n[From (2)]\n(4)\nSo, from (3) and (4),\n AMC ~  PNR\n(SAS similarity)\n(5)\n(ii) From (5),\nCM\nRN  = CA\nRP\n(6)\nBut\nCA\nRP  =\nAB\nPQ\n[From (1)]\n(7)\nTherefore,\nCM\nRN  =\nAB\nPQ\n[From (6) and (7)]\n(8)\n(iii) Again,\nAB\nPQ  =\nBC\nQR\n[From (1)]\nTherefore,\nCM\nRN  = BC\nQR\n[From (8)]\n(9)\nAlso,\nCM\nRN  = AB\n2 BM\nPQ\n2 QN\n\ni.e.,\nCM\nRN  =\nBM\nQN\n(10)\ni.e.,\nCM\nRN  =\nBC\nBM\nQR\nQN\n\n[From (9) and (10)]\nTherefore,\n CMB ~  RNQ\n(SSS similarity)\n[Note : You can also prove part (iii) by following the same method as used for proving\npart (i).]"
+        }
+      ]
+    },
+    {
+      "concept_id": "6_5",
+      "concept_name": "6.5 Summary",
+      "definition_text": "6.5 Summary\nIn this chapter you have studied the following points :\n1. Two figures having the same shape but not necessarily the same size are called similar\nfigures.\n2. All the congruent figures are similar but the converse is not true.\n3. Two polygons of the same number of sides are similar, if (i) their corresponding angles\nare equal and (ii) their corresponding sides are in the same ratio (i.e., proportion).\n4. If a line is drawn parallel to one side of a triangle to intersect the other two sides in\ndistinct points, then the other two sides are divided in the same ratio.\n5. If a line divides any two sides of a triangle in the same ratio, then the line is parallel to the\nthird side.\n6. If in two triangles, corresponding angles are equal, then their corresponding sides are in\nthe same ratio and hence the two triangles are similar (AAA similarity criterion).\n7. If in two triangles, two angles of one triangle are respectively equal to the two angles of\nthe other triangle, then the two triangles are similar (AA similarity criterion).\nFig. 6.40\nFig. 6.41\nReprint 2026-27",
+      "source_paragraphs": [
+        "6.5 Summary\nIn this chapter you have studied the following points :\n1. Two figures having the same shape but not necessarily the same size are called similar\nfigures.\n2. All the congruent figures are similar but the converse is not true.\n3. Two polygons of the same number of sides are similar, if (i) their corresponding angles\nare equal and (ii) their corresponding sides are in the same ratio (i.e., proportion).\n4. If a line is drawn parallel to one side of a triangle to intersect the other two sides in\ndistinct points, then the other two sides are divided in the same ratio.\n5. If a line divides any two sides of a triangle in the same ratio, then the line is parallel to the\nthird side.\n6. If in two triangles, corresponding angles are equal, then their corresponding sides are in\nthe same ratio and hence the two triangles are similar (AAA similarity criterion).\n7. If in two triangles, two angles of one triangle are respectively equal to the two angles of\nthe other triangle, then the two triangles are similar (AA similarity criterion).\nFig. 6.40\nFig. 6.41\nReprint 2026-27",
+        "98\nMATHEMATICS\n8. If in two triangles, corresponding sides are in the same ratio, then their corresponding\nangles are equal and hence the triangles are similar (SSS similarity criterion).\n9. If one angle of a triangle is equal to one angle of another triangle and the sides including\nthese angles are in the same ratio (proportional), then the triangles are similar\n(SAS similarity criterion).\nA NOTE TO THE READER\nIf in two right triangles, hypotenuse and one side of one triangle are\nproportional to the hypotenuse and one side of the other triangle,\nthen the two triangles are similar. This may be referred to as the\nRHS Similarity Criterion.\nIf you use this criterion in Example 2, Chapter 8, the proof will become\nsimpler.\nReprint 2026-27"
+      ],
+      "formulas": [],
+      "theorems": [],
+      "properties": [],
+      "examples": []
+    }
+  ],
+  "exercise_questions": [
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "6",
+      "question_text": "2 Similar Figures In Class IX, you have seen that all circles with the same radii are congruent, all squares with the same side lengths are congruent and all equilateral triangles with the same side lengths are congruent. Now consider any two (or more) circles [see Fig. 6.1 (i)]. Are they congruent? Since all of them do not have the same radius, they are not congruent to each other. Note that some are congruent and some are not, but all of them have the same shape. So they all are, what we call, similar. Two similar figures have the same shape but not necessarily the same size. Therefore, all circles are similar. What about two (or more) squares or two (or more) equilateral triangles [see Fig. 6.1 (ii) and (iii)]? As observed in the case of circles, here also all squares are similar and all equilateral triangles are similar. From the above, we can say that all congruent figures are similar but the similar figures need not be congruent. Can a circle and a square be similar? Can a triangle and a square be similar? These questions can be answered by just looking at the figures (see Fig. 6.1). Evidently these figures are not similar. (Why?) Fig. 6.1 Fig. 6.2 Reprint 2026-27 TRIANGLES 75 What can you say about the two quadrilaterals ABCD and PQRS (see Fig 6.2)?Are they similar? These figures appear to be similar but we cannot be certain about it.Therefore, we must have some definition of similarity of figures and based on this definition some rules to decide whether the two given figures are similar or not. For this, let us look at the photographs given in Fig. 6.3: Fig. 6.3 You will at once say that they are the photographs of the same monument (Taj Mahal) but are in different sizes. Would you say that the three photographs are similar? Yes,they are. What can you say about the two photographs of the same size of the same person one at the age of 10 years and the other at the age of 40 years? Are these photographs similar? These photographs are of the same size but certainly they are not of the same shape. So, they are not similar. What does the photographer do when she prints photographs of different sizes from the same negative? You must have heard about the stamp size, passport size and postcard size photographs. She generally takes a photograph on a small size film, say of 35mm size and then enlarges it into a bigger size, say 45mm (or 55mm). Thus, if we consider any line segment in the smaller photograph (figure), its corresponding line segment in the bigger photograph (figure) will be 45 35 55 or 35       of that of the line segment. This really means that every line segment of the smaller photograph is enlarged (increased) in the ratio 35:45 (or 35:55). It can also be said that every line segment of the bigger photograph is reduced (decreased) in the ratio 45:35 (or 55:35). Further, if you consider inclinations (or angles) between any pair of corresponding line segments in the two photographs of different sizes, you shall see that these inclinations(or angles) are always equal. This is the essence of the similarity of two figures and in particular of two polygons. We say that: Two polygons of the same number of sides are similar, if (i) their corresponding angles are equal and (ii) their corresponding sides are in the same ratio (or proportion). Reprint 2026-27 76 MATHEMATICS Note that the same ratio of the corresponding sides is referred to as the scale factor (or the Representative Fraction) for the polygons. You must have heard that world maps (i.e., global maps) and blue prints for the construction of a building are prepared using a suitable scale factor and observing certain conventions. In order to understand similarity of figures more clearly, let us perform the following activity: Activity 1 : Place a lighted bulb at a point O on the ceiling and directly below it a table in your classroom. Let us cut a polygon, say a quadrilateral ABCD, from a plane cardboard and place this cardboard parallel to the ground between the lighted bulb and the table. Then a shadow of ABCD is cast on the table. Mark the outline of this shadow as ABCD (see Fig.6.4). Note that the quadrilateral ABCD is an enlargement (or magnification) of the quadrilateral ABCD. This is because of the property of light that light propogates in a straight line. You may also note that A lies on ray OA, B lies on ray OB, C lies on OC and D lies on OD. Thus, quadrilaterals ABCD and ABCD are of the same shape but of different sizes. So, quadrilateral ABCD is similiar to quadrilateral ABCD. We can also say that quadrilateral ABCD is similar to the quadrilateral ABCD. Here, you can also note that vertex A corresponds to vertex A, vertex B corresponds to vertex B, vertex C corresponds to vertex C and vertex D corresponds to vertex D. Symbolically, these correspondences are represented as A A, B B, C C and D D. By actually measuring the angles and the sides of the two quadrilaterals, you may verify that (i)  A =  A,  B =  B,  C =  C,  D =  D and (ii) AB BC CD DA A B B C C D D A          . This again emphasises that two polygons of the same number of sides are similar, if (i) all the corresponding angles are equal and (ii) all the corresponding sides are in the same ratio (or proportion). Fig. 6.4 Reprint 2026-27 TRIANGLES 77 From the above, you can easily say that quadrilaterals ABCD and PQRS of Fig. 6.5 are similar. Fig. 6.5 Remark : You can verify that if one polygon is similar to another polygon and this second polygon is similar to a third polygon, then the first polygon is similar to the third polygon. You may note that in the two quadrilaterals (a square and a rectangle) of Fig. 6.6, corresponding angles are equal, but their corresponding sides are not in the same ratio. Fig. 6.6 So, the two quadrilaterals are not similar. Similarly, you may note that in the two quadrilaterals (a square and a rhombus) of Fig. 6.7, corresponding sides are in the same ratio, but their corresponding angles are not equal. Again, the two polygons (quadrilaterals) are not similar. Reprint 2026-27 78 MATHEMATICS Fig. 6.7 Thus, either of the above two conditions (i) and (ii) of similarity of two polygons is not sufficient for them to be similar."
+    },
+    {
+      "exercise_id": "Ex_6.1",
+      "question_number": "1",
+      "question_text": "Fill in the blanks using the correct word given in brackets : (i) All circles are . (congruent, similar) (ii) All squares are . (similar, congruent) (iii) All triangles are similar. (isosceles, equilateral) (iv) Two polygons of the same number of sides are similar, if (a) their corresponding angles are and (b) their corresponding sides are .(equal, proportional)"
+    },
+    {
+      "exercise_id": "Ex_6.1",
+      "question_number": "2",
+      "question_text": "Give two different examples of pair of (i) similar figures. (ii) non-similar figures."
+    },
+    {
+      "exercise_id": "Ex_6.1",
+      "question_number": "3",
+      "question_text": "State whether the following quadrilaterals are similar or not: Fig. 6.8 Reprint 2026-27 TRIANGLES 79"
+    },
+    {
+      "exercise_id": "Ex_6.1",
+      "question_number": "6",
+      "question_text": "3 Similarity of Triangles What can you say about the similarity of two triangles? You may recall that triangle is also a polygon. So, we can state the same conditions for the similarity of two triangles. That is: Two triangles are similiar, if (i) their corresponding angles are equal and (ii) their corresponding sides are in the same ratio (or proportion). Note that if corresponding angles of two triangles are equal, then they are known as equiangular triangles. A famous Greek mathematician Thales gave an important truth relating to two equiangular triangles which is as follows: The ratio of any two corresponding sides in two equiangular triangles is always the same. It is believed that he had used a result called the Basic Proportionality Theorem (now known as the Thales Theorem) for the same. To understand the Basic Proportionality"
+    },
+    {
+      "exercise_id": "Ex_6.2",
+      "question_number": "1",
+      "question_text": "In Fig. 6.17, (i) and (ii), DE || BC. Find EC in (i) and AD in (ii). Fig. 6.17"
+    },
+    {
+      "exercise_id": "Ex_6.2",
+      "question_number": "2",
+      "question_text": "E and F are points on the sides PQ and PR respectively of a  PQR. For each of the following cases, state whether EF || QR : (i) PE = 3.9 cm, EQ = 3 cm, PF = 3.6 cm and FR = 2.4 cm (ii) PE = 4 cm, QE = 4.5 cm, PF = 8 cm and RF = 9 cm (iii) PQ = 1.28 cm, PR = 2.56 cm, PE = 0.18 cm and PF = 0.36 cm"
+    },
+    {
+      "exercise_id": "Ex_6.2",
+      "question_number": "3",
+      "question_text": "In Fig. 6.18, if LM || CB and LN || CD, prove that AM AN AB AD  "
+    },
+    {
+      "exercise_id": "Ex_6.2",
+      "question_number": "4",
+      "question_text": "In Fig. 6.19, DE || AC and DF || AE. Prove that BF BE FE EC   Fig. 6.18 Fig. 6.19 Reprint 2026-27 TRIANGLES 85"
+    },
+    {
+      "exercise_id": "Ex_6.2",
+      "question_number": "5",
+      "question_text": "In Fig. 6.20, DE || OQ and DF || OR. Show that EF || QR."
+    },
+    {
+      "exercise_id": "Ex_6.2",
+      "question_number": "6",
+      "question_text": "In Fig. 6.21, A, B and C are points on OP, OQ and OR respectively such that AB || PQ and AC || PR. Show that BC || QR."
+    },
+    {
+      "exercise_id": "Ex_6.2",
+      "question_number": "7",
+      "question_text": "Using Theorem 6.1, prove that a line drawn through the mid-point of one side of a triangle parallel to another side bisects the third side. (Recall that you have proved it in Class IX)."
+    },
+    {
+      "exercise_id": "Ex_6.2",
+      "question_number": "8",
+      "question_text": "Using Theorem 6.2, prove that the line joining the mid-points of any two sides of a triangle is parallel to the third side. (Recall that you have done it in Class IX)."
+    },
+    {
+      "exercise_id": "Ex_6.2",
+      "question_number": "9",
+      "question_text": "ABCD is a trapezium in which AB || DC and its diagonals intersect each other at the point O. Show that AO CO BO DO  "
+    },
+    {
+      "exercise_id": "Ex_6.2",
+      "question_number": "10",
+      "question_text": "The diagonals of a quadrilateral ABCD intersect each other at the point O such that AO CO BO DO   Show that ABCD is a trapezium."
+    },
+    {
+      "exercise_id": "Ex_6.2",
+      "question_number": "6",
+      "question_text": "4 Criteria for Similarity of Triangles In the previous section, we stated that two triangles are similar, if (i) their corresponding angles are equal and (ii) their corresponding sides are in the same ratio (or proportion). That is, in  ABC and  DEF, if (i)  A =  D,  B =  E,  C =  F and (ii) AB BC CA , DE EF FD   then the two triangles are similar (see Fig. 6.22). Fig. 6.22 Fig. 6.20 Fig. 6.21 Reprint 2026-27 86 MATHEMATICS Here, you can see that A corresponds to D, B corresponds to E and C corresponds to F. Symbolically, we write the similarity of these two triangles as ‘ ABC ~  DEF’ and read it as ‘triangle ABC is similar to triangle DEF’. The symbol ‘~’ stands for ‘is similar to’. Recall that you have used the symbol ‘’ for ‘is congruent to’ in Class IX. It must be noted that as done in the case of congruency of two triangles, the similarity of two triangles should also be expressed symbolically, using correct correspondence of their vertices. For example, for the triangles ABC and DEF of Fig. 6.22, we cannot write  ABC ~  EDF or  ABC ~  FED. However, we can write  BAC ~  EDF. Now a natural question arises : For checking the similarity of two triangles, say ABC and DEF, should we always look for all the equality relations of their corresponding angles ( A =  D,  B =  E,  C =  F) and all the equality relations of the ratios of their corresponding sides AB BC CA DE EF FD        ? Let us examine. You may recall that in Class IX, you have obtained some criteria for congruency of two triangles involving only three pairs of corresponding parts (or elements) of the two triangles. Here also, let us make an attempt to arrive at certain criteria for similarity of two triangles involving relationship between less number of pairs of corresponding parts of the two triangles, instead of all the six pairs of corresponding parts. For this, let us perform the following activity: Activity 4 : Draw two line segments BC and EF of two different lengths, say 3 cm and 5 cm respectively. Then, at the points B and C respectively, construct angles PBC and QCB of some measures, say, 60 and 40. Also, at the points E and F, construct angles REF and SFE of 60 and 40 respectively (see Fig. 6.23). Fig. 6.23 Reprint 2026-27 TRIANGLES 87 Let rays BP and CQ intersect each other at A and rays ER and FS intersect each other at D. In the two triangles ABC and DEF, you can see that  B =  E,  C =  F and  A =  D. That is, corresponding angles of these two triangles are equal. What can you say about their corresponding sides ? Note that BC 3"
+    },
+    {
+      "exercise_id": "Ex_6.2",
+      "question_number": "0",
+      "question_text": "6. EF 5   What about AB DE and CA FD ? On measuring AB, DE, CA and FD, you will find that AB DE and CA FD are also equal to 0.6 (or nearly equal to 0.6, if there is some error in the measurement). Thus, AB BC CA DE EF FD    You can repeat this activity by constructing several pairs of triangles having their corresponding angles equal. Every time, you will find that their corresponding sides are in the same ratio (or proportion). This activity leads us to the following criterion for similarity of two triangles."
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "1",
+      "question_text": "State which pairs of triangles in Fig. 6.34 are similar. Write the similarity criterion used by you for answering the question and also write the pairs of similar triangles in the symbolic form : Reprint 2026-27 TRIANGLES 95 Fig. 6.34"
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "2",
+      "question_text": "In Fig. 6.35,  ODC ~  OBA,  BOC = 125 and  CDO = 70. Find  DOC,  DCO and  OAB."
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "3",
+      "question_text": "Diagonals AC and BD of a trapezium ABCD with AB || DC intersect each other at the point O. Using a similarity criterion for two triangles, show that OA OB OC OD   Fig. 6.35 Reprint 2026-27 96 MATHEMATICS"
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "4",
+      "question_text": "In Fig. 6.36, QR QT QS PR  and  1 =  2. Show that  PQS ~  TQR."
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "5",
+      "question_text": "S and T are points on sides PR and QR of  PQR such that  P =  RTS. Show that  RPQ ~  RTS."
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "6",
+      "question_text": "In Fig. 6.37, if  ABE  ACD, show that  ADE ~  ABC."
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "7",
+      "question_text": "In Fig. 6.38, altitudes AD and CE of  ABC intersect each other at the point P. Show that: (i)  AEP ~  CDP (ii)  ABD ~  CBE (iii)  AEP ~  ADB (iv)  PDC ~  BEC"
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "8",
+      "question_text": "E is a point on the side AD produced of a parallelogram ABCD and BE intersects CD at F. Show that  ABE ~  CFB."
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "9",
+      "question_text": "In Fig. 6.39, ABC and AMP are two right triangles, right angled at B and M respectively. Prove that: (i)  ABC ~  AMP (ii) CA BC PA MP "
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "10",
+      "question_text": "CD and GH are respectively the bisectors of  ACB and  EGF such that D and H lie on sides AB and FE of  ABC and  EFG respectively. If  ABC ~  FEG, show that: (i) CD AC GH FG  (ii)  DCB ~  HGE (iii)  DCA ~  HGF Fig. 6.36 Fig. 6.37 Fig. 6.38 Fig. 6.39 Reprint 2026-27 TRIANGLES 97"
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "11",
+      "question_text": "In Fig. 6.40, E is a point on side CB produced of an isosceles triangle ABC with AB = AC. If AD  BC and EF  AC, prove that  ABD ~  ECF."
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "12",
+      "question_text": "Sides AB and BC and median AD of a triangle ABC are respectively propor- tional to sides PQ and QR and median PM of  PQR (see Fig. 6.41). Show that  ABC ~  PQR."
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "13",
+      "question_text": "D is a point on the side BC of a triangle ABC such that  ADC =  BAC. Show that CA2 = CB.CD."
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "14",
+      "question_text": "Sides AB and AC and median AD of a triangle ABC are respectively proportional to sides PQ and PR and median PM of another triangle PQR. Show that  ABC ~  PQR."
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "15",
+      "question_text": "A vertical pole of length 6 m casts a shadow 4 m long on the ground and at the same time a tower casts a shadow 28 m long. Find the height of the tower."
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "16",
+      "question_text": "If AD and PM are medians of triangles ABC and PQR, respectively where  ABC ~  PQR, prove that AB AD PQ PM  "
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "6",
+      "question_text": "5 Summary In this chapter you have studied the following points :"
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "1",
+      "question_text": "Two figures having the same shape but not necessarily the same size are called similar figures."
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "2",
+      "question_text": "All the congruent figures are similar but the converse is not true."
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "3",
+      "question_text": "Two polygons of the same number of sides are similar, if (i) their corresponding angles are equal and (ii) their corresponding sides are in the same ratio (i.e., proportion)."
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "4",
+      "question_text": "If a line is drawn parallel to one side of a triangle to intersect the other two sides in distinct points, then the other two sides are divided in the same ratio."
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "5",
+      "question_text": "If a line divides any two sides of a triangle in the same ratio, then the line is parallel to the third side."
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "6",
+      "question_text": "If in two triangles, corresponding angles are equal, then their corresponding sides are in the same ratio and hence the two triangles are similar (AAA similarity criterion)."
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "7",
+      "question_text": "If in two triangles, two angles of one triangle are respectively equal to the two angles of the other triangle, then the two triangles are similar (AA similarity criterion). Fig. 6.40 Fig. 6.41 Reprint 2026-27 98 MATHEMATICS"
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "8",
+      "question_text": "If in two triangles, corresponding sides are in the same ratio, then their corresponding angles are equal and hence the triangles are similar (SSS similarity criterion)."
+    },
+    {
+      "exercise_id": "Ex_6.3",
+      "question_number": "9",
+      "question_text": "If one angle of a triangle is equal to one angle of another triangle and the sides including these angles are in the same ratio (proportional), then the triangles are similar (SAS similarity criterion). A NOTE TO THE READER If in two right triangles, hypotenuse and one side of one triangle are proportional to the hypotenuse and one side of the other triangle, then the two triangles are similar. This may be referred to as the RHS Similarity Criterion. If you use this criterion in Example 2, Chapter 8, the proof will become simpler. Reprint 2026-27"
+    }
+  ]
+}

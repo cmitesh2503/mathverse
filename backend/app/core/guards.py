@@ -246,7 +246,8 @@ def verify_access_privileges(
             )
 
     # Role-Based Grade Enforcer
-    if str(sub_info.get("subscribed_grade")) != str(requested_grade):
+    subscribed_grade = str(sub_info.get("subscribed_grade"))
+    if subscribed_grade != str(requested_grade) and subscribed_grade != "ALL":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Access Denied. Current subscription active for Grade {sub_info.get('subscribed_grade')}."

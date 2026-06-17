@@ -1,0 +1,110 @@
+{
+  "chapter_name": "Practice",
+  "concepts": [
+    {
+      "concept_id": "1_1",
+      "concept_name": "General Concepts",
+      "definition_text": "",
+      "source_paragraphs": [
+        "214\nMATHEMATICS\nEXERCISE 14.1\n1. Complete the following statements:\n(i) Probability of an event E + Probability of the event ‘not E’ = \n .\n(ii) The probability of an event that cannot happen is \n . Such an event is\ncalled \n .\n(iii) The probability of an event that is certain to happen is \n . Such an event\nis called \n .\n(iv) The sum of the probabilities of all the elementary events of an experiment is\n.\n(v) The probability of an event is greater than or equal to \n and less than or\nequal to \n .\n2. Which of the following experiments have equally likely outcomes? Explain.\n(i) A driver attempts to start a car. The car starts or does not start.\n(ii) A player attempts to shoot a basketball. She/he shoots or misses the shot.\n(iii) A trial is made to answer a true-false question. The answer is right or wrong.\n(iv) A baby is born. It is a boy or a girl.\n3. Why is tossing a coin considered to be a fair way of deciding which team should get the\nball at the beginning of a football game?\n4. Which of the following cannot be the probability of an event?\n(A)\n2\n3\n(B) –1.5\n(C) 15%\n(D) 0.7\n5. If P(E) = 0.05, what is the probability of ‘not E’?\n6. A bag contains lemon flavoured candies only. Malini takes out one candy without\nlooking into the bag. What is the probability that she takes out\n(i) an orange flavoured candy?\n(ii) a lemon flavoured candy?\n7. It is given that in a group of 3 students, the probability of 2 students not having the\nsame birthday is 0.992. What is the probability that the 2 students have the same\nbirthday?\n8. A bag contains 3 red balls and 5 black balls. A ball is drawn at random from the bag.\nWhat is the probability that the ball drawn is (i) red ?\n(ii) not red?\n9. A box contains 5 red marbles, 8 white marbles and 4 green marbles. One marble is taken\nout of the box at random. What is the probability that the marble taken out will be\n(i) red ?\n(ii) white ?\n(iii) not green?\nReprint 2026-27",
+        "PROBABILITY\n215\n10. A piggy bank contains hundred 50p coins,  fifty ` 1 coins, twenty ` 2 coins and ten ` 5\ncoins. If it is equally likely that one of the coins will fall out when the bank is turned\nupside down, what is the probability that the coin (i) will be a 50 p coin ? (ii) will not be\na ` 5 coin?\n11. Gopi buys  a fish from a shop for his aquarium. The\nshopkeeper takes out one fish at random from a\ntank containing 5 male fish and 8 female fish (see\nFig. 14.4). What is the probability that the fish taken\nout is a male fish?\n12. A game of chance consists of spinning an arrow\nwhich comes to rest pointing at one of the numbers\n1, 2, 3, 4, 5, 6, 7, 8 (see Fig. 14.5 ), and these are equally\nlikely outcomes. What is the probability that it will\npoint at\n(i) 8 ?\n(ii) an odd number?\n(iii) a number greater than 2?\n(iv) a number less than 9?\n13. A die is thrown once. Find the probability of getting\n(i) a prime number;\n(ii) a number lying between 2 and 6;\n(iii) an odd number.\n14. One card is drawn from a well-shuffled deck of 52 cards. Find the probability of getting\n(i) a king of red colour\n(ii) a face card\n(iii) a red face card\n(iv) the jack of hearts\n(v) a spade\n(vi) the queen of diamonds\n15. Five cards—the ten, jack, queen, king and ace of diamonds, are well-shuffled with their\nface downwards. One card is then picked up at random.\n(i) What is the probability that the card is the queen?\n(ii) If the queen is drawn and put aside, what is the probability that the second card\npicked up is (a) an ace? (b) a queen?\n16. 12 defective pens are accidentally mixed with 132 good ones. It is not possible to just\nlook at a pen and tell whether or not it is defective. One pen is taken out at random from\nthis lot. Determine the probability that the pen taken out is a good one.\n17. (i) A lot of 20 bulbs contain 4 defective ones. One bulb is drawn at random from the lot.\nWhat is the probability that this bulb is defective?\n(ii) Suppose the bulb drawn in (i) is not defective and is not replaced. Now one bulb\nis drawn at random from the rest. What is the probability that this bulb is not\ndefective ?\n18. A box contains 90 discs which are numbered from 1 to 90. If one disc is drawn at random\nfrom the box, find the probability that it bears (i) a two-digit number\n(ii) a perfect\nsquare number\n(iii) a number divisible by 5.\nFig. 14.4\nFig. 14.5\nReprint 2026-27"
+      ],
+      "formulas": [],
+      "theorems": [],
+      "properties": [],
+      "examples": []
+    }
+  ],
+  "exercise_questions": [
+    {
+      "exercise_id": "Ex_14.1",
+      "question_number": "1",
+      "question_text": "Complete the following statements: (i) Probability of an event E + Probability of the event ‘not E’ = . (ii) The probability of an event that cannot happen is . Such an event is called . (iii) The probability of an event that is certain to happen is . Such an event is called . (iv) The sum of the probabilities of all the elementary events of an experiment is . (v) The probability of an event is greater than or equal to and less than or equal to ."
+    },
+    {
+      "exercise_id": "Ex_14.1",
+      "question_number": "2",
+      "question_text": "Which of the following experiments have equally likely outcomes? Explain. (i) A driver attempts to start a car. The car starts or does not start. (ii) A player attempts to shoot a basketball. She/he shoots or misses the shot. (iii) A trial is made to answer a true-false question. The answer is right or wrong. (iv) A baby is born. It is a boy or a girl."
+    },
+    {
+      "exercise_id": "Ex_14.1",
+      "question_number": "3",
+      "question_text": "Why is tossing a coin considered to be a fair way of deciding which team should get the ball at the beginning of a football game?"
+    },
+    {
+      "exercise_id": "Ex_14.1",
+      "question_number": "4",
+      "question_text": "Which of the following cannot be the probability of an event? (A) 2 3 (B) –1.5 (C) 15% (D) 0.7"
+    },
+    {
+      "exercise_id": "Ex_14.1",
+      "question_number": "5",
+      "question_text": "If P(E) = 0.05, what is the probability of ‘not E’?"
+    },
+    {
+      "exercise_id": "Ex_14.1",
+      "question_number": "6",
+      "question_text": "A bag contains lemon flavoured candies only. Malini takes out one candy without looking into the bag. What is the probability that she takes out (i) an orange flavoured candy? (ii) a lemon flavoured candy?"
+    },
+    {
+      "exercise_id": "Ex_14.1",
+      "question_number": "7",
+      "question_text": "It is given that in a group of 3 students, the probability of 2 students not having the same birthday is 0.992. What is the probability that the 2 students have the same birthday?"
+    },
+    {
+      "exercise_id": "Ex_14.1",
+      "question_number": "8",
+      "question_text": "A bag contains 3 red balls and 5 black balls. A ball is drawn at random from the bag. What is the probability that the ball drawn is (i) red ? (ii) not red?"
+    },
+    {
+      "exercise_id": "Ex_14.1",
+      "question_number": "9",
+      "question_text": "A box contains 5 red marbles, 8 white marbles and 4 green marbles. One marble is taken out of the box at random. What is the probability that the marble taken out will be (i) red ? (ii) white ? (iii) not green? Reprint 2026-27 PROBABILITY 215"
+    },
+    {
+      "exercise_id": "Ex_14.1",
+      "question_number": "10",
+      "question_text": "A piggy bank contains hundred 50p coins, fifty ` 1 coins, twenty ` 2 coins and ten ` 5 coins. If it is equally likely that one of the coins will fall out when the bank is turned upside down, what is the probability that the coin (i) will be a 50 p coin ? (ii) will not be a ` 5 coin?"
+    },
+    {
+      "exercise_id": "Ex_14.1",
+      "question_number": "11",
+      "question_text": "Gopi buys a fish from a shop for his aquarium. The shopkeeper takes out one fish at random from a tank containing 5 male fish and 8 female fish (see Fig. 14.4). What is the probability that the fish taken out is a male fish?"
+    },
+    {
+      "exercise_id": "Ex_14.1",
+      "question_number": "12",
+      "question_text": "A game of chance consists of spinning an arrow which comes to rest pointing at one of the numbers 1, 2, 3, 4, 5, 6, 7, 8 (see Fig. 14.5 ), and these are equally likely outcomes. What is the probability that it will point at (i) 8 ? (ii) an odd number? (iii) a number greater than 2? (iv) a number less than 9?"
+    },
+    {
+      "exercise_id": "Ex_14.1",
+      "question_number": "13",
+      "question_text": "A die is thrown once. Find the probability of getting (i) a prime number; (ii) a number lying between 2 and 6; (iii) an odd number."
+    },
+    {
+      "exercise_id": "Ex_14.1",
+      "question_number": "14",
+      "question_text": "One card is drawn from a well-shuffled deck of 52 cards. Find the probability of getting (i) a king of red colour (ii) a face card (iii) a red face card (iv) the jack of hearts (v) a spade (vi) the queen of diamonds"
+    },
+    {
+      "exercise_id": "Ex_14.1",
+      "question_number": "15",
+      "question_text": "Five cards—the ten, jack, queen, king and ace of diamonds, are well-shuffled with their face downwards. One card is then picked up at random. (i) What is the probability that the card is the queen? (ii) If the queen is drawn and put aside, what is the probability that the second card picked up is (a) an ace? (b) a queen?"
+    },
+    {
+      "exercise_id": "Ex_14.1",
+      "question_number": "16",
+      "question_text": "12 defective pens are accidentally mixed with 132 good ones. It is not possible to just look at a pen and tell whether or not it is defective. One pen is taken out at random from this lot. Determine the probability that the pen taken out is a good one."
+    },
+    {
+      "exercise_id": "Ex_14.1",
+      "question_number": "17",
+      "question_text": "(i) A lot of 20 bulbs contain 4 defective ones. One bulb is drawn at random from the lot. What is the probability that this bulb is defective? (ii) Suppose the bulb drawn in (i) is not defective and is not replaced. Now one bulb is drawn at random from the rest. What is the probability that this bulb is not defective ?"
+    },
+    {
+      "exercise_id": "Ex_14.1",
+      "question_number": "18",
+      "question_text": "A box contains 90 discs which are numbered from 1 to 90. If one disc is drawn at random from the box, find the probability that it bears (i) a two-digit number (ii) a perfect square number (iii) a number divisible by 5. Fig. 14.4 Fig. 14.5 Reprint 2026-27"
+    }
+  ]
+}

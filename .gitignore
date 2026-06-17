@@ -209,4 +209,14 @@ backend/app/data/class_sessions.json
 backend/app/credentials/vertex.json
 backend/app/data/pdfs/*.pdf
 backend/app/data/pdfs/
+backend/offline_assets/
 backend/app/core/firebase_key.json
+app/core/firebase_key.json.json
+app/credentials/vertex.json
+*.pem
+*.key
+backend/app/credentials/vertex.json
+backend/app/core/firebase_key*
+*.tfstate
+*.tfstate.backup
+terraform.tfvars

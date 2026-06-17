@@ -83,10 +83,14 @@ async def process_subscription_checkout(payload: OrderCreateRequest):
     if final_price == 0:
         start_time = datetime.now(timezone.utc)
         end_time = start_time + timedelta(days=30)  # Unlocks for a 30-day billing cycle
+        
+        subscribed_grade = str(payload.grade)
+        if payload.promo_code and payload.promo_code.strip().upper() == "FREE100":
+            subscribed_grade = "ALL"
 
         updated_subscription = {
             "subscription.is_active": True,
-            "subscription.subscribed_grade": str(payload.grade),
+            "subscription.subscribed_grade": subscribed_grade,
             "subscription.current_period_start": start_time.isoformat(),
             "subscription.current_period_end": end_time.isoformat(),
             "subscription.last_payment_id": f"PROMO_{payload.promo_code if payload.promo_code else 'FREE'}"
@@ -103,10 +107,14 @@ async def process_subscription_checkout(payload: OrderCreateRequest):
                 "current_uses": firestore.Increment(1)
             }, timeout=FIRESTORE_TIMEOUT_SECONDS)
 
+        success_message = f"Promo activated successfully! Grade {payload.grade} access is unlocked for free."
+        if subscribed_grade == "ALL":
+            success_message = "Promo activated successfully! Access to all chapters and all grades is unlocked for free."
+
         return {
             "payment_required": False,
             "status": "active",
-            "message": f"Promo activated successfully! Grade {payload.grade} access is unlocked for free.",
+            "message": success_message,
             "final_amount_charged": 0
         }
 

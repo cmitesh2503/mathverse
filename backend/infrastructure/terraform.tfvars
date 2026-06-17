@@ -1,2 +1,6 @@
-project_id = "matverse"
-region    = "us-central1"
+project_id           = "matverse"
+firestore_project_id = "matverse"
+region               = "us-central1"
+developer_user_email = "miteshc527@gmail.com"
+processor_id         = "6f33f7275a777b7f"
+processor_location   = "us"

@@ -3,14 +3,18 @@ import fitz  # PyMuPDF
 import functions_framework
 from google.cloud import storage
 from google.cloud import firestore
+from google.cloud.firestore_v1.vector import Vector
+import vertexai
 from vertexai.language_models import TextEmbeddingModel
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # Initialize GCP Clients globally for "Cold Start" optimization
-PROJECT_ID = os.environ.get("PROJECT_ID")
+PROJECT_ID = os.environ.get("FIRESTORE_PROJECT_ID") or os.environ.get("PROJECT_ID")
 FIRESTORE_COL = os.environ.get("FIRESTORE_COL", "curriculum_chunks")
-EMBEDDING_MODEL_NAME = "text-embedding-004"
+REGION = os.environ.get("REGION", "us-central1")
+EMBEDDING_MODEL_NAME = os.environ.get("EMBEDDING_MODEL", "text-embedding-004")
 
+vertexai.init(project=PROJECT_ID, location=REGION)
 storage_client = storage.Client(project=PROJECT_ID)
 db = firestore.Client(project=PROJECT_ID)
 
@@ -85,7 +89,7 @@ def process_new_pdf(cloud_event):
         
         batch.set(doc_ref, {
             "text": chunk,
-            "embedding": vector,  # Native vector storage
+            "embedding": Vector(vector),
             "metadata": {
                 "grade": grade,
                 "chapter": chapter,

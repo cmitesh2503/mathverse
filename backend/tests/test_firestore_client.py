@@ -8,9 +8,11 @@ from app.core import firestore_client
 
 
 def _clear_firestore_client_caches():
+    firestore_client.resolve_firestore_auth_mode.cache_clear()
     firestore_client.get_firestore_service_account_path.cache_clear()
     firestore_client._read_service_account_json.cache_clear()
     firestore_client.resolve_firestore_project_id.cache_clear()
+    firestore_client.validate_required_gcloud_account.cache_clear()
     firestore_client.get_firestore_client.cache_clear()
 
 
@@ -25,6 +27,15 @@ def test_firestore_project_id_prefers_explicit_env(monkeypatch, tmp_path):
     _clear_firestore_client_caches()
 
     assert firestore_client.resolve_firestore_project_id() == "env-project"
+
+
+def test_firestore_auth_mode_accepts_literal_adc(monkeypatch, tmp_path):
+    monkeypatch.setenv("MATHVERSE_FIRESTORE_AUTH_MODE", "adc")
+    monkeypatch.setenv("FIREBASE_SERVICE_ACCOUNT_PATH", str(tmp_path / "firebase_key.json"))
+    _clear_firestore_client_caches()
+
+    assert firestore_client.resolve_firestore_auth_mode() == "adc"
+    assert firestore_client.get_firestore_service_account_path() is None
 
 
 def test_firestore_project_id_falls_back_to_service_account(monkeypatch, tmp_path):

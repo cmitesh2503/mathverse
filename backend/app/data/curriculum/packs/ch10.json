@@ -1,0 +1,201 @@
+{
+  "chapter_name": "Ch10",
+  "concepts": [
+    {
+      "concept_id": "10_1",
+      "concept_name": "10.1 Introduction",
+      "definition_text": "10.1 Introduction\nYou have studied in Class IX that a circle is a collection of all points in a plane\nwhich are at a constant distance (radius) from a fixed point (centre). You have\nalso studied various terms related to a circle like chord, segment, sector, arc etc.\nLet us now examine the different situations that can arise when a circle and a line\nare given in a plane.\nSo, let us consider a circle and a line PQ. There can be three possibilities given\nin Fig. 10.1 below:\nFig. 10.1\nIn Fig. 10.1 (i), the line PQ and the circle have no common point. In this case,\nPQ is called a non-intersecting line with respect to the circle. In Fig. 10.1 (ii), there\nare two common points A and B that the line PQ and the circle have. In this case, we\ncall the line PQ a secant of the circle. In Fig. 10.1 (iii), there is only one point A which\nis common to the line PQ and the circle. In this case, the line is called a tangent to the\ncircle.\nCIRCLES\nReprint 2026-27",
+      "source_paragraphs": [
+        "10.1 Introduction\nYou have studied in Class IX that a circle is a collection of all points in a plane\nwhich are at a constant distance (radius) from a fixed point (centre). You have\nalso studied various terms related to a circle like chord, segment, sector, arc etc.\nLet us now examine the different situations that can arise when a circle and a line\nare given in a plane.\nSo, let us consider a circle and a line PQ. There can be three possibilities given\nin Fig. 10.1 below:\nFig. 10.1\nIn Fig. 10.1 (i), the line PQ and the circle have no common point. In this case,\nPQ is called a non-intersecting line with respect to the circle. In Fig. 10.1 (ii), there\nare two common points A and B that the line PQ and the circle have. In this case, we\ncall the line PQ a secant of the circle. In Fig. 10.1 (iii), there is only one point A which\nis common to the line PQ and the circle. In this case, the line is called a tangent to the\ncircle.\nCIRCLES\nReprint 2026-27",
+        "CIRCLES\n145\nYou might have seen a pulley fitted over a well which is used\nin taking out water from the well. Look at Fig. 10.2. Here the rope\non both sides of the pulley, if considered as a ray, is like a tangent\nto the circle representing the pulley.\nIs there any position of the line with respect to the circle\nother than the types given above? You can see that there cannot\nbe any other type of position of the line with respect  to the circle.\nIn this chapter, we will study about the existence of the tangents\nto a circle and also study some of their properties."
+      ],
+      "formulas": [],
+      "theorems": [],
+      "properties": [],
+      "examples": []
+    },
+    {
+      "concept_id": "10_2",
+      "concept_name": "10.2 Tangent to a Circle",
+      "definition_text": "10.2 Tangent to a Circle\nIn the previous section, you have seen that a tangent* to a circle is a line that\nintersects the circle at only one point.\nTo understand the existence of the tangent to a circle at a point, let us perform\nthe following activities:\nActivity 1 : Take a circular wire and attach a straight wire AB at a point P of the\ncircular wire so that it can rotate about the point P in a plane. Put the system on a table\nand gently rotate the wire AB about the point P to get different positions of the straight\nwire [see Fig. 10.3(i)].\nIn various positions, the wire intersects the\ncircular wire at P and at another point Q1 or Q2 or\nQ3, etc. In one position, you will see that it will\nintersect the circle at the point P only (see position\nAB of AB). This shows that a tangent exists at\nthe point P of the circle. On rotating further, you\ncan observe that in all other positions of AB, it will\nintersect the circle at P and at another point, say R1\nor R2 or R3, etc. So, you can observe that there is\nonly one tangent at a point of the circle.\nWhile doing activity above, you must have observed that as the position AB\nmoves towards the position A B, the common point, say Q1, of the line AB and the\ncircle gradually comes nearer and nearer to the common point P. Ultimately, it coincides\nwith the point P in the position AB of AB. Again note, what happens if ‘AB’ is\nrotated rightwards about P? The common point R3 gradually comes nearer and nearer\nto P and ultimately coincides with P. So, what we see is:\nThe tangent to a circle is a special case of the secant, when the two end\npoints of its corresponding chord coincide.\nFig. 10.3 (i)\nFig. 10.2\n*The word ‘tangent’ comes from the Latin word ‘tangere’, which means to touch and was\nintroduced by the Danish mathematician Thomas Fineke in 1583.\nReprint 2026-27",
+      "source_paragraphs": [
+        "10.2 Tangent to a Circle\nIn the previous section, you have seen that a tangent* to a circle is a line that\nintersects the circle at only one point.\nTo understand the existence of the tangent to a circle at a point, let us perform\nthe following activities:\nActivity 1 : Take a circular wire and attach a straight wire AB at a point P of the\ncircular wire so that it can rotate about the point P in a plane. Put the system on a table\nand gently rotate the wire AB about the point P to get different positions of the straight\nwire [see Fig. 10.3(i)].\nIn various positions, the wire intersects the\ncircular wire at P and at another point Q1 or Q2 or\nQ3, etc. In one position, you will see that it will\nintersect the circle at the point P only (see position\nAB of AB). This shows that a tangent exists at\nthe point P of the circle. On rotating further, you\ncan observe that in all other positions of AB, it will\nintersect the circle at P and at another point, say R1\nor R2 or R3, etc. So, you can observe that there is\nonly one tangent at a point of the circle.\nWhile doing activity above, you must have observed that as the position AB\nmoves towards the position A B, the common point, say Q1, of the line AB and the\ncircle gradually comes nearer and nearer to the common point P. Ultimately, it coincides\nwith the point P in the position AB of AB. Again note, what happens if ‘AB’ is\nrotated rightwards about P? The common point R3 gradually comes nearer and nearer\nto P and ultimately coincides with P. So, what we see is:\nThe tangent to a circle is a special case of the secant, when the two end\npoints of its corresponding chord coincide.\nFig. 10.3 (i)\nFig. 10.2\n*The word ‘tangent’ comes from the Latin word ‘tangere’, which means to touch and was\nintroduced by the Danish mathematician Thomas Fineke in 1583.\nReprint 2026-27",
+        "146\nMATHEMATICS\nActivity 2 : On a paper, draw a circle and a\nsecant PQ of the circle. Draw various lines\nparallel to the secant on both sides of it. You\nwill find that after some steps, the length of\nthe chord cut by the lines will gradually\ndecrease, i.e., the two points of intersection of\nthe line and the circle are coming closer and\ncloser [see Fig. 10.3(ii)]. In one case, it\nbecomes zero on one side of the secant and in\nanother case, it becomes zero on the other side\nof the secant. See the positions PQ and PQ\nof the secant in Fig. 10.3 (ii). These are the\ntangents to the circle parallel to the given secant\nPQ. This also helps you to see that there cannot\nbe more than two tangents parallel to a given\nsecant.\nThis activity also establishes, what you must have observed, while doing\nActivity 1, namely, a tangent is the secant when both of the end points of the\ncorresponding chord coincide.\nThe common point of the tangent and the circle is called the point of contact\n[the point A in Fig. 10.1 (iii)]and the tangent is said to touch the circle at the\ncommon point.\nNow look around you. Have you seen a bicycle\nor a cart moving? Look at its wheels. All the spokes\nof a wheel are along its radii. Now note the position\nof the wheel with respect to its movement on the\nground. Do you see any tangent anywhere?\n(See Fig. 10.4). In fact, the wheel moves along a line\nwhich is a tangent to the circle representing the wheel.\nAlso, notice that in all positions, the radius through\nthe point of contact with the ground appears to be at\nright angles to the tangent (see Fig. 10.4). We shall\nnow prove this property of the tangent.\nTheorem 10.1 : The tangent at any point of a circle is perpendicular to the\nradius through the point of contact.\nProof : We are given a circle with centre O and a tangent XY to the circle at a\npoint P. We need to prove that OP is perpendicular to XY.\nFig. 10.4\nFig. 10.3 (ii)\nReprint 2026-27",
+        "CIRCLES\n147\nTake a point Q on XY other than P and join OQ (see Fig. 10.5).\nThe point Q must lie outside the circle.\n(Why? Note that if Q lies inside the circle, XY\nwill become a secant and not a tangent to the\ncircle). Therefore, OQ is longer than the radius\nOP of the circle. That is,\nOQ > OP.\nSince this happens for every point on the\nline XY except the point P, OP is the\nshortest of all the distances of the point O to the\npoints of XY. So OP is perpendicular to XY.\n(as shown in Theorem A1.7.)\nRemarks\n1. By theorem above, we can also conclude that at any point on a circle there can be\none and only one tangent.\n2. The line containing the radius through the point of contact is also sometimes called\nthe ‘normal’ to the circle at the point.\nEXERCISE 10.1\n1. How many tangents can a circle have?\n2. Fill in the blanks :\n(i) A tangent to a circle intersects it in \n point (s).\n(ii) A line intersecting a circle in two points is called a \n .\n(iii) A circle can have \n parallel tangents at the most.\n(iv) The common point of a tangent to a circle and the circle is called \n .\n3. A tangent PQ at a point P of a circle of radius 5 cm meets a line through the centre O at\na point Q so that OQ = 12 cm. Length PQ is :\n(A) 12 cm\n(B) 13 cm\n(C) 8.5 cm\n(D)\n119  cm.\n4. Draw a circle and two lines parallel to a given line such that one is a tangent and the\nother, a secant to the circle."
+      ],
+      "formulas": [],
+      "theorems": [
+        "The tangent at any point of a circle is perpendicular to the radius through the point of contact."
+      ],
+      "properties": [],
+      "examples": []
+    },
+    {
+      "concept_id": "10_3",
+      "concept_name": "10.3 Number of Tangents from a Point on a Circle",
+      "definition_text": "10.3 Number of Tangents from a Point on a Circle\nTo get an idea of the number of tangents from a point on a circle, let us perform the\nfollowing activity:\nFig. 10.5\nReprint 2026-27",
+      "source_paragraphs": [
+        "10.3 Number of Tangents from a Point on a Circle\nTo get an idea of the number of tangents from a point on a circle, let us perform the\nfollowing activity:\nFig. 10.5\nReprint 2026-27",
+        "148\nMATHEMATICS\nActivity 3 : Draw a circle on a paper. Take a\npoint P inside it. Can you draw a tangent to the\ncircle through this point? You will find that all\nthe lines through this point intersect the circle in\ntwo points. So, it is not possible to draw any\ntangent to a circle through a point inside it\n[see Fig. 10.6 (i)].\nNext take a point P on the circle and draw\ntangents through this point. You have already\nobserved that there is only one tangent to the\ncircle at such a point [see Fig. 10.6 (ii)].\nFinally, take a point P outside the circle and\ntry to draw tangents to the circle from this point.\nWhat do you observe? You will find that you\ncan draw exactly two tangents to the circle\nthrough this point [see Fig. 10.6 (iii)].\nWe can summarise these facts as follows:\nCase 1 : There is no tangent to a circle passing\nthrough a point lying inside the circle.\nCase 2 : There is one and only one tangent to a\ncircle passing through a point lying on the circle.\nCase 3 : There are exactly two tangents to a\ncircle through a point lying outside the circle.\nIn Fig. 10.6 (iii), T1and T2 are the points of\ncontact of the tangents PT1 and PT2\nrespectively.\nThe length of the segment of the tangent\nfrom the external point P and the point of contact\nwith the circle is called the length of the tangent\nfrom the point P to the circle.\nNote that in Fig. 10.6 (iii), PT1 and PT2 are the lengths of the tangents from P to\nthe circle. The lengths PT1 and PT2 have a common property. Can you find this?\nMeasure PT1 and PT2. Are these equal? In fact, this is always so. Let us give a proof\nof this fact in the following theorem.\n(i)\n(ii)\nFig. 10.6\n(iii)\nReprint 2026-27",
+        "CIRCLES\n149\nTheorem 10.2 : The lengths of tangents drawn\nfrom an external point to a circle are equal.\nProof : We are given a circle with centre O, a\npoint P lying outside the circle and two tangents\nPQ, PR on the circle from P (see Fig. 10.7). We\nare required to prove that PQ = PR.\nFor this, we join OP, OQ and OR. Then\n∠ OQP and ∠ ORP are right angles, because\nthese are angles between the radii and tangents,\nand according to Theorem 10.1 they are right\nangles. Now in right triangles OQP and ORP,\nOQ = OR\n(Radii of the same circle)\nOP = OP\n(Common)\nTherefore,\n∆ OQP ≅∆ ORP\n(RHS)\nThis gives\nPQ = PR\n(CPCT)\nRemarks\n1. The theorem can also be proved by using the Pythagoras Theorem as follows:\nPQ2 = OP2 – OQ2 = OP2 – OR2 = PR2 (As OQ = OR)\nwhich gives PQ = PR.\n2. Note also that ∠ OPQ = ∠ OPR. Therefore, OP is the angle bisector of ∠ QPR,\ni.e., the centre lies on the bisector of the angle between the two tangents.\nLet us take some examples.\nExample 1 : Prove that in two concentric circles,\nthe chord of the larger circle, which touches the\nsmaller circle, is bisected at the point of contact.\nSolution : We are given two concentric circles\nC1 and C2 with centre O and a chord AB of the\nlarger circle C1 which touches the smaller circle\nC2 at the point P (see Fig. 10.8). We need to prove\nthat AP = BP.\nLet us join OP. Then, AB is a tangent to C2 at P\nand OP is its radius. Therefore, by Theorem 10.1,\nOP ⊥AB\nFig. 10.7\nFig. 10.8\nReprint 2026-27",
+        "150\nMATHEMATICS\nNow AB is a chord of the circle C1 and OP  AB. Therefore, OP is the bisector of the\nchord AB, as the perpendicular from the centre bisects the chord,\ni.e.,\nAP = BP\nExample 2 : Two tangents TP and TQ are drawn\nto a circle with centre O from an external point T.\nProve that  PTQ = 2  OPQ.\nSolution : We are given a circle with centre O,\nan external point T and two tangents TP and TQ\nto the circle, where P, Q are the points of contact\n(see Fig. 10.9). We need to prove that\n PTQ = 2  OPQ\nLet\n PTQ = \nNow, by Theorem 10.2, TP = TQ. So, TPQ is an isosceles triangle.\nTherefore,\n TPQ =  TQP = 1\n1\n(180\n)\n90\n2\n2\n\n\n\nAlso, by Theorem 10.1,\n OPT = 90\nSo,\n OPQ =  OPT –  TPQ =\n1\n90\n90 – 2\n\n\n\n\n\n\n\n\n= 1\n1\nPTQ\n2\n2\n\n\nThis gives\n PTQ = 2  OPQ\nExample 3 : PQ is a chord of length 8 cm of a\ncircle of radius 5 cm. The tangents at P and Q\nintersect at a point T (see Fig. 10.10). Find the\nlength TP.\nSolution : Join OT. Let it intersect PQ at the\npoint R. Then  TPQ is isosceles and TO is the\nangle bisector of  PTQ. So, OT  PQ\nand therefore, OT bisects PQ which gives\nPR = RQ = 4 cm.\nAlso,\nOR = \n2\n2\n2\n2\nOP\nPR\n5\n4 cm\n3 cm\n\n\n\n\n.\nFig. 10.9\nFig. 10.10\nReprint 2026-27",
+        "CIRCLES\n151\nNow,\n TPR +  RPO = 90 =  TPR +  PTR\n(Why?)\nSo,\n RPO =  PTR\nTherefore, right triangle TRP is similar to the right triangle PRO by AA similarity.\nThis gives\nTP\nPO  = RP\nRO , i.e., TP\n5  = 4\n3  or TP = 20\n3  cm.\nNote : TP can also be found by using the Pythagoras Theorem, as follows:\nLet\nTP = x and TR = y.\nThen\nx2 = y2 + 16\n(Taking right  PRT)\n(1)\nx2 + 52 = (y + 3)2\n(Taking right  OPT)\n(2)\nSubtracting (1) from (2), we get\n25 = 6y – 7\nor\ny = 32\n16\n6\n3\n\nTherefore,\nx2 =\n2\n16\n16\n16\n25\n16\n(16\n9)\n3\n9\n9\n\n\n\n\n\n\n\n\n\n\n[From (1)]\nor\nx = 20\n3\nEXERCISE"
+      ],
+      "formulas": [
+        "OQ = OR\n(Radii of the same circle)",
+        "(RHS)\nThis gives\nPQ = PR\n(CPCT)\nRemarks",
+        "AP = BP",
+        "OR = \n2\n2\n2\n2\nOP\nPR\n5\n4 cm\n3 cm",
+        "This gives\nTP\nPO  = RP",
+        "5  = 4",
+        "Then\nx2 = y2 + 16",
+        "(1)\nx2 + 52 = (y + 3)2",
+        "or\ny = 32\n16\n6\n3",
+        "x2 =\n2\n16\n16\n16\n25\n16\n(16\n9)\n3\n9\n9",
+        "or\nx = 20\n3"
+      ],
+      "theorems": [
+        "The lengths of tangents drawn from an external point to a circle are equal."
+      ],
+      "properties": [],
+      "examples": [
+        {
+          "question": "Prove that in two concentric circles, the chord of the larger circle, which touches the smaller circle, is bisected at the point of contact.",
+          "solution_text": "We are given two concentric circles\nC1 and C2 with centre O and a chord AB of the\nlarger circle C1 which touches the smaller circle\nC2 at the point P (see Fig. 10.8). We need to prove\nthat AP = BP.\nLet us join OP. Then, AB is a tangent to C2 at P\nand OP is its radius. Therefore, by Theorem 10.1,\nOP ⊥AB\nFig. 10.7\nFig. 10.8\nReprint 2026-27\n\n150\nMATHEMATICS\nNow AB is a chord of the circle C1 and OP  AB. Therefore, OP is the bisector of the\nchord AB, as the perpendicular from the centre bisects the chord,\ni.e.,\nAP = BP"
+        },
+        {
+          "question": "Two tangents TP and TQ are drawn to a circle with centre O from an external point T. Prove that  PTQ = 2  OPQ.",
+          "solution_text": "We are given a circle with centre O,\nan external point T and two tangents TP and TQ\nto the circle, where P, Q are the points of contact\n(see Fig. 10.9). We need to prove that\n PTQ = 2  OPQ\nLet\n PTQ = \nNow, by Theorem 10.2, TP = TQ. So, TPQ is an isosceles triangle.\nTherefore,\n TPQ =  TQP = 1\n1\n(180\n)\n90\n2\n2\n\n\n\nAlso, by Theorem 10.1,\n OPT = 90\nSo,\n OPQ =  OPT –  TPQ =\n1\n90\n90 – 2\n\n\n\n\n\n\n\n\n= 1\n1\nPTQ\n2\n2\n\n\nThis gives\n PTQ = 2  OPQ"
+        },
+        {
+          "question": "PQ is a chord of length 8 cm of a circle of radius 5 cm. The tangents at P and Q intersect at a point T (see Fig. 10.10). Find the length TP.",
+          "solution_text": "Join OT. Let it intersect PQ at the\npoint R. Then  TPQ is isosceles and TO is the\nangle bisector of  PTQ. So, OT  PQ\nand therefore, OT bisects PQ which gives\nPR = RQ = 4 cm.\nAlso,\nOR = \n2\n2\n2\n2\nOP\nPR\n5\n4 cm\n3 cm\n\n\n\n\n.\nFig. 10.9\nFig. 10.10\nReprint 2026-27\n\nCIRCLES\n151\nNow,\n TPR +  RPO = 90 =  TPR +  PTR\n(Why?)\nSo,\n RPO =  PTR\nTherefore, right triangle TRP is similar to the right triangle PRO by AA similarity.\nThis gives\nTP\nPO  = RP\nRO , i.e., TP\n5  = 4\n3  or TP = 20\n3  cm.\nNote : TP can also be found by using the Pythagoras Theorem, as follows:\nLet\nTP = x and TR = y.\nThen\nx2 = y2 + 16\n(Taking right  PRT)\n(1)\nx2 + 52 = (y + 3)2\n(Taking right  OPT)\n(2)\nSubtracting (1) from (2), we get\n25 = 6y – 7\nor\ny = 32\n16\n6\n3\n\nTherefore,\nx2 =\n2\n16\n16\n16\n25\n16\n(16\n9)\n3\n9\n9\n\n\n\n\n\n\n\n\n\n\n[From (1)]\nor\nx = 20\n3"
+        }
+      ]
+    },
+    {
+      "concept_id": "10_2",
+      "concept_name": "10.2 In Q.1 to 3, choose the correct option and give justification.",
+      "definition_text": "10.2\nIn Q.1 to 3, choose the correct option and give justification.\n1. From a point Q, the length of the tangent to a circle is 24 cm and the distance of Q from\nthe centre is 25 cm. The radius of the circle is\n(A) 7 cm\n(B) 12 cm\n(C)\n15 cm\n(D) 24.5 cm\n2. In Fig. 10.11, if TP and TQ are the two tangents\nto a circle with centre O so that  POQ = 110,\nthen PTQ is equal to\n(A) 60\n(B) 70\n(C)\n80\n(D) 90\n3. If tangents PA and PB from a point P to a circle with centre O are inclined to each other\nat angle of 80, then  POA is equal to\n(A) 50\n(B) 60\n(C)\n70\n(D) 80\nFig. 10.11\nReprint 2026-27",
+      "source_paragraphs": [
+        "10.2\nIn Q.1 to 3, choose the correct option and give justification.\n1. From a point Q, the length of the tangent to a circle is 24 cm and the distance of Q from\nthe centre is 25 cm. The radius of the circle is\n(A) 7 cm\n(B) 12 cm\n(C)\n15 cm\n(D) 24.5 cm\n2. In Fig. 10.11, if TP and TQ are the two tangents\nto a circle with centre O so that  POQ = 110,\nthen PTQ is equal to\n(A) 60\n(B) 70\n(C)\n80\n(D) 90\n3. If tangents PA and PB from a point P to a circle with centre O are inclined to each other\nat angle of 80, then  POA is equal to\n(A) 50\n(B) 60\n(C)\n70\n(D) 80\nFig. 10.11\nReprint 2026-27",
+        "152\nMATHEMATICS\n4. Prove that the tangents drawn at the ends of a diameter of a circle are parallel.\n5. Prove that the perpendicular at the point of contact to the tangent to a circle passes\nthrough the centre.\n6. The length of a tangent from a point A at distance 5 cm from the centre of the circle is 4\ncm. Find the radius of the circle.\n7. Two concentric circles are of radii 5 cm and 3 cm. Find the length of the chord of the\nlarger circle which touches the smaller circle.\n8. A quadrilateral ABCD is drawn to circumscribe a circle (see Fig. 10.12). Prove that\nAB + CD = AD + BC\nFig. 10.12\nFig. 10.13\n9. In Fig. 10.13, XY and XY are two parallel tangents to a circle with centre O and\nanother tangent AB with point of contact C intersecting XY at A and XY at B. Prove\nthat  AOB = 90.\n10. Prove that the angle between the two tangents drawn from an external point to a circle\nis supplementary to the angle subtended by the line-segment joining the points of\ncontact at the centre.\n11. Prove that the parallelogram circumscribing a\ncircle is a rhombus.\n12. A triangle ABC is drawn to circumscribe a circle\nof radius 4 cm such that the segments BD and\nDC into which BC is divided by the point of\ncontact D are of lengths 8 cm and 6 cm\nrespectively (see Fig. 10.14). Find the sides AB\nand AC.\n13. Prove that opposite sides of a quadrilateral\ncircumscribing a circle subtend supplementary\nangles at the centre of the circle.\nFig. 10.14\nReprint 2026-27"
+      ],
+      "formulas": [
+        "AB + CD = AD + BC"
+      ],
+      "theorems": [],
+      "properties": [],
+      "examples": []
+    },
+    {
+      "concept_id": "10_4",
+      "concept_name": "10.4 Summary",
+      "definition_text": "10.4\nSummary\nIn this chapter, you have studied the following points :\n1.\nThe meaning of a tangent to a circle.\n2.\nThe tangent to a circle is perpendicular to the radius through the point of contact.\n3.\nThe lengths of the two tangents from an external point to a circle are equal.\nReprint 2026-27",
+      "source_paragraphs": [
+        "10.4\nSummary\nIn this chapter, you have studied the following points :\n1.\nThe meaning of a tangent to a circle.\n2.\nThe tangent to a circle is perpendicular to the radius through the point of contact.\n3.\nThe lengths of the two tangents from an external point to a circle are equal.\nReprint 2026-27"
+      ],
+      "formulas": [],
+      "theorems": [],
+      "properties": [],
+      "examples": []
+    }
+  ],
+  "exercise_questions": [
+    {
+      "exercise_id": "Ex_10.1",
+      "question_number": "1",
+      "question_text": "How many tangents can a circle have?"
+    },
+    {
+      "exercise_id": "Ex_10.1",
+      "question_number": "2",
+      "question_text": "Fill in the blanks : (i) A tangent to a circle intersects it in point (s). (ii) A line intersecting a circle in two points is called a . (iii) A circle can have parallel tangents at the most. (iv) The common point of a tangent to a circle and the circle is called ."
+    },
+    {
+      "exercise_id": "Ex_10.1",
+      "question_number": "3",
+      "question_text": "A tangent PQ at a point P of a circle of radius 5 cm meets a line through the centre O at a point Q so that OQ = 12 cm. Length PQ is : (A) 12 cm (B) 13 cm (C) 8.5 cm (D) 119 cm."
+    },
+    {
+      "exercise_id": "Ex_10.1",
+      "question_number": "4",
+      "question_text": "Draw a circle and two lines parallel to a given line such that one is a tangent and the other, a secant to the circle."
+    },
+    {
+      "exercise_id": "Ex_10.1",
+      "question_number": "10",
+      "question_text": "3 Number of Tangents from a Point on a Circle To get an idea of the number of tangents from a point on a circle, let us perform the following activity: Fig. 10.5 Reprint 2026-27 148 MATHEMATICS Activity 3 : Draw a circle on a paper. Take a point P inside it. Can you draw a tangent to the circle through this point? You will find that all the lines through this point intersect the circle in two points. So, it is not possible to draw any tangent to a circle through a point inside it [see Fig. 10.6 (i)]. Next take a point P on the circle and draw tangents through this point. You have already observed that there is only one tangent to the circle at such a point [see Fig. 10.6 (ii)]. Finally, take a point P outside the circle and try to draw tangents to the circle from this point. What do you observe? You will find that you can draw exactly two tangents to the circle through this point [see Fig. 10.6 (iii)]. We can summarise these facts as follows: Case 1 : There is no tangent to a circle passing through a point lying inside the circle. Case 2 : There is one and only one tangent to a circle passing through a point lying on the circle. Case 3 : There are exactly two tangents to a circle through a point lying outside the circle. In Fig. 10.6 (iii), T1and T2 are the points of contact of the tangents PT1 and PT2 respectively. The length of the segment of the tangent from the external point P and the point of contact with the circle is called the length of the tangent from the point P to the circle. Note that in Fig. 10.6 (iii), PT1 and PT2 are the lengths of the tangents from P to the circle. The lengths PT1 and PT2 have a common property. Can you find this? Measure PT1 and PT2. Are these equal? In fact, this is always so. Let us give a proof of this fact in the following theorem. (i) (ii) Fig. 10.6 (iii) Reprint 2026-27 CIRCLES 149"
+    },
+    {
+      "exercise_id": "Ex_10.2",
+      "question_number": "1",
+      "question_text": "From a point Q, the length of the tangent to a circle is 24 cm and the distance of Q from the centre is 25 cm. The radius of the circle is (A) 7 cm (B) 12 cm (C) 15 cm (D) 24.5 cm"
+    },
+    {
+      "exercise_id": "Ex_10.2",
+      "question_number": "2",
+      "question_text": "In Fig. 10.11, if TP and TQ are the two tangents to a circle with centre O so that  POQ = 110, then PTQ is equal to (A) 60 (B) 70 (C) 80 (D) 90"
+    },
+    {
+      "exercise_id": "Ex_10.2",
+      "question_number": "3",
+      "question_text": "If tangents PA and PB from a point P to a circle with centre O are inclined to each other at angle of 80, then  POA is equal to (A) 50 (B) 60 (C) 70 (D) 80 Fig. 10.11 Reprint 2026-27 152 MATHEMATICS"
+    },
+    {
+      "exercise_id": "Ex_10.2",
+      "question_number": "4",
+      "question_text": "Prove that the tangents drawn at the ends of a diameter of a circle are parallel."
+    },
+    {
+      "exercise_id": "Ex_10.2",
+      "question_number": "5",
+      "question_text": "Prove that the perpendicular at the point of contact to the tangent to a circle passes through the centre."
+    },
+    {
+      "exercise_id": "Ex_10.2",
+      "question_number": "6",
+      "question_text": "The length of a tangent from a point A at distance 5 cm from the centre of the circle is 4 cm. Find the radius of the circle."
+    },
+    {
+      "exercise_id": "Ex_10.2",
+      "question_number": "7",
+      "question_text": "Two concentric circles are of radii 5 cm and 3 cm. Find the length of the chord of the larger circle which touches the smaller circle."
+    },
+    {
+      "exercise_id": "Ex_10.2",
+      "question_number": "8",
+      "question_text": "A quadrilateral ABCD is drawn to circumscribe a circle (see Fig. 10.12). Prove that AB + CD = AD + BC Fig. 10.12 Fig. 10.13"
+    },
+    {
+      "exercise_id": "Ex_10.2",
+      "question_number": "9",
+      "question_text": "In Fig. 10.13, XY and XY are two parallel tangents to a circle with centre O and another tangent AB with point of contact C intersecting XY at A and XY at B. Prove that  AOB = 90."
+    },
+    {
+      "exercise_id": "Ex_10.2",
+      "question_number": "10",
+      "question_text": "Prove that the angle between the two tangents drawn from an external point to a circle is supplementary to the angle subtended by the line-segment joining the points of contact at the centre."
+    },
+    {
+      "exercise_id": "Ex_10.2",
+      "question_number": "11",
+      "question_text": "Prove that the parallelogram circumscribing a circle is a rhombus."
+    },
+    {
+      "exercise_id": "Ex_10.2",
+      "question_number": "12",
+      "question_text": "A triangle ABC is drawn to circumscribe a circle of radius 4 cm such that the segments BD and DC into which BC is divided by the point of contact D are of lengths 8 cm and 6 cm respectively (see Fig. 10.14). Find the sides AB and AC."
+    },
+    {
+      "exercise_id": "Ex_10.2",
+      "question_number": "13",
+      "question_text": "Prove that opposite sides of a quadrilateral circumscribing a circle subtend supplementary angles at the centre of the circle. Fig. 10.14 Reprint 2026-27 CIRCLES 153"
+    },
+    {
+      "exercise_id": "Ex_10.2",
+      "question_number": "10",
+      "question_text": "4"
+    }
+  ]
+}

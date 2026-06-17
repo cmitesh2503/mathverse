@@ -13,7 +13,7 @@ from ...services.firebase_service import (
     get_evaluation_records_by_student,
     save_evaluation_record,
 )
-from ...services.rag_service import embed_text, retrieve_context
+from ...services.rag_service import retrieve_context, store_context_chunks
 from ...services.session_service import session_service
 
 
@@ -79,32 +79,21 @@ def _chunk_text(text: str, chunk_size: int = 1800, overlap: int = 200) -> list[s
 
 
 def _index_test_material_chunks(*, test_id: str, test_name: str, test_number: int, doc_kind: str, text: str) -> int:
-    import chromadb
-
     chunks = _chunk_text(text)
     if not chunks:
         return 0
 
-    chroma_client = chromadb.PersistentClient(path="./chroma_db")
-    collection = chroma_client.get_or_create_collection(name="cbse_curriculum")
-
-    for index, chunk in enumerate(chunks):
-        embedding = embed_text(chunk)
-        collection.add(
-            ids=[f"{test_id}_{doc_kind}_{uuid.uuid4().hex[:10]}_{index}"],
-            embeddings=[embedding],
-            documents=[chunk],
-            metadatas=[
-                {
-                    "test_id": test_id,
-                    "test_name": test_name,
-                    "test_number": int(test_number),
-                    "doc_kind": doc_kind,
-                    "source": "evaluation_test_material",
-                }
-            ],
-        )
-    return len(chunks)
+    return store_context_chunks(
+        chunks,
+        {
+            "test_id": test_id,
+            "test_name": test_name,
+            "test_number": int(test_number),
+            "doc_kind": doc_kind,
+            "source": "evaluation_test_material",
+        },
+        doc_prefix=f"evaluation_{_safe_slug(test_id)}_{doc_kind}",
+    )
 
 
 class ChapterTestSubmission(BaseModel):

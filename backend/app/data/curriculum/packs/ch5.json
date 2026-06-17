@@ -1,0 +1,476 @@
+{
+  "chapter_name": "Ch5",
+  "concepts": [
+    {
+      "concept_id": "5_1",
+      "concept_name": "5.1 Introduction",
+      "definition_text": "5.1 Introduction\nYou must have observed that in nature, many things follow a certain pattern, such as\nthe petals of a sunflower, the holes of a honeycomb, the grains on a maize cob, the\nspirals on a pineapple and on a pine cone, etc.\nWe now look for some patterns which occur in our day-to-day life. Some such\nexamples are :\n(i) Reena applied for a job and got selected. She\nhas been offered a job with a starting monthly\nsalary of ` 8000, with an annual increment of\n` 500 in her salary. Her salary (in `) for the 1st,\n2nd, 3rd, . . . years will be, respectively\n8000,\n8500,\n9000, . . . .\n(ii) The lengths of the rungs of a ladder decrease\nuniformly by 2 cm from bottom to top\n(see Fig. 5.1). The bottom rung is 45 cm in\nlength. The lengths (in cm) of the 1st, 2nd,\n3rd, . . ., 8th rung from the bottom to the top\nare, respectively\n45, 43, 41, 39, 37, 35, 33, 31\n(iii) In a savings scheme, the amount becomes 5\n4  times of itself after every 3 years.\nThe maturity amount (in `) of an investment of ` 8000 after 3, 6, 9 and 12 years\nwill be, respectively :\n10000,\n12500,\n15625, 19531.25\nARITHMETIC PROGRESSIONS\nFig. 5.1\nReprint 2026-27",
+      "source_paragraphs": [
+        "5.1 Introduction\nYou must have observed that in nature, many things follow a certain pattern, such as\nthe petals of a sunflower, the holes of a honeycomb, the grains on a maize cob, the\nspirals on a pineapple and on a pine cone, etc.\nWe now look for some patterns which occur in our day-to-day life. Some such\nexamples are :\n(i) Reena applied for a job and got selected. She\nhas been offered a job with a starting monthly\nsalary of ` 8000, with an annual increment of\n` 500 in her salary. Her salary (in `) for the 1st,\n2nd, 3rd, . . . years will be, respectively\n8000,\n8500,\n9000, . . . .\n(ii) The lengths of the rungs of a ladder decrease\nuniformly by 2 cm from bottom to top\n(see Fig. 5.1). The bottom rung is 45 cm in\nlength. The lengths (in cm) of the 1st, 2nd,\n3rd, . . ., 8th rung from the bottom to the top\nare, respectively\n45, 43, 41, 39, 37, 35, 33, 31\n(iii) In a savings scheme, the amount becomes 5\n4  times of itself after every 3 years.\nThe maturity amount (in `) of an investment of ` 8000 after 3, 6, 9 and 12 years\nwill be, respectively :\n10000,\n12500,\n15625, 19531.25\nARITHMETIC PROGRESSIONS\nFig. 5.1\nReprint 2026-27",
+        "50\nMATHEMATICS\n(iv) The number of unit squares in squares with side 1, 2, 3, . . . units (see Fig. 5.2)\nare, respectively\n12, 22, 32, . . . .\nFig. 5.2\n(v) Shakila puts ` 100 into her daughter’s money box when she was one year old\nand increased the amount by ` 50 every year. The amounts of money (in `) in the\nbox on the 1st, 2nd, 3rd, 4th, . . . birthday were\n100,\n150,\n200,\n250, . . ., respectively.\n(vi) A pair of rabbits are too young to produce in their first month. In the second, and\nevery subsequent month, they produce a new pair. Each new pair of rabbits\nproduce a new pair in their second month and in every subsequent month (see\nFig. 5.3). Assuming no rabbit dies, the number of pairs of rabbits at the start of\nthe 1st, 2nd, 3rd, . . ., 6th month, respectively are :\n1, 1, 2, 3, 5, 8\nFig. 5.3\nReprint 2026-27",
+        "ARITHMETIC PROGRESSIONS\n51\nIn the examples above, we observe some patterns. In some, we find that the\nsucceeding terms are obtained by adding a fixed number, in other by multiplying\nwith a fixed number, in another we find that they are squares of consecutive\nnumbers, and so on.\nIn this chapter, we shall discuss one of these patterns in which succeeding terms\nare obtained by adding a fixed number to the preceding terms. We shall also see how\nto find their nth terms and the sum of n consecutive terms, and use this knowledge in\nsolving some daily life problems."
+      ],
+      "formulas": [],
+      "theorems": [],
+      "properties": [],
+      "examples": []
+    },
+    {
+      "concept_id": "5_2",
+      "concept_name": "5.2 Arithmetic Progressions",
+      "definition_text": "5.2 Arithmetic Progressions\nConsider the following lists of numbers :\n(i) 1, 2, 3, 4, . . .\n(ii) 100, 70, 40, 10, . . .\n(iii) –3, –2, –1, 0, . . .\n(iv) 3, 3, 3, 3, . . .\n(v) –1.0, –1.5, –2.0, –2.5, . . .\nEach of the numbers in the list is called a term.\nGiven a term, can you write the next term in each of the lists above? If so, how\nwill you write it? Perhaps by following a pattern or rule. Let us observe and write the\nrule.\nIn (i), each term is 1 more than the term preceding it.\nIn (ii), each term is 30 less than the term preceding it.\nIn (iii), each term is obtained by adding 1 to  the term preceding it.\nIn (iv), all the terms in the list are 3 , i.e., each term is obtained by adding\n(or subtracting) 0 to the term preceding it.\nIn (v), each term is obtained by adding – 0.5 to (i.e., subtracting 0.5 from) the\nterm preceding it.\nIn all the lists above, we see that successive terms are obtained by adding a fixed\nnumber to the preceding terms. Such list of numbers is said to form an  Arithmetic\nProgression ( AP ).\nSo, an arithmetic progression is a list of numbers in which each term  is\nobtained by adding a fixed number to the preceding term except the first\nterm.\nThis fixed number is called the common difference of the AP. Remember that\nit can be positive, negative or zero.\nReprint 2026-27",
+      "source_paragraphs": [
+        "5.2 Arithmetic Progressions\nConsider the following lists of numbers :\n(i) 1, 2, 3, 4, . . .\n(ii) 100, 70, 40, 10, . . .\n(iii) –3, –2, –1, 0, . . .\n(iv) 3, 3, 3, 3, . . .\n(v) –1.0, –1.5, –2.0, –2.5, . . .\nEach of the numbers in the list is called a term.\nGiven a term, can you write the next term in each of the lists above? If so, how\nwill you write it? Perhaps by following a pattern or rule. Let us observe and write the\nrule.\nIn (i), each term is 1 more than the term preceding it.\nIn (ii), each term is 30 less than the term preceding it.\nIn (iii), each term is obtained by adding 1 to  the term preceding it.\nIn (iv), all the terms in the list are 3 , i.e., each term is obtained by adding\n(or subtracting) 0 to the term preceding it.\nIn (v), each term is obtained by adding – 0.5 to (i.e., subtracting 0.5 from) the\nterm preceding it.\nIn all the lists above, we see that successive terms are obtained by adding a fixed\nnumber to the preceding terms. Such list of numbers is said to form an  Arithmetic\nProgression ( AP ).\nSo, an arithmetic progression is a list of numbers in which each term  is\nobtained by adding a fixed number to the preceding term except the first\nterm.\nThis fixed number is called the common difference of the AP. Remember that\nit can be positive, negative or zero.\nReprint 2026-27",
+        "52\nMATHEMATICS\nLet us denote the first term of an AP by a1, second term by a2, . . ., nth term by\nan and the common difference by d. Then the AP becomes a1, a2, a3, . . ., an.\nSo,\na2 – a1 = a3 – a2 = . . . = an – an – 1 = d.\nSome more examples of AP are:\n(a) The heights ( in cm ) of some students of a school standing in a queue in the\nmorning assembly are 147 , 148, 149, . . ., 157.\n(b) The minimum temperatures ( in degree celsius ) recorded for a week in the\nmonth of January in a city, arranged in ascending order are\n– 3.1, – 3.0, – 2.9, – 2.8, – 2.7, – 2.6, – 2.5\n(c) The balance money ( in ` ) after paying 5 % of the total  loan of ` 1000 every\nmonth is 950, 900, 850, 800, . . ., 50.\n(d) The cash prizes ( in ` ) given by a school to the toppers of Classes I to XII are,\nrespectively, 200, 250, 300, 350, . . ., 750.\n(e) The total savings (in `) after every month for 10 months when ` 50 are saved\neach month are 50, 100, 150, 200, 250, 300, 350, 400, 450, 500.\nIt is left as an exercise for you to explain why each of the lists above is an AP.\nYou can see that\na, a + d, a + 2d, a + 3d, . . .\nrepresents an arithmetic progression where a is the first term and d the common\ndifference. This is called the general form of an AP.\nNote that in examples (a) to (e) above, there are only a finite number of terms.\nSuch an AP is called a finite AP. Also note that each of these Arithmetic Progressions\n(APs) has a last term. The APs in examples (i) to (v) in this section, are not finite APs\nand so they are called infinite Arithmetic Progressions. Such APs do not have a\nlast term.\nNow, to know about an AP, what is the minimum information that you need? Is it\nenough to know the first term? Or, is it enough to know only the common difference?\nYou will find that you will need to know both – the first term a and the common\ndifference d.\nFor instance if the first term a is 6 and the common difference d is 3, then\nthe AP is\n 6, 9,12, 15, . . .\nand if a is 6 and d is – 3, then the AP is\n6, 3, 0, –3, . . .\nReprint 2026-27",
+        "ARITHMETIC PROGRESSIONS\n53\nSimilarly, when\na = – 7,\nd = – 2,\nthe AP is  – 7, – 9, – 11, – 13, . . .\na =  1.0,\nd = 0.1,\nthe AP is  1.0, 1.1, 1.2, 1.3, . . .\na =  0,\nd = 1 1\n2 ,\nthe AP is  0,  1 1\n2 , 3, 4 1\n2 , 6, . . .\na = 2,\nd = 0,\nthe AP is  2, 2, 2, 2, . . .\nSo, if you know what a and d are, you can list the AP. What about the other way\nround? That is, if you are given a list of numbers can you say that it is an AP and then\nfind a and d? Since a is the first term, it can easily be written. We know that in an AP,\nevery succeeding term is obtained by adding d to the preceding term. So, d found by\nsubtracting any term from its succeeding term, i.e., the term which immediately follows\nit should be same for an AP.\nFor example, for the list of numbers :\n6, 9, 12, 15, . . . ,\nWe have\na2 – a1 = 9  – 6 = 3,\na3 – a2 = 12 – 9 = 3,\na4 – a3 = 15 – 12 = 3\nHere the difference of any two consecutive terms in each case is 3. So, the\ngiven list is an AP whose first term a is 6 and common difference d is 3.\nFor the list of numbers : 6, 3, 0, – 3, . . .,\na2 – a1 = 3 – 6 = – 3\na3 – a2 = 0 – 3 = – 3\na4 – a3 = –3 – 0  = –3\nSimilarly this is also an AP whose first term is 6 and the common difference\nis –3.\nIn general, for an AP a1, a2, . . ., an, we have\nd = ak + 1 – ak\nwhere ak + 1  and ak  are the ( k + 1)th and the kth terms respectively.\nTo obtain d in a given AP, we need not find all of a2 – a1, a3 – a2, a4 – a3, . . . .\nIt is enough to find only one of them.\nConsider the list of numbers 1, 1, 2, 3, 5, . . . . By looking at it, you can tell that the\ndifference between any two consecutive terms is not the same. So, this is not an AP.\nReprint 2026-27",
+        "54\nMATHEMATICS\nNote that to find d in the AP : 6, 3, 0, – 3, . . ., we have subtracted 6 from 3\nand not 3 from 6, i.e., we should subtract the kth term from the (k + 1) th term\neven if the (k + 1) th term is smaller.\nLet us make the concept more clear through some examples.\nExample 1 : For the AP : 3\n2\n, 1\n2\n, – 1\n2\n, – 3\n2\n , . . ., write the first term a and the\ncommon difference d.\nSolution : Here,\na = 3\n2 , d = 1\n2  – 3\n2  = – 1.\nRemember that we can find d using any two consecutive terms, once we know that\nthe numbers are in AP.\nExample 2 : Which of the following list of numbers form an AP? If they form an AP,\nwrite the next two terms :\n(i) 4, 10, 16, 22, . . .\n(ii) 1, – 1, – 3, – 5, . . .\n(iii) – 2, 2, – 2, 2, – 2, . . .\n(iv) 1, 1, 1, 2, 2, 2, 3, 3, 3, . . .\nSolution :\n(i) We have a2 – a1 = 10 – 4 =   6\na3 – a2 = 16 – 10 =  6\na4 – a3 = 22 – 16  = 6\ni.e.,\nak + 1 – ak  is the same every time.\nSo, the given list of numbers forms an AP with the common difference d = 6.\nThe next two terms are: 22 + 6 = 28 and 28 + 6 = 34.\n(ii)\na2 – a1 =  – 1 – 1 = – 2\na3 – a2 =  – 3 – ( –1 ) = – 3 + 1 = – 2\n a4 – a3 = – 5 – ( –3 ) = – 5 + 3 = – 2\ni.e., ak + 1 – ak  is the same every time.\nSo, the given list of numbers forms an AP with the common difference d = – 2.\nThe next two terms are:\n– 5 + (– 2 ) = – 7\nand\n– 7 + (– 2 ) = – 9\n(iii) a2 – a1 = 2 – (– 2) = 2 + 2 = 4\na3 – a2  = – 2 – 2 = – 4\nAs a2 – a1   a3 – a2 , the given list of numbers does not form an AP.\nReprint 2026-27",
+        "ARITHMETIC PROGRESSIONS\n55\n(iv) a2 – a1 = 1 – 1 = 0\na3 – a2 = 1 – 1 = 0\na4 – a3 = 2 – 1 = 1\nHere, a2 – a1 = a3 – a2  a4 – a3.\nSo, the given list of numbers does not form an AP.\nEXERCISE 5.1\n1. In which of the following situations, does the list of numbers involved make an arithmetic\nprogression, and why?\n(i) The taxi fare after each km when the fare is ` 15 for the first km and ` 8 for each\nadditional km.\n(ii) The amount of air present in a cylinder when a vacuum pump removes 1\n4  of the\nair remaining in the cylinder at a time.\n(iii) The cost of digging a well after every metre of digging, when it costs ` 150 for the\nfirst metre and rises by ` 50 for each subsequent metre.\n(iv) The amount of money in the account every year, when ` 10000 is deposited at\ncompound interest at 8 % per annum.\n2. Write first four terms of the AP, when the first term a and the common difference d are\ngiven as follows:\n(i) a = 10,\nd = 10\n(ii) a = –2,\nd = 0\n(iii) a = 4,\nd = – 3\n(iv) a = – 1, d =  1\n2\n(v) a = – 1.25, d = – 0.25\n3. For the following APs, write the first term and the common difference:\n(i) 3, 1, – 1, – 3, . . .\n(ii) – 5, – 1, 3, 7, . . .\n(iii) 1\n5\n9\n13\n,\n,\n,\n,\n3\n3\n3\n3\n . . .\n(iv) 0.6, 1.7, 2.8, 3.9, . . .\n4. Which of the following are APs ? If they form an AP, find the common difference d and\nwrite three more terms.\n(i) 2, 4, 8, 16, . . .\n(ii)\n5\n7\n2,\n, 3,\n,\n2\n2\n . . .\n(iii) – 1.2, – 3.2, – 5.2, – 7.2, . . .\n(iv) – 10, – 6, – 2, 2, . . .\n(v) 3, 3\n2\n\n, 3\n2 2\n\n, 3\n3 2 ,\n\n . . .\n(vi) 0.2, 0.22, 0.222, 0.2222, . . .\n(vii) 0, – 4, – 8, –12, . . .\n(viii) – 1\n2 , – 1\n2 , – 1\n2 , – 1\n2 , . . .\nReprint 2026-27"
+      ],
+      "formulas": [
+        "d = 1 1",
+        "a = 3",
+        "d = 10",
+        "d = 0",
+        "n = 35",
+        "n = 8",
+        "d = 1",
+        "a = 5\nand",
+        "n = 302\n151\n6\n3",
+        "3  = 29",
+        "or\nn = 25",
+        "Simple Interest = PRT\n100",
+        "The interest at the end of the 2nd year =\n10008 2\n100",
+        "The interest at the end of the 3rd year =\n100083\n100",
+        "n = 10"
+      ],
+      "theorems": [],
+      "properties": [],
+      "examples": [
+        {
+          "question": "For the AP : 3 2 , 1 2 , – 1 2 , – 3 2 , . . ., write the first term a and the common difference d.",
+          "solution_text": "Here,\na = 3\n2 , d = 1\n2  – 3\n2  = – 1.\nRemember that we can find d using any two consecutive terms, once we know that\nthe numbers are in AP."
+        },
+        {
+          "question": "Which of the following list of numbers form an AP? If they form an AP, write the next two terms : (i) 4, 10, 16, 22, . . . (ii) 1, – 1, – 3, – 5, . . . (iii) – 2, 2, – 2, 2, – 2, . . . (iv) 1, 1, 1, 2, 2, 2, 3, 3, 3, . . .",
+          "solution_text": "(i) We have a2 – a1 = 10 – 4 =   6\na3 – a2 = 16 – 10 =  6\na4 – a3 = 22 – 16  = 6\ni.e.,\nak + 1 – ak  is the same every time.\nSo, the given list of numbers forms an AP with the common difference d = 6.\nThe next two terms are: 22 + 6 = 28 and 28 + 6 = 34.\n(ii)\na2 – a1 =  – 1 – 1 = – 2\na3 – a2 =  – 3 – ( –1 ) = – 3 + 1 = – 2\n a4 – a3 = – 5 – ( –3 ) = – 5 + 3 = – 2\ni.e., ak + 1 – ak  is the same every time.\nSo, the given list of numbers forms an AP with the common difference d = – 2.\nThe next two terms are:\n– 5 + (– 2 ) = – 7\nand\n– 7 + (– 2 ) = – 9\n(iii) a2 – a1 = 2 – (– 2) = 2 + 2 = 4\na3 – a2  = – 2 – 2 = – 4\nAs a2 – a1   a3 – a2 , the given list of numbers does not form an AP.\nReprint 2026-27\n\nARITHMETIC PROGRESSIONS\n55\n(iv) a2 – a1 = 1 – 1 = 0\na3 – a2 = 1 – 1 = 0\na4 – a3 = 2 – 1 = 1\nHere, a2 – a1 = a3 – a2  a4 – a3.\nSo, the given list of numbers does not form an AP."
+        },
+        {
+          "question": "Find the 10th term of the AP : 2, 7, 12, . . .",
+          "solution_text": "Here, a = 2,\nd = 7 – 2 = 5\nand\nn =  10.\nWe have\nan = a + (n – 1) d\nSo,\na10 = 2 + (10 – 1)  5 = 2 + 45 = 47\nTherefore, the 10th term of the given AP is 47."
+        },
+        {
+          "question": "Which term of the AP : 21, 18, 15, . . . is – 81? Also, is any term 0? Give reason for your answer.",
+          "solution_text": "Here, a = 21, d = 18 – 21 = – 3 and an = – 81, and we have to find n.\nAs\nan = a + ( n – 1) d,\nwe have\n– 81 = 21 + (n – 1)(– 3)\n– 81 = 24 – 3n\n– 105 = – 3n\nSo,\nn = 35\nTherefore, the 35th term of the given AP is – 81.\nNext, we want to know if there is any n for which an = 0. If such an n is there, then\n21 + (n – 1) (–3) = 0,\ni.e.,\n3(n – 1) = 21\ni.e.,\nn = 8\nSo, the eighth term is 0."
+        },
+        {
+          "question": "Determine the AP whose 3rd term is 5 and the 7th term is 9.",
+          "solution_text": "We have\na3 = a + (3 – 1) d = a + 2d = 5\n(1)\nand\na7 = a + (7 – 1) d = a + 6d = 9\n(2)\nSolving the pair of linear equations (1) and (2), we get\na = 3,\nd = 1\nHence, the required AP is 3, 4, 5, 6, 7, . . .\nReprint 2026-27\n\nARITHMETIC PROGRESSIONS\n59"
+        },
+        {
+          "question": "Check whether 301 is a term of the list of numbers 5, 11, 17, 23, . . .",
+          "solution_text": "We have :\na2 – a1 = 11 – 5 = 6,\na3 – a2 = 17 – 11 = 6,\na4 – a3 = 23 – 17 = 6\nAs ak + 1 – ak is the same for k = 1, 2, 3, etc., the given list of numbers is an AP.\nNow,\na = 5\nand\nd = 6.\nLet 301 be a term, say, the nth term of this AP.\nWe know that\nan = a + (n – 1) d\nSo,\n301 = 5 + (n – 1)  6\ni.e.,\n301 = 6n – 1\nSo,\nn = 302\n151\n6\n3\n\nBut n should be a positive integer (Why?). So, 301 is not a term of the given list of\nnumbers."
+        },
+        {
+          "question": "How many two-digit numbers are divisible by 3?",
+          "solution_text": "The list of two-digit numbers divisible by 3 is :\n12, 15, 18, . . . , 99\nIs this an AP? Yes it is. Here,\na = 12, d = 3, an = 99.\nAs\nan = a + (n – 1) d,\nwe have\n99 = 12 + (n – 1)  3\ni.e.,\n87 = (n – 1)  3\ni.e.,\nn – 1 = 87\n3  = 29\ni.e.,\nn = 29 + 1 = 30\nSo, there are 30 two-digit numbers divisible by 3."
+        },
+        {
+          "question": "Find the 11th term from the last term (towards the first term) of the AP : 10, 7, 4, . . ., – 62.",
+          "solution_text": "Here,\na = 10, d = 7 – 10 = – 3, l = – 62,\nwhere\nl =  a + (n – 1) d\nReprint 2026-27\n\n60\nMATHEMATICS\nTo find the 11th term from the last term, we will find the total number of terms in\nthe AP.\nSo,\n– 62 = 10 + (n – 1)(–3)\ni.e.,\n– 72 = (n – 1)(–3)\ni.e.,\nn – 1 = 24\nor\nn = 25\nSo, there are 25 terms in the given AP.\nThe 11th term from the last term will be the 15th term. (Note that it will not be\nthe 14th term. Why?)\nSo,\na15 = 10 + (15 – 1)(–3) = 10 – 42 = – 32\ni.e., the 11th term from the last term is – 32.\nAlternative Solution :\nIf we write the given AP in the reverse order, then a = – 62 and d = 3 (Why?)\nSo, the question now becomes finding the 11th term with these a and d.\nSo,\na11 = – 62 + (11 – 1)  3 = – 62 + 30 = – 32\nSo, the 11th term, which is now the required term, is – 32."
+        },
+        {
+          "question": "A sum of ` 1000 is invested at 8% simple interest per year. Calculate the interest at the end of each year. Do these interests form an AP? If so, find the interest at the end of 30 years making use of this fact.",
+          "solution_text": "We know that the formula to calculate simple interest is given by\nSimple Interest = PRT\n100\nSo, the interest at the end of the 1st year =\n100081\n100\n`\n =  ` 80\nThe interest at the end of the 2nd year =\n10008 2\n100\n`\n = ` 160\nThe interest at the end of the 3rd year =\n100083\n100\n`\n = ` 240\nSimilarly, we can obtain the interest at the end of the 4th year, 5th year, and so on.\nSo, the interest (in `) at the end of the 1st, 2nd, 3rd, . . . years, respectively are\n80, 160, 240, . . .\nReprint 2026-27\n\nARITHMETIC PROGRESSIONS\n61\nIt is an AP as the difference between the consecutive terms in the list is 80, i.e.,\nd = 80. Also, a = 80.\nSo, to find the interest at the end of 30 years, we shall find a30.\nNow,\na30 = a + (30 – 1) d = 80 + 29  80 = 2400\nSo, the interest at the end of 30 years will be ` 2400."
+        },
+        {
+          "question": "In a flower bed, there are 23 rose plants in the first row, 21 in the second, 19 in the third, and so on. There are 5 rose plants in the last row. How many rows are there in the flower bed?",
+          "solution_text": "The number of rose plants in the 1st, 2nd, 3rd, . . ., rows are :\n23, 21, 19, . . ., 5\nIt forms an AP (Why?). Let the number of rows in the flower bed be n.\nThen\na = 23,\nd = 21 – 23 = – 2, an = 5\nAs,\nan = a + (n – 1) d\nWe have,\n5 = 23 + (n – 1)(– 2)\ni.e.,\n– 18 = (n – 1)(– 2)\ni.e.,\nn = 10\nSo, there are 10 rows in the flower bed."
+        }
+      ]
+    },
+    {
+      "concept_id": "5_4",
+      "concept_name": "5.4 Sum of First n Terms of an AP",
+      "definition_text": "5.4 Sum of First n Terms of an AP\nLet us consider the situation again\ngiven in Section 5.1 in which Shakila\nput ` 100 into her daughter’s money\nbox when she was one year old,\n` 150 on her second birthday,\n` 200 on her third birthday and will\ncontinue in the same way. How much\nmoney will be collected in the money\nbox by the time her daughter is 21\nyears old?\nHere, the amount of money (in `) put in the money box on her first, second, third,\nfourth . . . birthday were respectively 100, 150, 200, 250, . . . till her 21st birthday. To\nfind the total amount in the money box on her 21st birthday, we will have to write each\nof the 21 numbers in the list above and then add them up. Don’t you think it would be\na tedious and time consuming process? Can we make the process shorter? This would\nbe possible if we can find a method for getting this sum. Let us see.\nWe consider the problem given to Gauss (about whom you read in\nChapter 1), to solve when he was just 10 years old. He was asked to find the sum of\nthe positive integers from 1 to 100. He immediately replied that the sum is 5050. Can\nyou guess how did he do? He wrote :\nS = 1 + 2 + 3 + . . . + 99 + 100\nAnd then, reversed the numbers to write\nS = 100 + 99 + . . . + 3 + 2 + 1\nAdding these two, he got\n2S = (100 + 1) + (99 + 2) + . . . + (3 + 98) + (2 + 99) + (1 + 100)\n= 101 + 101 + . . . + 101 + 101\n(100 times)\nSo,\nS = 100\n101\n5050\n2\n\n\n, i.e., the sum = 5050.\nReprint 2026-27",
+      "source_paragraphs": [
+        "5.4 Sum of First n Terms of an AP\nLet us consider the situation again\ngiven in Section 5.1 in which Shakila\nput ` 100 into her daughter’s money\nbox when she was one year old,\n` 150 on her second birthday,\n` 200 on her third birthday and will\ncontinue in the same way. How much\nmoney will be collected in the money\nbox by the time her daughter is 21\nyears old?\nHere, the amount of money (in `) put in the money box on her first, second, third,\nfourth . . . birthday were respectively 100, 150, 200, 250, . . . till her 21st birthday. To\nfind the total amount in the money box on her 21st birthday, we will have to write each\nof the 21 numbers in the list above and then add them up. Don’t you think it would be\na tedious and time consuming process? Can we make the process shorter? This would\nbe possible if we can find a method for getting this sum. Let us see.\nWe consider the problem given to Gauss (about whom you read in\nChapter 1), to solve when he was just 10 years old. He was asked to find the sum of\nthe positive integers from 1 to 100. He immediately replied that the sum is 5050. Can\nyou guess how did he do? He wrote :\nS = 1 + 2 + 3 + . . . + 99 + 100\nAnd then, reversed the numbers to write\nS = 100 + 99 + . . . + 3 + 2 + 1\nAdding these two, he got\n2S = (100 + 1) + (99 + 2) + . . . + (3 + 98) + (2 + 99) + (1 + 100)\n= 101 + 101 + . . . + 101 + 101\n(100 times)\nSo,\nS = 100\n101\n5050\n2\n\n\n, i.e., the sum = 5050.\nReprint 2026-27",
+        "64\nMATHEMATICS\nWe will now use the same technique to find the sum of the first n terms of an AP :\na, a + d, a + 2d, . . .\nThe nth term of this AP is a + (n – 1) d. Let S denote the sum of the first n terms\nof the AP. We have\nS = a + (a + d) + (a + 2d) + . . . + [a + (n – 1) d]\n(1)\nRewriting the terms in reverse order, we have\nS = [a + (n – 1) d] + [a + (n – 2) d] + . . . + (a + d) + a\n(2)\nOn adding (1) and (2), term-wise. we get\n2S = \n[2\n(\n1) ]\n[2\n(\n1) ]\n...\n[2\n(\n1) ]\n[2\n(\n1) ]\ntimes\n\n\n\n\n\n\n\n\n\n\n\n\n\na\nn\nd\na\nn\nd\na\nn\nd\na\nn\nd\nn\nor,\n2S = n [2a + (n – 1) d]\n(Since, there are n terms)\nor,\nS = 2\nn  [2a + (n – 1) d]\nSo, the sum of the first n terms of an AP is given by\nS = 2\nn  [2a + (n – 1) d]\nWe can also write this as\nS = 2\nn  [a + a + (n – 1) d]\ni.e.,\nS = 2\nn  (a + an)\n(3)\nNow, if there are only n terms in an AP, then an = l, the last term.\nFrom (3), we see that\nS = 2\nn  (a + l )\n(4)\nThis form of the result is useful when the first and the last terms of an AP are\ngiven and the common difference is not given.\nNow we return to the question that was posed to us in the beginning. The amount\nof money (in Rs) in the money box of Shakila’s daughter on 1st, 2nd, 3rd, 4th birthday,\n. . ., were 100, 150, 200, 250, . . ., respectively.\nThis is an AP. We have to find the total money collected on her 21st birthday, i.e.,\nthe sum of the first 21 terms of this AP.\nReprint 2026-27",
+        "ARITHMETIC PROGRESSIONS\n65\nHere, a = 100, d = 50 and n = 21. Using the formula :\nS =\n\n\n2\n(\n1)\n2\nn\na\nn\nd\n\n\n,\nwe have\nS =\n\n\n21 2 100\n(21 1)\n50\n2\n\n\n\n\n = \n\n\n21 200\n1000\n2\n\n= 21\n1200\n2 \n = 12600\nSo, the amount of money collected on her 21st birthday is ` 12600.\nHasn’t the use of the formula made it much easier to solve the problem?\nWe also use Sn in place of S to denote the sum of first n terms of the AP. We\nwrite S20 to denote the sum of the first 20 terms of an AP. The formula for the sum of\nthe first n terms involves four quantities S, a, d and n. If we know any three of them,\nwe can find the fourth.\nRemark : The nth term of an AP is the difference of the sum to first n terms and the\nsum to first (n – 1) terms of it, i.e., an = Sn – Sn – 1.\nLet us consider some examples.\nExample 11 : Find the sum of the first 22 terms of the AP : 8, 3, –2, . . .\nSolution : Here, a = 8, d = 3 – 8 = –5, n = 22.\nWe know that\nS = \n\n\n2\n(\n1)\n2\nn\na\nn\nd\n\n\nTherefore,\nS = \n\n\n22 16\n21( 5)\n2\n\n\n = 11(16 – 105) = 11(–89) = – 979\nSo, the sum of the first 22 terms of the AP is – 979.\nExample 12 : If the sum of the first 14 terms of an AP is 1050 and its first term is 10,\nfind the 20th term.\nSolution : Here, S14 = 1050, n = 14, a = 10.\nAs\nSn =\n\n\n2\n(\n1)\n2\n\n\nn\na\nn\nd ,\nso,\n1050 =\n\n\n14 20 13\n2\n\nd = 140 + 91d\nReprint 2026-27",
+        "66\nMATHEMATICS\ni.e.,\n910 = 91d\nor,\nd = 10\nTherefore,\na20 = 10 + (20 – 1)  10 = 200, i.e. 20th term is 200.\nExample 13 : How many terms of the AP : 24, 21, 18, . . . must be taken so that their\nsum is 78?\nSolution : Here, a = 24, d = 21 – 24 = –3, Sn = 78. We need to find n.\nWe know that\nSn =\n\n\n2\n(\n1)\n2\n\n\nn\na\nn\nd\nSo,\n78 =\n\n\n48\n(\n1)( 3)\n2\n\n\n\nn\nn\n = \n\n51\n3\n2\n\nn\nn\nor\n3n2 – 51n + 156 = 0\nor\nn2 – 17n + 52 = 0\nor\n(n – 4)(n – 13) = 0\nor\nn = 4 or 13\nBoth values of n are admissible. So, the number of terms is either 4 or 13.\nRemarks:\n1. In this case, the sum of the first 4 terms = the sum of the first 13 terms = 78.\n2. Two answers are possible because the sum of the terms from 5th to 13th will be\nzero. This is because a is positive and d is negative, so that some terms will be\npositive and some others negative, and will cancel out each other.\nExample 14 : Find the sum of :\n(i) the first 1000 positive integers\n(ii) the first n positive integers\nSolution :\n(i) Let S = 1 + 2 + 3 + . . . + 1000\nUsing the formula  Sn = \n(\n)\n2\n\nn a\nl  for the sum of the first n terms of an AP, we\nhave\nS1000 = 1000 (1\n1000)\n2\n\n = 500  1001 = 500500\nSo, the sum of the first 1000 positive integers is 500500.\n(ii) Let Sn = 1 + 2 + 3 + . . . + n\nHere a = 1 and the last term l is n.\nReprint 2026-27",
+        "ARITHMETIC PROGRESSIONS\n67\nTherefore,\nSn =\n(1\n)\n2\nn\nn\n\nor\n Sn = \n(\n1)\n2\nn n \nSo,  the sum of first n positive integers is given by\nSn = \n(\n+ 1)\n2\nn n\nExample 15 : Find the sum of first 24 terms of the list of numbers whose nth term is\ngiven by\nan = 3 + 2n\nSolution :\nAs\nan = 3 + 2n,\nso,\na1 = 3 + 2 = 5\na2 = 3 + 2  2 = 7\na3 = 3 + 2  3 = 9\n\nList of numbers becomes 5, 7, 9, 11, . . .\nHere,\n7 – 5 = 9 – 7 = 11 – 9 = 2 and so on.\nSo, it forms an AP with common difference d = 2.\nTo find S24, we have n = 24,\na = 5,\nd = 2.\nTherefore,\nS24 =\n\n\n24 2\n5\n(24\n1)\n2\n2\n\n\n\n\n = \n\n\n12 10\n46\n\n = 672\nSo, sum of first 24 terms of the list of numbers is 672.\nExample 16 : A manufacturer of TV sets produced 600 sets in the third year and 700\nsets in the seventh year. Assuming that the production increases uniformly by a fixed\nnumber every year, find :\n(i) the production in the 1st year\n(ii) the production in the 10th year\n(iii) the total production in first 7 years\nSolution : (i) Since the production increases uniformly by a fixed number every year,\nthe number of TV sets manufactured in 1st, 2nd, 3rd, . . ., years will form an AP.\nLet us denote the number of TV sets manufactured in the nth year by an.\nThen,\na3 = 600  and a7 = 700\nReprint 2026-27"
+      ],
+      "formulas": [
+        "S = 100\n101\n5050\n2",
+        "S = 2",
+        "We can also write this as\nS = 2",
+        "S = 2\nn  (a + an)\n(3)",
+        "S = 2\nn  (a + l )\n(4)\nThis form of the result is useful when the first and the last terms of an AP are",
+        "= 12600",
+        "We know that\nS =",
+        "d = 140 + 91d\nReprint 2026-27\n\n66\nMATHEMATICS",
+        "910 = 91d",
+        "d = 10",
+        "or\nn = 4 or 13",
+        "Using the formula  Sn = \n(\n)\n2",
+        "have\nS1000 = 1000 (1\n1000)\n2",
+        "Sn =\n(1\n)\n2\nn\nn",
+        "or\n Sn = \n(\n1)\n2",
+        "Sn = \n(\n+ 1)\n2\nn n",
+        "given by\nan = 3 + 2n",
+        "= 672",
+        "a + 2d = 600\nand",
+        "= 4375",
+        "(i) an = 3 + 4n"
+      ],
+      "theorems": [],
+      "properties": [],
+      "examples": [
+        {
+          "question": "Find the sum of the first 22 terms of the AP : 8, 3, –2, . . .",
+          "solution_text": "Here, a = 8, d = 3 – 8 = –5, n = 22.\nWe know that\nS = \n\n\n2\n(\n1)\n2\nn\na\nn\nd\n\n\nTherefore,\nS = \n\n\n22 16\n21( 5)\n2\n\n\n = 11(16 – 105) = 11(–89) = – 979\nSo, the sum of the first 22 terms of the AP is – 979."
+        },
+        {
+          "question": "If the sum of the first 14 terms of an AP is 1050 and its first term is 10, find the 20th term.",
+          "solution_text": "Here, S14 = 1050, n = 14, a = 10.\nAs\nSn =\n\n\n2\n(\n1)\n2\n\n\nn\na\nn\nd ,\nso,\n1050 =\n\n\n14 20 13\n2\n\nd = 140 + 91d\nReprint 2026-27\n\n66\nMATHEMATICS\ni.e.,\n910 = 91d\nor,\nd = 10\nTherefore,\na20 = 10 + (20 – 1)  10 = 200, i.e. 20th term is 200."
+        },
+        {
+          "question": "How many terms of the AP : 24, 21, 18, . . . must be taken so that their sum is 78?",
+          "solution_text": "Here, a = 24, d = 21 – 24 = –3, Sn = 78. We need to find n.\nWe know that\nSn =\n\n\n2\n(\n1)\n2\n\n\nn\na\nn\nd\nSo,\n78 =\n\n\n48\n(\n1)( 3)\n2\n\n\n\nn\nn\n = \n\n51\n3\n2\n\nn\nn\nor\n3n2 – 51n + 156 = 0\nor\nn2 – 17n + 52 = 0\nor\n(n – 4)(n – 13) = 0\nor\nn = 4 or 13\nBoth values of n are admissible. So, the number of terms is either 4 or 13.\nRemarks:\n1. In this case, the sum of the first 4 terms = the sum of the first 13 terms = 78.\n2. Two answers are possible because the sum of the terms from 5th to 13th will be\nzero. This is because a is positive and d is negative, so that some terms will be\npositive and some others negative, and will cancel out each other."
+        },
+        {
+          "question": "Find the sum of : (i) the first 1000 positive integers (ii) the first n positive integers",
+          "solution_text": "(i) Let S = 1 + 2 + 3 + . . . + 1000\nUsing the formula  Sn = \n(\n)\n2\n\nn a\nl  for the sum of the first n terms of an AP, we\nhave\nS1000 = 1000 (1\n1000)\n2\n\n = 500  1001 = 500500\nSo, the sum of the first 1000 positive integers is 500500.\n(ii) Let Sn = 1 + 2 + 3 + . . . + n\nHere a = 1 and the last term l is n.\nReprint 2026-27\n\nARITHMETIC PROGRESSIONS\n67\nTherefore,\nSn =\n(1\n)\n2\nn\nn\n\nor\n Sn = \n(\n1)\n2\nn n \nSo,  the sum of first n positive integers is given by\nSn = \n(\n+ 1)\n2\nn n"
+        },
+        {
+          "question": "Find the sum of first 24 terms of the list of numbers whose nth term is given by an = 3 + 2n",
+          "solution_text": "As\nan = 3 + 2n,\nso,\na1 = 3 + 2 = 5\na2 = 3 + 2  2 = 7\na3 = 3 + 2  3 = 9\n\nList of numbers becomes 5, 7, 9, 11, . . .\nHere,\n7 – 5 = 9 – 7 = 11 – 9 = 2 and so on.\nSo, it forms an AP with common difference d = 2.\nTo find S24, we have n = 24,\na = 5,\nd = 2.\nTherefore,\nS24 =\n\n\n24 2\n5\n(24\n1)\n2\n2\n\n\n\n\n = \n\n\n12 10\n46\n\n = 672\nSo, sum of first 24 terms of the list of numbers is 672."
+        },
+        {
+          "question": "A manufacturer of TV sets produced 600 sets in the third year and 700 sets in the seventh year. Assuming that the production increases uniformly by a fixed number every year, find : (i) the production in the 1st year (ii) the production in the 10th year (iii) the total production in first 7 years",
+          "solution_text": "(i) Since the production increases uniformly by a fixed number every year,\nthe number of TV sets manufactured in 1st, 2nd, 3rd, . . ., years will form an AP.\nLet us denote the number of TV sets manufactured in the nth year by an.\nThen,\na3 = 600  and a7 = 700\nReprint 2026-27\n\n68\nMATHEMATICS\nor,\na + 2d = 600\nand\na + 6d = 700\nSolving these equations, we get d = 25\nand\na = 550.\nTherefore, production of TV sets in the first year is 550.\n(ii) Now\na10 = a + 9d = 550 + 9  25 = 775\nSo, production of TV sets in the 10th year is 775.\n(iii) Also,\nS7 =\n\n\n7 2\n550\n(7\n1)\n25\n2\n\n\n\n\n=\n\n\n7 1100\n150\n2\n\n = 4375\nThus, the total production of TV sets in first 7 years is 4375."
+        }
+      ]
+    },
+    {
+      "concept_id": "5_5",
+      "concept_name": "5.5 Summary",
+      "definition_text": "5.5 Summary\nIn this chapter, you have studied the following points :\n1. An arithmetic progression (AP) is a list of numbers in which each term is obtained by\nadding a fixed number d to the preceding term, except the first term. The fixed number d\nis called the common difference.\nThe general form of an AP is a, a + d, a + 2d, a + 3d, . . .\n2. A given list of numbers a1, a2, a3, . . . is an AP, if the differences a2 – a1, a3 – a2,\na4 – a3, . . ., give the same value, i.e., if ak + 1 – ak is the same for different values of k.\n3. In an AP with first term a and common difference d, the nth term (or the general term) is\ngiven by\n an = a + (n – 1) d.\n4. The sum of the first n terms of an AP is given by :\nS =\n\n\n2\n(\n1)\n2\nn\na\nn\nd\n\n\n5. If l is the last term of the finite AP, say the nth term, then the sum of all terms of the AP\nis given by :\nS =\n(\n)\n2\nn a\nl\n\nA NOTE TO THE READER\nIf a, b, c are in AP, then b = \n2\na\nc\n\n and b is called the arithmetic\nmean of a and c.\nReprint 2026-27",
+      "source_paragraphs": [
+        "5.5 Summary\nIn this chapter, you have studied the following points :\n1. An arithmetic progression (AP) is a list of numbers in which each term is obtained by\nadding a fixed number d to the preceding term, except the first term. The fixed number d\nis called the common difference.\nThe general form of an AP is a, a + d, a + 2d, a + 3d, . . .\n2. A given list of numbers a1, a2, a3, . . . is an AP, if the differences a2 – a1, a3 – a2,\na4 – a3, . . ., give the same value, i.e., if ak + 1 – ak is the same for different values of k.\n3. In an AP with first term a and common difference d, the nth term (or the general term) is\ngiven by\n an = a + (n – 1) d.\n4. The sum of the first n terms of an AP is given by :\nS =\n\n\n2\n(\n1)\n2\nn\na\nn\nd\n\n\n5. If l is the last term of the finite AP, say the nth term, then the sum of all terms of the AP\nis given by :\nS =\n(\n)\n2\nn a\nl\n\nA NOTE TO THE READER\nIf a, b, c are in AP, then b = \n2\na\nc\n\n and b is called the arithmetic\nmean of a and c.\nReprint 2026-27"
+      ],
+      "formulas": [
+        "S =\n(\n)\n2\nn a\nl"
+      ],
+      "theorems": [],
+      "properties": [],
+      "examples": []
+    }
+  ],
+  "exercise_questions": [
+    {
+      "exercise_id": "Ex_5.1",
+      "question_number": "1",
+      "question_text": "In which of the following situations, does the list of numbers involved make an arithmetic progression, and why? (i) The taxi fare after each km when the fare is ` 15 for the first km and ` 8 for each additional km. (ii) The amount of air present in a cylinder when a vacuum pump removes 1 4 of the air remaining in the cylinder at a time. (iii) The cost of digging a well after every metre of digging, when it costs ` 150 for the first metre and rises by ` 50 for each subsequent metre. (iv) The amount of money in the account every year, when ` 10000 is deposited at compound interest at 8 % per annum."
+    },
+    {
+      "exercise_id": "Ex_5.1",
+      "question_number": "2",
+      "question_text": "Write first four terms of the AP, when the first term a and the common difference d are given as follows: (i) a = 10, d = 10 (ii) a = –2, d = 0 (iii) a = 4, d = – 3 (iv) a = – 1, d = 1 2 (v) a = – 1.25, d = – 0.25"
+    },
+    {
+      "exercise_id": "Ex_5.1",
+      "question_number": "3",
+      "question_text": "For the following APs, write the first term and the common difference: (i) 3, 1, – 1, – 3, . . . (ii) – 5, – 1, 3, 7, . . . (iii) 1 5 9 13 , , , , 3 3 3 3 . . . (iv) 0.6, 1.7, 2.8, 3.9, . . ."
+    },
+    {
+      "exercise_id": "Ex_5.1",
+      "question_number": "4",
+      "question_text": "Which of the following are APs ? If they form an AP, find the common difference d and write three more terms. (i) 2, 4, 8, 16, . . . (ii) 5 7 2, , 3, , 2 2 . . . (iii) – 1.2, – 3.2, – 5.2, – 7.2, . . . (iv) – 10, – 6, – 2, 2, . . . (v) 3, 3 2  , 3 2 2  , 3 3 2 ,  . . . (vi) 0.2, 0.22, 0.222, 0.2222, . . . (vii) 0, – 4, – 8, –12, . . . (viii) – 1 2 , – 1 2 , – 1 2 , – 1 2 , . . . Reprint 2026-27 56 MATHEMATICS (ix) 1, 3, 9, 27, . . . (x) a, 2a, 3a, 4a, . . . (xi) a, a2, a3, a4, . . . (xii) 2, 8, 18 , 32, . . . (xiii) 3, 6, 9 , 12 , . . . (xiv) 12, 32, 52, 72, . . . (xv) 12, 52, 72, 73, . . ."
+    },
+    {
+      "exercise_id": "Ex_5.1",
+      "question_number": "5",
+      "question_text": "3 nth Term of an AP Let us consider the situation again, given in Section 5.1 in which Reena applied for a job and got selected. She has been offered the job with a starting monthly salary of ` 8000, with an annual increment of ` 500. What would be her monthly salary for the fifth year? To answer this, let us first see what her monthly salary for the second year would be. It would be ` (8000 + 500) = ` 8500. In the same way, we can find the monthly salary for the 3rd, 4th and 5th year by adding ` 500 to the salary of the previous year. So, the salary for the 3rd year = ` (8500 + 500) = ` (8000 + 500 + 500) = ` (8000 + 2 500) = ` [8000 + (3 – 1) 500] (for the 3rd year) = ` 9000 Salary for the 4th year = ` (9000 + 500) = ` (8000 + 500 + 500 + 500) = ` (8000 + 3 500) = ` [8000 + (4 – 1) 500] (for the 4th year) = ` 9500 Salary for the 5th year = ` (9500 + 500) = ` (8000+500+500+500 + 500) = ` (8000 + 4 500) = ` [8000 + (5 – 1) 500] (for the 5th year) = ` 10000 Observe that we are getting a list of numbers 8000, 8500, 9000, 9500, 10000, . . . These numbers are in AP. (Why?) Reprint 2026-27 ARITHMETIC PROGRESSIONS 57 Now, looking at the pattern formed above, can you find her monthly salary for the 6th year? The 15th year? And, assuming that she will still be working in the job, what about the monthly salary for the 25th year? You would calculate this by adding ` 500 each time to the salary of the previous year to give the answer. Can we make this process shorter? Let us see. You may have already got some idea from the way we have obtained the salaries above. Salary for the 15th year = Salary for the 14th year + ` 500 = = ` [8000 + 14 500] = ` [8000 + (15 – 1) 500] = ` 15000 i.e., First salary + (15 – 1) Annual increment. In the same way, her monthly salary for the 25th year would be ` [8000 + (25 – 1) 500] = ` 20000 = First salary + (25 – 1) Annual increment This example would have given you some idea about how to write the 15th term, or the 25th term, and more generally, the nth term of the AP. Let a1, a2, a3, . . . be an AP whose first term a1 is a and the common difference is d. Then, the second term a2 = a + d = a + (2 – 1) d the third term a3 = a2 + d = (a + d) + d = a + 2d = a + (3 – 1) d the fourth term a4 = a3 + d = (a + 2d) + d = a + 3d = a + (4 – 1) d . . . . . . . . . . . . . . . . Looking at the pattern, we can say that the nth term an = a + (n – 1) d. So, the nth term an of the AP with first term a and common difference d is given by an = a + (n – 1) d.  Reprint 2026-27 58 MATHEMATICS an is also called the general term of the AP. If there are m terms in the AP, then am represents the last term which is sometimes also denoted by l. Let us consider some examples."
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "1",
+      "question_text": "Fill in the blanks in the following table, given that a is the first term, d the common difference and an the nth term of the AP: a d n an (i) 7 3 8 . . . (ii) – 18 . . . 10 0 (iii) . . . – 3 18 – 5 (iv) – 18.9"
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "2",
+      "question_text": "5 . . ."
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "3",
+      "question_text": "6 (v)"
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "3",
+      "question_text": "5 0 105 . . . Reprint 2026-27 62 MATHEMATICS"
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "2",
+      "question_text": "Choose the correct choice in the following and justify : (i) 30th term of the AP: 10, 7, 4, . . . , is (A) 97 (B) 77 (C) –77 (D) – 87 (ii) 11th term of the AP: – 3, 1 2  , 2, . . ., is (A) 28 (B) 22 (C) –38 (D) – 48 1 2"
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "3",
+      "question_text": "In the following APs, find the missing terms in the boxes : (i) 2, , 26 (ii) , 13, , 3 (iii) 5, , , 1 9 2 (iv) – 4, , , , , 6 (v) , 38, , , , – 22"
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "4",
+      "question_text": "Which term of the AP : 3, 8, 13, 18, . . . ,is 78?"
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "5",
+      "question_text": "Find the number of terms in each of the following APs : (i) 7, 13, 19, . . . , 205 (ii) 18, 1 15 2 , 13, . . . , – 47"
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "6",
+      "question_text": "Check whether – 150 is a term of the AP : 11, 8, 5, 2 . . ."
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "7",
+      "question_text": "Find the 31st term of an AP whose 11th term is 38 and the 16th term is 73."
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "8",
+      "question_text": "An AP consists of 50 terms of which 3rd term is 12 and the last term is 106. Find the 29th term."
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "9",
+      "question_text": "If the 3rd and the 9th terms of an AP are 4 and – 8 respectively, which term of this AP is zero?"
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "10",
+      "question_text": "The 17th term of an AP exceeds its 10th term by 7. Find the common difference."
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "11",
+      "question_text": "Which term of the AP : 3, 15, 27, 39, . . . will be 132 more than its 54th term?"
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "12",
+      "question_text": "Two APs have the same common difference. The difference between their 100th terms is 100, what is the difference between their 1000th terms?"
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "13",
+      "question_text": "How many three-digit numbers are divisible by 7?"
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "14",
+      "question_text": "How many multiples of 4 lie between 10 and 250?"
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "15",
+      "question_text": "For what value of n, are the nth terms of two APs: 63, 65, 67, . . . and 3, 10, 17, . . . equal?"
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "16",
+      "question_text": "Determine the AP whose third term is 16 and the 7th term exceeds the 5th term by 12. Reprint 2026-27 ARITHMETIC PROGRESSIONS 63"
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "17",
+      "question_text": "Find the 20th term from the last term of the AP : 3, 8, 13, . . ., 253."
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "18",
+      "question_text": "The sum of the 4th and 8th terms of an AP is 24 and the sum of the 6th and 10th terms is"
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "44",
+      "question_text": "Find the first three terms of the AP."
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "19",
+      "question_text": "Subba Rao started work in 1995 at an annual salary of ` 5000 and received an increment of ` 200 each year. In which year did his income reach ` 7000?"
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "20",
+      "question_text": "Ramkali saved ` 5 in the first week of a year and then increased her weekly savings by ` 1.75. If in the nth week, her weekly savings become ` 20.75, find n."
+    },
+    {
+      "exercise_id": "Ex_5.2",
+      "question_number": "5",
+      "question_text": "4 Sum of First n Terms of an AP Let us consider the situation again given in Section 5.1 in which Shakila put ` 100 into her daughter’s money box when she was one year old, ` 150 on her second birthday, ` 200 on her third birthday and will continue in the same way. How much money will be collected in the money box by the time her daughter is 21 years old? Here, the amount of money (in `) put in the money box on her first, second, third, fourth . . . birthday were respectively 100, 150, 200, 250, . . . till her 21st birthday. To find the total amount in the money box on her 21st birthday, we will have to write each of the 21 numbers in the list above and then add them up. Don’t you think it would be a tedious and time consuming process? Can we make the process shorter? This would be possible if we can find a method for getting this sum. Let us see. We consider the problem given to Gauss (about whom you read in Chapter 1), to solve when he was just 10 years old. He was asked to find the sum of the positive integers from 1 to 100. He immediately replied that the sum is 5050. Can you guess how did he do? He wrote : S = 1 + 2 + 3 + . . . + 99 + 100 And then, reversed the numbers to write S = 100 + 99 + . . . + 3 + 2 + 1 Adding these two, he got 2S = (100 + 1) + (99 + 2) + . . . + (3 + 98) + (2 + 99) + (1 + 100) = 101 + 101 + . . . + 101 + 101 (100 times) So, S = 100 101 5050 2   , i.e., the sum = 5050. Reprint 2026-27 64 MATHEMATICS We will now use the same technique to find the sum of the first n terms of an AP : a, a + d, a + 2d, . . . The nth term of this AP is a + (n – 1) d. Let S denote the sum of the first n terms of the AP. We have S = a + (a + d) + (a + 2d) + . . . + [a + (n – 1) d] (1) Rewriting the terms in reverse order, we have S = [a + (n – 1) d] + [a + (n – 2) d] + . . . + (a + d) + a (2) On adding (1) and (2), term-wise. we get 2S = [2 ( 1) ] [2 ( 1) ] ... [2 ( 1) ] [2 ( 1) ] times              a n d a n d a n d a n d n or, 2S = n [2a + (n – 1) d] (Since, there are n terms) or, S = 2 n [2a + (n – 1) d] So, the sum of the first n terms of an AP is given by S = 2 n [2a + (n – 1) d] We can also write this as S = 2 n [a + a + (n – 1) d] i.e., S = 2 n (a + an) (3) Now, if there are only n terms in an AP, then an = l, the last term. From (3), we see that S = 2 n (a + l ) (4) This form of the result is useful when the first and the last terms of an AP are given and the common difference is not given. Now we return to the question that was posed to us in the beginning. The amount of money (in Rs) in the money box of Shakila’s daughter on 1st, 2nd, 3rd, 4th birthday, . . ., were 100, 150, 200, 250, . . ., respectively. This is an AP. We have to find the total money collected on her 21st birthday, i.e., the sum of the first 21 terms of this AP. Reprint 2026-27 ARITHMETIC PROGRESSIONS 65 Here, a = 100, d = 50 and n = 21. Using the formula : S =   2 ( 1) 2 n a n d   , we have S =   21 2 100 (21 1) 50 2     =   21 200 1000 2  = 21 1200 2  = 12600 So, the amount of money collected on her 21st birthday is ` 12600. Hasn’t the use of the formula made it much easier to solve the problem? We also use Sn in place of S to denote the sum of first n terms of the AP. We write S20 to denote the sum of the first 20 terms of an AP. The formula for the sum of the first n terms involves four quantities S, a, d and n. If we know any three of them, we can find the fourth. Remark : The nth term of an AP is the difference of the sum to first n terms and the sum to first (n – 1) terms of it, i.e., an = Sn – Sn – 1. Let us consider some examples."
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "1",
+      "question_text": "Find the sum of the following APs: (i) 2, 7, 12, . . ., to 10 terms. (ii) –37, –33, –29, . . ., to 12 terms. (iii) 0.6, 1.7, 2.8, . . ., to 100 terms. (iv) 1 1 1 , , 15 12 10 , . . ., to 11 terms."
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "2",
+      "question_text": "Find the sums given below : (i) 7 + 1 10 2 + 14 + . . . + 84 (ii) 34 + 32 + 30 + . . . + 10 (iii) –5 + (–8) + (–11) + . . . + (–230)"
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "3",
+      "question_text": "In an AP: (i) given a = 5, d = 3, an = 50, find n and Sn. (ii) given a = 7, a13 = 35, find d and S13. (iii) given a12 = 37, d = 3, find a and S12. (iv) given a3 = 15, S10 = 125, find d and a10. (v) given d = 5, S9 = 75, find a and a9. (vi) given a = 2, d = 8, Sn = 90, find n and an. (vii) given a = 8, an = 62, Sn = 210, find n and d. (viii) given an = 4, d = 2, Sn = –14, find n and a. (ix) given a = 3, n = 8, S = 192, find d. (x) given l = 28, S = 144, and there are total 9 terms. Find a. Reprint 2026-27 ARITHMETIC PROGRESSIONS 69"
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "4",
+      "question_text": "How many terms of the AP : 9, 17, 25, . . . must be taken to give a sum of 636?"
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "5",
+      "question_text": "The first term of an AP is 5, the last term is 45 and the sum is 400. Find the number of terms and the common difference."
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "6",
+      "question_text": "The first and the last terms of an AP are 17 and 350 respectively. If the common difference is 9, how many terms are there and what is their sum?"
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "7",
+      "question_text": "Find the sum of first 22 terms of an AP in which d = 7 and 22nd term is 149."
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "8",
+      "question_text": "Find the sum of first 51 terms of an AP whose second and third terms are 14 and 18 respectively."
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "9",
+      "question_text": "If the sum of first 7 terms of an AP is 49 and that of 17 terms is 289, find the sum of first n terms."
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "10",
+      "question_text": "Show that a1, a2, . . ., an, . . . form an AP where an is defined as below : (i) an = 3 + 4n (ii) an = 9 – 5n Also find the sum of the first 15 terms in each case."
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "11",
+      "question_text": "If the sum of the first n terms of an AP is 4n – n2, what is the first term (that is S1)? What is the sum of first two terms? What is the second term? Similarly, find the 3rd, the 10th and the nth terms."
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "12",
+      "question_text": "Find the sum of the first 40 positive integers divisible by 6."
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "13",
+      "question_text": "Find the sum of the first 15 multiples of 8."
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "14",
+      "question_text": "Find the sum of the odd numbers between 0 and 50."
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "15",
+      "question_text": "A contract on construction job specifies a penalty for delay of completion beyond a certain date as follows: ` 200 for the first day, ` 250 for the second day, ` 300 for the third day, etc., the penalty for each succeeding day being ` 50 more than for the preceding day. How much money the contractor has to pay as penalty, if he has delayed the work by 30 days?"
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "16",
+      "question_text": "A sum of ` 700 is to be used to give seven cash prizes to students of a school for their overall academic performance. If each prize is ` 20 less than its preceding prize, find the value of each of the prizes."
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "17",
+      "question_text": "In a school, students thought of planting trees in and around the school to reduce air pollution. It was decided that the number of trees, that each section of each class will plant, will be the same as the class, in which they are studying, e.g., a section of Class I will plant 1 tree, a section of Class II will plant 2 trees and so on till Class XII. There are three sections of each class. How many trees will be planted by the students?"
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "18",
+      "question_text": "A spiral is made up of successive semicircles, with centres alternately at A and B, starting with centre at A, of radii 0.5 cm, 1.0 cm, 1.5 cm, 2.0 cm, . . . as shown in Fig. 5.4. What is the total length of such a spiral made up of thirteen consecutive semicircles? (Take  = 22 7 ) Reprint 2026-27 70 MATHEMATICS Fig. 5.4 [Hint : Length of successive semicircles is l1, l2, l3, l4, . . . with centres at A, B, A, B, . . ., respectively.]"
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "19",
+      "question_text": "200 logs are stacked in the following manner: 20 logs in the bottom row, 19 in the next row, 18 in the row next to it and so on (see Fig. 5.5). In how many rows are the 200 logs placed and how many logs are in the top row? Fig. 5.5"
+    },
+    {
+      "exercise_id": "Ex_5.3",
+      "question_number": "20",
+      "question_text": "In a potato race, a bucket is placed at the starting point, which is 5 m from the first potato, and the other potatoes are placed 3 m apart in a straight line. There are ten potatoes in the line (see Fig. 5.6). Fig. 5.6 A competitor starts from the bucket, picks up the nearest potato, runs back with it, drops it in the bucket, runs back to pick up the next potato, runs to the bucket to drop it in, and she continues in the same way until all the potatoes are in the bucket. What is the total distance the competitor has to run? [Hint : To pick up the first potato and the second potato, the total distance (in metres) run by a competitor is 2 5 + 2 (5 + 3)] Reprint 2026-27 ARITHMETIC PROGRESSIONS 71"
+    },
+    {
+      "exercise_id": "Ex_5.4",
+      "question_number": "1",
+      "question_text": "Which term of the AP : 121, 117, 113, . . ., is its first negative term? [Hint : Find n for an < 0]"
+    },
+    {
+      "exercise_id": "Ex_5.4",
+      "question_number": "2",
+      "question_text": "The sum of the third and the seventh terms of an AP is 6 and their product is 8. Find the sum of first sixteen terms of the AP."
+    },
+    {
+      "exercise_id": "Ex_5.4",
+      "question_number": "3",
+      "question_text": "A ladder has rungs 25 cm apart. (see Fig. 5.7). The rungs decrease uniformly in length from 45 cm at the bottom to 25 cm at the top. If the top and the bottom rungs are 1 2 2 m apart, what is the length of the wood required for the rungs? [Hint : Number of rungs = 250 1 25 ]"
+    },
+    {
+      "exercise_id": "Ex_5.4",
+      "question_number": "4",
+      "question_text": "The houses of a row are numbered consecutively from 1 to 49. Show that there is a value of x such that the sum of the numbers of the houses preceding the house numbered x is equal to the sum of the numbers of the houses following it. Find this value of x. [Hint : Sx – 1 = S49 – Sx]"
+    },
+    {
+      "exercise_id": "Ex_5.4",
+      "question_number": "5",
+      "question_text": "A small terrace at a football ground comprises of 15 steps each of which is 50 m long and built of solid concrete. Each step has a rise of 1 4 m and a tread of 1 2 m. (see Fig. 5.8). Calculate the total volume of concrete required to build the terrace. [Hint : Volume of concrete required to build the first step = 3 1 1 50 m 4 2   ] Fig. 5.8 Fig. 5.7 * These exercises are not from the examination point of view. Reprint 2026-27 72 MATHEMATICS"
+    },
+    {
+      "exercise_id": "Ex_5.4",
+      "question_number": "5",
+      "question_text": "5 Summary In this chapter, you have studied the following points :"
+    },
+    {
+      "exercise_id": "Ex_5.4",
+      "question_number": "1",
+      "question_text": "An arithmetic progression (AP) is a list of numbers in which each term is obtained by adding a fixed number d to the preceding term, except the first term. The fixed number d is called the common difference. The general form of an AP is a, a + d, a + 2d, a + 3d, . . ."
+    },
+    {
+      "exercise_id": "Ex_5.4",
+      "question_number": "2",
+      "question_text": "A given list of numbers a1, a2, a3, . . . is an AP, if the differences a2 – a1, a3 – a2, a4 – a3, . . ., give the same value, i.e., if ak + 1 – ak is the same for different values of k."
+    },
+    {
+      "exercise_id": "Ex_5.4",
+      "question_number": "3",
+      "question_text": "In an AP with first term a and common difference d, the nth term (or the general term) is given by an = a + (n – 1) d."
+    },
+    {
+      "exercise_id": "Ex_5.4",
+      "question_number": "4",
+      "question_text": "The sum of the first n terms of an AP is given by : S =   2 ( 1) 2 n a n d  "
+    },
+    {
+      "exercise_id": "Ex_5.4",
+      "question_number": "5",
+      "question_text": "If l is the last term of the finite AP, say the nth term, then the sum of all terms of the AP is given by : S = ( ) 2 n a l  A NOTE TO THE READER If a, b, c are in AP, then b = 2 a c  and b is called the arithmetic mean of a and c. Reprint 2026-27"
+    }
+  ]
+}

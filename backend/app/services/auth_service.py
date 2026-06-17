@@ -9,6 +9,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Optional
 from google.cloud.firestore import Client
+from google.cloud.firestore_v1.base_query import FieldFilter
 from pydantic import BaseModel
 
 
@@ -90,7 +91,7 @@ class FirestoreAuthService:
         """
         try:
             # Query user by email
-            users = self.users_collection.where("email", "==", email).stream()
+            users = self.users_collection.where(filter=FieldFilter("email", "==", email)).stream()
             user_doc = next(users, None)
 
             if not user_doc:
@@ -135,7 +136,7 @@ class FirestoreAuthService:
         """
         try:
             # Find user by email
-            users = self.users_collection.where("email", "==", email).stream()
+            users = self.users_collection.where(filter=FieldFilter("email", "==", email)).stream()
             user_doc = next(users, None)
 
             if not user_doc:
@@ -238,7 +239,7 @@ class FirestoreAuthService:
         try:
             now = datetime.utcnow()
             expired = self.tokens_collection.where(
-                "expires_at", "<", now.isoformat()
+                filter=FieldFilter("expires_at", "<", now.isoformat())
             ).stream()
 
             count = 0

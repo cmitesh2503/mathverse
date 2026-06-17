@@ -5,13 +5,66 @@ import base64
 import contextlib
 import json
 import os
+import random
 import re
 import time
 from functools import lru_cache
 from typing import Any
 
+from dotenv import load_dotenv
+
+
+def load_absolute_dotenv():
+    """
+    Self-healing environment locator. Walks up the directory tree from the file 
+    and from the current working directory to locate any .env files.
+    """
+    search_dirs = []
+    
+    # 1. Gather file-relative paths
+    try:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        for _ in range(6):
+            search_dirs.append(current_dir)
+            parent = os.path.dirname(current_dir)
+            if parent == current_dir:
+                break
+            current_dir = parent
+    except Exception:
+        pass
+
+    # 2. Gather current working directory paths
+    try:
+        cwd = os.getcwd()
+        for _ in range(4):
+            if cwd not in search_dirs:
+                search_dirs.append(cwd)
+            parent = os.path.dirname(cwd)
+            if parent == cwd:
+                break
+            cwd = parent
+    except Exception:
+        pass
+
+    # 3. Search and load
+    env_names = [".env", ".env.local", "local.env"]
+    for directory in search_dirs:
+        for name in env_names:
+            potential_env = os.path.join(directory, name)
+            if os.path.exists(potential_env):
+                load_dotenv(potential_env, override=True)
+                print(f"✅ [AI GATEWAY] Loaded environment variables from: {potential_env}")
+                return
+                
+    # Default fallback
+    load_dotenv(override=True)
+
+
+# Execute absolute dotenv walker at the very top of imports
+load_absolute_dotenv()
+
 from ..cache.cache_manager import get_cache, set_cache
-from ..core.config import GEMINI_API_KEY, GEMINI_LIVE_MODEL, GEMINI_TEXT_MODEL
+from ..core.config import GEMINI_LIVE_MODEL, GEMINI_TEXT_MODEL
 from ..guardrails.ai_guardrail import validate_response
 
 try:
@@ -20,18 +73,44 @@ except ImportError:  # pragma: no cover - optional dependency
     ResourceExhausted = None
 
 
-TEXT_MODEL_ID = "gemini-2.5-flash"
-TTS_MODEL_ID = os.getenv("GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-tts")
+# Gather active credentials from environment, trying standard variable names
+GEMINI_API_KEY = (
+    os.getenv("GEMINI_API_KEY") 
+    or os.getenv("GOOGLE_API_KEY") 
+    or os.getenv("GEMINI_LIVE_API_KEY")
+    or os.getenv("API_KEY")
+)
+
+# Last-resort fallback to the config singleton
+if not GEMINI_API_KEY:
+    try:
+        from ..core.config import GEMINI_API_KEY as CONFIG_KEY
+        if CONFIG_KEY:
+            GEMINI_API_KEY = CONFIG_KEY
+            print("ℹ️ [AI GATEWAY] Loaded GEMINI_API_KEY fallback from config module.")
+    except Exception:
+        pass
+
+# Safe print out the status of loaded keys to terminal
+if not GEMINI_API_KEY:
+    print("🚨 [AI GATEWAY] GEMINI_API_KEY is not configured! Please set it in your environment or .env file.")
+else:
+    masked_key = GEMINI_API_KEY[:4] + "..." + GEMINI_API_KEY[-4:] if len(GEMINI_API_KEY) > 8 else "***"
+    print(f"🔑 [AI GATEWAY] Active API Key detected: {masked_key}")
+
+TEXT_MODEL_ID = "gemini-2.0-flash"
+TTS_MODEL_ID = os.getenv("GEMINI_TTS_MODEL", "gemini-2.0-flash")
 DEPRECATED_TEXT_MODEL_SUFFIXES = (
     "1.5-flash",
     "1.5-flash-8b",
     "1.5-pro",
 )
 
+GEMINI_TEXT_MODEL_ENV = os.getenv("GEMINI_TEXT_MODEL") or os.getenv("MATHVERSE_TEXT_MODEL") or GEMINI_TEXT_MODEL or "gemini-2.0-flash"
 DEFAULT_TEXT_MODEL = (
     TEXT_MODEL_ID
-    if GEMINI_TEXT_MODEL in {f"gemini-{suffix}" for suffix in DEPRECATED_TEXT_MODEL_SUFFIXES}
-    else GEMINI_TEXT_MODEL
+    if GEMINI_TEXT_MODEL_ENV in {f"gemini-{suffix}" for suffix in DEPRECATED_TEXT_MODEL_SUFFIXES}
+    else GEMINI_TEXT_MODEL_ENV
 )
 DEFAULT_LIVE_MODEL = GEMINI_LIVE_MODEL
 GENAI_HTTP_TIMEOUT_MS = 300_000
@@ -64,6 +143,7 @@ FALLBACK_TEXT = json.dumps(SAFE_FALLBACK_AGENT_RESPONSE)
 
 
 def live_api_available() -> bool:
+    """Verifies if the live GenAI API keys and modules are active."""
     return bool(GEMINI_API_KEY and _google_genai_module() is not None)
 
 
@@ -76,6 +156,7 @@ def _new_sdk_client():
 
 
 def get_live_client():
+    """Provides the active Google GenAI SDK client for WebSockets and live media streams."""
     return _new_sdk_client()
 
 
@@ -88,8 +169,11 @@ def _configure_legacy_sdk() -> bool:
 
 
 def _normalize_model_id(model: str | None) -> str:
+    if not model:
+        return TEXT_MODEL_ID
+    model = model.replace("models/", "")
     deprecated_model_ids = {f"gemini-{suffix}" for suffix in DEPRECATED_TEXT_MODEL_SUFFIXES}
-    if not model or model in deprecated_model_ids:
+    if model in deprecated_model_ids:
         return TEXT_MODEL_ID
     return model
 
@@ -115,6 +199,17 @@ def _is_quota_error(error: Exception) -> bool:
     )
 
 
+def _is_transient_error(error: Exception) -> bool:
+    """Detects temporarily overloaded service and transient back-end connection anomalies."""
+    message = str(error).lower()
+    return (
+        "503" in message 
+        or "unavailable" in message 
+        or "high demand" in message 
+        or "overloaded" in message
+    )
+
+
 def _handle_generation_error(error: Exception, *, source: str, prompt: str) -> str | None:
     if _is_quota_error(error):
         fallback = _fallback_json()
@@ -131,13 +226,24 @@ def generate_response(
     model: str = DEFAULT_TEXT_MODEL, 
     response_schema: Any = None
 ) -> str:
+    """
+    Primary completion gateway. Implements up to 5 automatic retry turns with
+    jittered exponential delays to handle peak traffic demand (503s & 429s).
+    """
     cached = get_cache(prompt)
     if cached:
         return cached
 
+    if not GEMINI_API_KEY:
+        print("🚨 [AI Gateway Error] GEMINI_API_KEY is not configured in the active environment.")
+        return FALLBACK_TEXT
+
     model_id = _normalize_model_id(model)
     text: str | None = None
+    max_retries = 5
+    base_delay = 1.0
 
+    # 1. Primary Attempt using the New Google GenAI SDK Client
     try:
         client = _new_sdk_client()
         if client is not None:
@@ -148,13 +254,35 @@ def generate_response(
                 response_mime_type="application/json",
                 response_schema=response_schema,
             )
-            response = client.models.generate_content(model=model_id, contents=prompt, config=config)
-            text = getattr(response, "text", None)
+            
+            for attempt in range(max_retries):
+                try:
+                    response = client.models.generate_content(model=model_id, contents=prompt, config=config)
+                    text = getattr(response, "text", None)
+                    if text is not None:
+                        break
+                except Exception as err:
+                    if (_is_transient_error(err) or _is_quota_error(err)) and attempt < max_retries - 1:
+                        delay = (base_delay * (2 ** attempt)) + random.uniform(0.1, 0.4)
+                        retry_match = re.search(r"retry(?: in|Delay['\"]?:\s*['\"]?)\s*(\d+(?:\.\d+)?)s?", str(err), re.IGNORECASE)
+                        if retry_match:
+                            with contextlib.suppress(ValueError):
+                                requested_delay = float(retry_match.group(1))
+                                if requested_delay > 15.0:
+                                    print(f"⚠️ Requested retry delay ({requested_delay}s) is too long. Failing fast to fallback.")
+                                    raise err
+                                delay = requested_delay + 1.0
+                        print(f"⚠️ Primary GenAI Client experiencing high demand (503/429). Retrying in {delay:.2f}s... (Attempt {attempt + 1}/{max_retries})")
+                        time.sleep(delay)
+                        continue
+                    raise err
+
     except Exception as error:  # pragma: no cover - network dependent
         fallback = _handle_generation_error(error, source="GenAI SDK", prompt=prompt)
         if fallback is not None:
             return fallback
 
+    # 2. Secondary Fallback Attempt using Legacy GenerativeAI SDK Configurations
     if text is None:
         try:
             if _configure_legacy_sdk():
@@ -163,12 +291,33 @@ def generate_response(
                 gen_config = {"temperature": 0.0, "response_mime_type": "application/json"}
                 if response_schema:
                     gen_config["response_schema"] = response_schema
-                response = legacy_model.generate_content(
-                    prompt,
-                    generation_config=gen_config,
-                    request_options={"timeout": 300.0},
-                )
-                text = getattr(response, "text", None)
+                
+                for attempt in range(max_retries):
+                    try:
+                        response = legacy_model.generate_content(
+                            prompt,
+                            generation_config=gen_config,
+                            request_options={"timeout": 300.0},
+                        )
+                        text = getattr(response, "text", None)
+                        if text is not None:
+                            break
+                    except Exception as err:
+                        if (_is_transient_error(err) or _is_quota_error(err)) and attempt < max_retries - 1:
+                            delay = (base_delay * (2 ** attempt)) + random.uniform(0.1, 0.4)
+                            retry_match = re.search(r"retry(?: in|Delay['\"]?:\s*['\"]?)\s*(\d+(?:\.\d+)?)s?", str(err), re.IGNORECASE)
+                            if retry_match:
+                                with contextlib.suppress(ValueError):
+                                    requested_delay = float(retry_match.group(1))
+                                    if requested_delay > 15.0:
+                                        print(f"⚠️ Requested retry delay ({requested_delay}s) is too long. Failing fast to fallback.")
+                                        raise err
+                                    delay = requested_delay + 1.0
+                            print(f"⚠️ Legacy Gemini Client experiencing high demand (503/429). Retrying in {delay:.2f}s... (Attempt {attempt + 1}/{max_retries})")
+                            time.sleep(delay)
+                            continue
+                        raise err
+
         except Exception as error:  # pragma: no cover - network dependent
             fallback = _handle_generation_error(error, source="Legacy Gemini SDK", prompt=prompt)
             if fallback is not None:
@@ -178,6 +327,32 @@ def generate_response(
     set_cache(prompt, final_text)
     return final_text
 
+
+LOCAL_AI_API_BASE = os.getenv("LOCAL_AI_API_BASE", "http://localhost:11434/api/generate")
+LOCAL_AI_MODEL = os.getenv("LOCAL_AI_MODEL", "qwen2.5")
+
+def generate_local_response(prompt: str, model: str = LOCAL_AI_MODEL) -> str:
+    """
+    Calls a local LLM (like Qwen running on Ollama) to save cloud API quotas
+    for tasks like re-explaining concepts or generating dynamic questions.
+    """
+    import requests
+    try:
+        print(f"🤖 [LOCAL AI] Routing request to local model {model}...")
+        response = requests.post(
+            LOCAL_AI_API_BASE,
+            json={
+                "model": model,
+                "prompt": prompt,
+                "stream": False
+            },
+            timeout=25
+        )
+        if response.status_code == 200:
+            return response.json().get("response", "")
+    except Exception as e:
+        print(f"⚠️ [LOCAL AI] Request failed: {e}")
+    return ""
 
 async def stream_response(prompt: str, model: str = DEFAULT_TEXT_MODEL, response_schema: Any = None):
     text = generate_response(prompt, model=model, response_schema=response_schema)

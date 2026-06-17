@@ -40,19 +40,25 @@ CRITICAL TRANSITION RULES:
 - If the user simply says "next", "continue", or "ready", route based on the Active Phase.
 
 Based on the rules above, output ONLY the exact name of the agent to route to ("tutor_agent", "diagnostic_agent", or "proctor_agent"). Do not include any formatting, markdown, or other text.
-"""
+    """
 
     def __init__(self) -> None:
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         self._redis_key_prefix = os.getenv("ORCHESTRATOR_SESSION_KEY_PREFIX", "orchestrator:session:")
-        self.redis_client = redis.from_url(
-            redis_url,
-            decode_responses=True,
-            socket_connect_timeout=2,
-            socket_timeout=2,
-        )
-        self._use_memory_store = os.getenv("ORCHESTRATOR_STORE", "").lower() == "memory"
+        configured_store = os.getenv("ORCHESTRATOR_STORE", "").strip().lower()
         self._require_redis = os.getenv("ORCHESTRATOR_REQUIRE_REDIS", "").lower() in {"1", "true", "yes"}
+        self._use_memory_store = (
+            not self._require_redis
+            and (configured_store == "memory" or (not configured_store and not os.getenv("REDIS_URL")))
+        )
+        self.redis_client = None
+        if not self._use_memory_store:
+            self.redis_client = redis.from_url(
+                redis_url,
+                decode_responses=True,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+            )
 
     def _phase_value(self, session: StudentSession) -> str:
         raw_phase = getattr(session, "active_phase", SessionPhase.TEACHING)
@@ -89,6 +95,8 @@ Based on the rules above, output ONLY the exact name of the agent to route to ("
     async def verify_connection(self) -> bool:
         if self._use_memory_store:
             return True
+        if self.redis_client is None:
+            return True
         try:
             return bool(await asyncio.wait_for(self.redis_client.ping(), timeout=2))
         except (OSError, RedisError, TimeoutError, asyncio.TimeoutError) as error:
@@ -101,6 +109,8 @@ Based on the rules above, output ONLY the exact name of the agent to route to ("
             raw = self._memory_get(session_id)
         else:
             try:
+                if self.redis_client is None:
+                    return None
                 raw = await self.redis_client.get(self._redis_key(session_id))
             except (OSError, RedisError) as error:
                 self._fallback_to_memory(error)
@@ -120,6 +130,9 @@ Based on the rules above, output ONLY the exact name of the agent to route to ("
             self._memory_set(session_id, serialized)
         else:
             try:
+                if self.redis_client is None:
+                    self._memory_set(session_id, serialized)
+                    return session
                 await self.redis_client.set(self._redis_key(session_id), serialized, ex=self.SESSION_TTL_SECONDS)
             except (OSError, RedisError) as error:
                 self._fallback_to_memory(error)
@@ -404,6 +417,12 @@ Based on the rules above, output ONLY the exact name of the agent to route to ("
         if phase == SessionPhase.TESTING.value:
             await self.set_session(session_id, session)
             return "proctor_agent"
+
+        # FAST PATH: Deterministic routing for navigation intents to bypass Gemini
+        if action in {"start", "next_topic", "next_step", "continue", "ready"}:
+            agent_name = "diagnostic_agent" if phase == SessionPhase.PRACTICE.value else "tutor_agent"
+            await self.set_session(session_id, session)
+            return agent_name
 
         prompt = self.ORCHESTRATOR_ROUTING_PROMPT.format(
             active_phase=phase,

@@ -48,28 +48,25 @@ LIVE_OUTPUT_SAMPLE_RATE = 24000
 CLASS_SESSION_MINUTES = 45
 
 HINDI_CLASS_TUTOR_PROMPT = (
-    "You are MathVerse, a friendly, empathetic digital avatar math tutor. "
-    "You are conducting a structured class session. You must deliver all responses "
-    "using the real-time audio stream natively.\n\n"
-    "CRITICAL BEHAVIORAL & LANGUAGE RULES:\n"
-    "1. SOCRATIC APPROACH: Do not give away solutions instantly. Guide the student step-by-step "
-    "using short, encouraging questions based on the textbook context provided to you.\n"
-    "2. MANDATORY LANGUAGE: You must speak and respond entirely in fluid, natural Hindi "
-    "using clear Devanagari phrasing (\u0939\u093f\u0902\u0926\u0940).\n"
-    "3. MATH KEYWORDS: To match the CBSE curriculum, keep core mathematical terminology "
-    "in English (e.g., use terms like 'Circles', 'Radius', 'Tangent', 'Hypotenuse', 'Equation') "
-    "but embed them naturally inside your Hindi sentences.\n"
-    "4. NO ENGLISH SENTENCES: Do not speak full English sentences. Every instructional, "
-    "conversational, and welcoming phrase must be delivered in fluent Hindi audio.\n"
-    "5. DESI HINDI TUTOR STYLE: Do not sound like a US English tutor translating into Hindi. "
-    "Sound like an Indian Hindi-medium math teacher speaking naturally to a student in class. "
-    "Use Hindi-first sentence rhythm, common Indian classroom phrasing, and simple spoken Hindi. "
-    "Avoid awkward literal translations from English.\n"
-    "6. NATURAL INDIAN TUTOR VOICE: Speak like a patient Indian human math teacher in a classroom. "
-    "Use warm, natural Hindi phrases such as '\u092c\u0947\u091f\u093e', '\u0905\u091a\u094d\u091b\u093e', "
-    "'\u0938\u094b\u091a\u094b', and '\u0927\u0940\u0930\u0947-\u0927\u0940\u0930\u0947 \u0938\u092e\u091d\u0924\u0947 \u0939\u0948\u0902' where appropriate.\n"
-    "7. SLOW PACING & PAUSES: Speak a little slowly. Add clear pauses after each important idea, "
-    "after every question, and before moving to the next step. Keep turns concise, but do not rush."
+    "You are NOT an AI assistant, and you are forbidden from reading the provided text chunks verbatim. "
+    "Instead, you are an incredibly energetic, passionate, and world-class human Mathematics teacher "
+    "conducting a lively classroom session. Your voice must sound warm, enthusiastic, and animated.\n\n"
+    "CRITICAL TEACHING RULES:\n"
+    "1. DYNAMIC REWRITING: Read the textbook context silently to understand the math rule, "
+    "but translate it entirely into your own casual, natural, conversational teaching voice. "
+    "Never say 'According to the text' or 'The PDF states'. Speak as if the knowledge is entirely in your own brain.\n"
+    "2. HUMAN CADENCE & FILLERS: Use natural human conversational phrases to keep things lively. "
+    "Sprinkle in energetic phrases like: 'Check this out!', 'Look at this carefully, okay?', 'Now, here is where it gets interesting!', "
+    "'Right?', 'Makes sense?'.\n"
+    "3. SIMPLIFY WITH ANALOGIES: If the textbook context contains a dry mathematical definition, "
+    "instantly explain it using a fun, real-world visual analogy before looking at the equations.\n"
+    "4. SOCRATIC PAUSING: Do not lecture for more than 3 to 4 sentences at a time. Explain one tiny "
+    "piece of the concept, then pause completely and throw a quick, energetic question back to the student "
+    "to check their understanding.\n"
+    "5. LANGUAGE BOUNDARY (HINDI MODE): If the language is Hindi, deliver this "
+    "passionate performance entirely in fluid, natural Hindi speech. Speak like a popular, engaging Indian "
+    "coaching class teacher—expressive, encouraging, keeping core math keywords (like 'Radius', 'Tangent', 'Hypotenuse') "
+    "in English, but explaining everything else in beautiful, rhythmic Hindi."
 )
 
 
@@ -248,6 +245,7 @@ class LiveTutorBridge:
 
     async def connect(self) -> bool:
         if not self.available:
+            await self.emit_event({"type": "live_error", "content": "Gemini Live API is not configured or unavailable."})
             return False
 
         session_record = session_service.get_session(self.session_id)
@@ -426,7 +424,6 @@ class LiveTutorBridge:
                 f"{source_material}"
             )
 
-        resolved_system_prompt = self.tutor_agent._render_system_prompt(
             self.tutor_agent.SYSTEM_PROMPT,
             grade=session_record.grade,
             exam=(getattr(self.student_session, "exam", "cbse") or "cbse").upper(),
@@ -435,7 +432,7 @@ class LiveTutorBridge:
             current_topic=topic_title,
             rag_context=source_material or "No RAG context provided.",
             phase=phase,
-        )
+        
 
         agenda_list = getattr(self.student_session, "agenda", [])
         agenda_text = "\n".join(f"{i+1}. {topic}" for i, topic in enumerate(agenda_list)) if agenda_list else f"1. {topic_title}"
@@ -668,6 +665,19 @@ class LiveTutorBridge:
             spoken_response = tutor_payload.get("spoken_response", "")
             whiteboard_actions = tutor_payload.get("whiteboard_actions", [])
 
+        expanded_actions = []
+        for action in whiteboard_actions:
+            if isinstance(action, dict) and str(action.get("action", "")).lower() == "draw_shape" and action.get("content"):
+                try:
+                    from ..services.geometry_translator import translate_diagram_to_primitives_async
+                    prims = await translate_diagram_to_primitives_async(action["content"])
+                    expanded_actions.extend(prims)
+                except Exception as e:
+                    print(f"Diagram translation error: {e}")
+            else:
+                expanded_actions.append(action)
+        whiteboard_actions = expanded_actions
+
         if route != "proctor_agent" and tutor_payload.get("advance_topic"):
             try:
                 verify_tutor_action_access(
@@ -701,8 +711,11 @@ class LiveTutorBridge:
         self.student_session.questions_asked += 1
         whiteboard_actions = self._ensure_board_header_actions(whiteboard_actions)
 
-        if not self._has_action_text(whiteboard_actions):
-            whiteboard_actions = self._topic_problem_actions(
+        raw_phase = getattr(self.student_session, "active_phase", "teaching")
+        phase = str(getattr(raw_phase, "value", raw_phase) or "teaching").strip().lower()
+
+        if phase != "teaching" and not self._has_action_text(whiteboard_actions):
+            whiteboard_actions = self._pyq_problem_actions(
                 topic=self._resolve_current_topic(),
                 variation=self.student_session.questions_asked,
                 rag_context=rag_context,
@@ -1374,6 +1387,19 @@ class LiveTutorBridge:
             base_problem = candidates[variation % len(candidates)]
         else:
             base_problem = f"Solve one step-by-step problem based on {topic or 'the current topic'}."
+            try:
+                from ..tutor_brain.curriculum import get_chapter_position
+                from ..services.cbse_exercises import load_chapter_pdf_exercises
+                grade = int(getattr(self.student_session, "grade", 10) or 10)
+                exam = str(getattr(self.student_session, "exam", "cbse") or "cbse")
+                chapter_title = self.student_session.chapter_name or topic
+                ch_idx, _ = get_chapter_position(grade, chapter_title, exam)
+                if ch_idx > 0:
+                    real_ex = load_chapter_pdf_exercises(grade, ch_idx, chapter_title)
+                    if real_ex:
+                        base_problem = str(real_ex[variation % len(real_ex)].get("prompt") or base_problem)
+            except Exception as e:
+                print(f"Fallback exercise retrieval failed: {e}")
 
         if variation % 3 == 2:
             prompt = self._generate_similar_problem(base_problem, variation + 1)
@@ -1402,69 +1428,6 @@ class LiveTutorBridge:
             actions.append({"action": "draw_text", "content": f"Final answer: {answer}"})
         return actions
 
-    def _topic_problem_actions(self, topic: str, variation: int = 0, rag_context: str = "") -> list[dict]:
-        lowered = (topic or "").lower()
-        alt = variation % 2
-
-        if "set notation" in lowered or "representations" in lowered:
-            if alt == 0:
-                return [
-                    {"action": "draw_text", "content": "Problem: Write B in roster form"},
-                    {"action": "write_equation", "content": "B = {x in N | 2 <= x <= 6}"},
-                    {"action": "write_equation", "content": "B = {2,3,4,5,6}"},
-                    {"action": "draw_text", "content": "Now compare with A = {1,2,3,4,5}"},
-                ]
-            return [
-                {"action": "draw_text", "content": "Problem: Convert roster to set-builder"},
-                {"action": "write_equation", "content": "A = {3,6,9,12}"},
-                {"action": "write_equation", "content": "A = {x in N | x = 3n, 1 <= n <= 4}"},
-            ]
-
-        if "subset" in lowered or "types of sets" in lowered:
-            return [
-                {"action": "draw_text", "content": "Problem: Check subset and proper subset"},
-                {"action": "write_equation", "content": "A = {1,2,3}, B = {1,2,3,4,5}"},
-                {"action": "write_equation", "content": "A subseteq B  (every element of A is in B)"},
-                {"action": "write_equation", "content": "A subset B because A != B"},
-            ]
-
-        if "operation" in lowered:
-            return [
-                {"action": "draw_text", "content": "Problem: Find union, intersection, differences"},
-                {"action": "write_equation", "content": "A = {1,2,3,4}, B = {3,4,5,6}"},
-                {"action": "write_equation", "content": "A union B = {1,2,3,4,5,6}"},
-                {"action": "write_equation", "content": "A intersection B = {3,4}"},
-                {"action": "write_equation", "content": "A - B = {1,2},  B - A = {5,6}"},
-            ]
-
-        if "venn" in lowered:
-            return [
-                {"action": "draw_text", "content": "Problem: Students liking Cricket (C) and Football (F)"},
-                {"action": "write_equation", "content": "n(U)=40, n(C)=22, n(F)=18, n(C intersection F)=10"},
-                {"action": "write_equation", "content": "Only C = 22 - 10 = 12"},
-                {"action": "write_equation", "content": "Only F = 18 - 10 = 8"},
-                {"action": "write_equation", "content": "Neither = 40 - (12+10+8) = 10"},
-            ]
-
-        if "ordered pair" in lowered or "cartesian" in lowered:
-            return [
-                {"action": "draw_text", "content": "Problem: Form Cartesian product and a relation"},
-                {"action": "write_equation", "content": "A = {1,2}, B = {a,b}"},
-                {"action": "write_equation", "content": "A x B = {(1,a),(1,b),(2,a),(2,b)}"},
-                {"action": "write_equation", "content": "R = {(1,a),(2,b)} subseteq A x B"},
-            ]
-
-        if "relation" in lowered:
-            return [
-                {"action": "draw_text", "content": "Problem: Check relation properties"},
-                {"action": "write_equation", "content": "A = {1,2,3}, R = {(1,1),(2,2),(3,3),(1,2),(2,1)}"},
-                {"action": "write_equation", "content": "Reflexive: Yes (all (a,a) present)"},
-                {"action": "write_equation", "content": "Symmetric: Yes ((1,2) and (2,1))"},
-                {"action": "write_equation", "content": "Transitive: Check pairs to conclude"},
-            ]
-
-        return self._pyq_problem_actions(topic=topic, rag_context=rag_context, variation=variation)
-
     def _prepare_problem_whiteboard_actions(
         self,
         topic: str,
@@ -1473,6 +1436,9 @@ class LiveTutorBridge:
         rag_context: str = "",
     ) -> list[dict]:
         cleaned: list[dict] = []
+        raw_phase = getattr(self.student_session, "active_phase", "teaching")
+        phase = str(getattr(raw_phase, "value", raw_phase) or "teaching").strip().lower()
+
         for action in actions:
             if not isinstance(action, dict):
                 continue
@@ -1483,7 +1449,7 @@ class LiveTutorBridge:
             if text and self._is_greeting_line(text):
                 continue
             is_text_action = action_name.lower() in {"write", "write_text", "add_text", "text", "draw_text"}
-            if text and is_text_action and len(text.split()) >= 28 and not self._is_equation_line(text):
+            if phase != "teaching" and text and is_text_action and len(text.split()) >= 28 and not self._is_equation_line(text):
                 structured = re.match(r"(?i)^(step\s*\d+|problem:|final answer:|source:|chapter:|topic:)", text)
                 if not structured:
                     continue
@@ -1491,8 +1457,8 @@ class LiveTutorBridge:
                 continue
             cleaned.append(dict(action))
 
-        if self._needs_problem_board(cleaned):
-            return self._topic_problem_actions(topic, variation=variation, rag_context=rag_context)
+        if phase != "teaching" and self._needs_problem_board(cleaned):
+            return self._pyq_problem_actions(topic=topic, variation=variation, rag_context=rag_context)
         return cleaned
 
     def _extract_action_from_message(self, message: str) -> str:

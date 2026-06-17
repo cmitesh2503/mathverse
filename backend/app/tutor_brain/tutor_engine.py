@@ -4,10 +4,15 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
+from pathlib import Path
 from threading import Lock
 from typing import Any, Optional
 from app.services.mistake_engine import analyze_attempt
 from app.math.solver import solve_equation
+
+class TeachingPackValidationError(Exception):
+    pass
+
 from .curriculum import (
     find_topic_by_message,
     get_chapter_position,
@@ -36,6 +41,7 @@ import random
 
 AI_DOUBT_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ai-doubt")
 CLASS_DURATION_MINUTES = 45
+PACKS_DIR = Path(__file__).resolve().parents[1] / "data" / "curriculum" / "packs"
 
 
 def sanitize_for_speech(text: str) -> str:
@@ -453,11 +459,11 @@ class TutorEngine:
 
     def _set_topic(self, state: ClassroomState, grade: int, topic_slug: str, reset: bool) -> None:
         topic = get_topic(grade, topic_slug)
-        concept = get_concept(grade, topic_slug)
         state.grade = grade
         state.topic_slug = topic_slug
         state.topic_title = topic["title"] if topic else topic_slug.replace("_", " ").title()
         state.current_chapter = state.topic_title
+        concept = self._concept_by_id(state, topic, None)
         state.concept_id = concept["id"] if concept else None
         state.concept_title = concept["title"] if concept else ""
         state.chapter_label = self._chapter_label(grade, topic_slug)
@@ -471,6 +477,119 @@ class TutorEngine:
     def _chapter_label(self, grade: int, topic_slug: str | None) -> str:
         chapter_number, total = get_chapter_position(grade, topic_slug)
         return f"Chapter {chapter_number} of {total}"
+
+    def _slugify(self, value: Any) -> str:
+        cleaned = re.sub(r"[^a-z0-9]+", "_", str(value or "").lower()).strip("_")
+        return cleaned
+
+    def _load_teaching_pack(self, state: ClassroomState, chapter: dict[str, Any] | None = None) -> dict[str, Any]:
+        chapter_slug = (
+            (chapter or {}).get("slug")
+            or getattr(state, "topic_slug", None)
+            or self._slugify((chapter or {}).get("title") or getattr(state, "topic_title", ""))
+        )
+        path = PACKS_DIR / f"grade_{int(getattr(state, 'grade', 10) or 10)}_{chapter_slug}.json"
+        if not path.exists():
+            return {}
+        cache_key = f"teaching_pack|{path}"
+        cached = get_cache(cache_key)
+        if isinstance(cached, dict):
+            return cached
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            if isinstance(payload, dict):
+                set_cache(cache_key, payload)
+                return payload
+        except Exception as error:
+            print(f"Teaching pack read failed ({path.name}): {error}")
+        return {}
+
+    def _normalize_pack_problem(self, problem: Any, *, source: str = "NCERT") -> dict[str, Any]:
+        if not isinstance(problem, dict):
+            return {"prompt": str(problem), "source": source}
+        prompt = (
+            problem.get("prompt")
+            or problem.get("question")
+            or problem.get("question_text")
+            or problem.get("example")
+            or ""
+        )
+        normalized = {
+            **problem,
+            "prompt": str(prompt).strip(),
+            "source": problem.get("source") or source,
+        }
+        if "answer" not in normalized and problem.get("final_answer") is not None:
+            normalized["answer"] = problem.get("final_answer")
+        return normalized
+
+    def _normalize_pack_concept(self, raw: dict[str, Any], index: int) -> dict[str, Any]:
+        title = str(raw.get("concept_name") or raw.get("title") or raw.get("topic") or raw.get("name") or "").strip()
+        if not title:
+            raise TeachingPackValidationError("concept_name missing")
+        worked_examples = [
+            self._normalize_pack_problem(item, source="NCERT Example")
+            for item in raw.get("worked_examples", []) or raw.get("examples", []) or []
+        ]
+        mini_questions = [
+            self._normalize_pack_problem(item, source="NCERT Mini Check")
+            for item in raw.get("mini_questions", []) or raw.get("practice_questions", []) or []
+        ]
+        exercise_questions = [
+            self._normalize_pack_problem(item, source="NCERT")
+            for item in raw.get("exercise_questions", []) or []
+        ]
+        key_formula = str(raw.get("key_formula") or raw.get("formula") or "").strip()
+        board_work = [str(item).strip() for item in raw.get("board_work", []) or [] if str(item).strip()]
+        if key_formula and key_formula not in board_work:
+            board_work.insert(0, key_formula)
+        return {
+            **raw,
+            "id": raw.get("id") or self._slugify(title),
+            "title": title,
+            "definition": raw.get("definition") or raw.get("simple_definition") or "",
+            "explanation": raw.get("simple_explanation") or raw.get("explanation") or "",
+            "analogy": raw.get("analogy") or raw.get("real_life_analogy") or "",
+            "key_formula": key_formula,
+            "board_work": board_work,
+            "ncert_examples": worked_examples,
+            "worked_examples": worked_examples,
+            "practice_problems": mini_questions,
+            "mini_questions": mini_questions,
+            "exercise_problems": exercise_questions,
+            "common_mistakes": raw.get("common_mistakes") or [],
+            "exam_tips": raw.get("exam_tips") or raw.get("important_exam_notes") or [],
+            "summary": raw.get("summary") or raw.get("simple_explanation") or raw.get("explanation") or "",
+        }
+
+    def _chapter_concepts(self, state: ClassroomState, chapter: dict[str, Any] | None) -> list[dict[str, Any]]:
+        pack = self._load_teaching_pack(state, chapter)
+        raw_concepts = (pack.get("concepts") or pack.get("topics")) if isinstance(pack, dict) else None
+        if isinstance(raw_concepts, list) and raw_concepts:
+            return [
+                self._normalize_pack_concept(raw, index)
+                for index, raw in enumerate(raw_concepts)
+                if isinstance(raw, dict)
+            ]
+        topic_slug = (chapter or {}).get("slug") or state.topic_slug or get_default_topic_slug(state.grade)
+        return get_topic_concepts(state.grade, topic_slug)
+
+    def _concept_by_id(
+        self,
+        state: ClassroomState,
+        chapter: dict[str, Any] | None,
+        concept_id: str | None,
+    ) -> dict[str, Any] | None:
+        concepts = self._chapter_concepts(state, chapter)
+        if not concepts:
+            return None
+        if not concept_id:
+            return concepts[0]
+        for concept in concepts:
+            if concept.get("id") == concept_id:
+                return concept
+        return concepts[0]
 
     def _build_homework(self, topic: dict | None, concept: dict | None) -> list[str]:
         tasks: list[str] = []
@@ -770,31 +889,23 @@ class TutorEngine:
         state.stage = "TEACH"
 
         exam = _normalize_exam(getattr(state, "exam", "cbse"))
-        rag_text = self._get_cbse_context(concept["title"], state) if exam == "cbse" else concept["title"]
+        theory_text = self._get_cbse_context(concept["title"], state) or concept.get("explanation", "")
 
-        if rag_text:
-            try:
-                                
-                plan = self._run_lesson_plan(rag_text, exam=exam)
+        # Requirement 9: No Gemini calls for chapter teaching or concept explanation
+        # Use static PDF extraction logic instead
+        state.concept_steps = _theory_sentences_for_topic(theory_text, concept["title"])
+        state.examples = _extract_problem_candidates(theory_text)
+        state.homework = ["Practice 2 questions from NCERT."]
 
-                state.concept_steps = plan["concept_steps"]
-                state.examples = plan.get("examples", [])
-                state.homework = ["Practice 2 questions from this concept"]
+        state.stage = "STEP_TEACH"
+        state.step_index = 0
+        state.waiting_for_student = False
 
-                state.stage = "STEP_TEACH"
-                state.step_index = 0
-                state.waiting_for_student = False
-
-                return (
-                    f"Chapter: {topic['title']}\n"
-                    f"Topic: {concept['title']}\n\n"
-                    "We will learn step by step.\n\n"
-                    "Say 'ready' to start."
-                )
-            except Exception as e:
-                print("Planner failed:", e)
-
-        return concept.get("explanation", "")
+        return (
+            f"Chapter: {topic['title']}\n"
+            f"Topic: {concept['title']}\n\n"
+            "We will learn step by step. Say 'ready' to start."
+        )
 
     def _offer_practice(self, state: ClassroomState) -> str:
         if state.active_problem is None:
@@ -1291,23 +1402,27 @@ class TutorEngine:
             return cached
 
         try:
-            from .lesson_planner import build_lesson_plan
+            from .lesson_planner import build_lesson_plan, RateLimitError
 
             async def _with_timeout():
                 return await asyncio.wait_for(build_lesson_plan(context, mistake_type, exam=exam), timeout=8)
 
-            plan = asyncio.run(_with_timeout())
-            set_cache(cache_key, plan)
-            return plan
-        except RuntimeError:
             try:
+                plan = asyncio.run(_with_timeout())
+            except RuntimeError:
                 loop = asyncio.get_event_loop()
                 plan = loop.run_until_complete(asyncio.wait_for(build_lesson_plan(context, mistake_type, exam=exam), timeout=8))
-                set_cache(cache_key, plan)
-                return plan
-            except Exception:
-                return self._fallback_plan(mistake_type, exam)
-        except Exception:
+            
+            set_cache(cache_key, plan, ttl_seconds=0)
+            return plan
+        except Exception as e:
+            from .lesson_planner import RateLimitError
+            if isinstance(e, RateLimitError) or (hasattr(e, "__cause__") and isinstance(e.__cause__, RateLimitError)):
+                # Rate limit protection: serve cached explanation instead (ignoring mistake_type to find a generic one)
+                generic_cache_key = f"lesson_plan|{exam}||{context[:300]}"
+                cached_generic = get_cache(generic_cache_key)
+                if cached_generic:
+                    return cached_generic
             return self._fallback_plan(mistake_type, exam)
 
     def _fallback_plan(self, mistake_type: str | None = None, exam: str = "cbse") -> dict[str, Any]:
@@ -1694,6 +1809,34 @@ class TutorEngine:
             if isinstance(problem, dict)
         ]
 
+    def _current_chapter_pdf_questions(self, state: ClassroomState) -> list[dict[str, Any]]:
+        current = self._get_current_concept(state)
+        chapter = current.get("chapter") or {}
+        fallback_index = int(getattr(state, "current_chapter_index", 0) or 0) + 1
+        chapter_index = get_pdf_chapter_number(state.grade, chapter, fallback_index)
+        chapter_title = chapter.get("title") or getattr(state, "topic_title", None) or f"Chapter {chapter_index}"
+        try:
+            return load_chapter_pdf_exercises(state.grade, chapter_index, chapter_title)
+        except Exception as error:
+            print(f"NCERT PDF homework exercise load failed: {error}")
+            return []
+
+    def _homework_question_from_pdf(self, state: ClassroomState, problem: dict[str, Any]) -> dict[str, Any]:
+        prompt = str(problem.get("prompt") or problem.get("question_text") or "").strip()
+        return {
+            **problem,
+            "question_id": problem.get("question_id") or f"ncert-{problem.get('chapter_index')}-{problem.get('exercise')}-{problem.get('number')}",
+            "chapter": problem.get("chapter") or problem.get("chapter_title") or getattr(state, "topic_title", None),
+            "topic": problem.get("topic") or getattr(state, "concept_title", None) or getattr(state, "topic_title", None),
+            "exercise_no": problem.get("exercise_no") or problem.get("exercise"),
+            "question_no": problem.get("question_no") or problem.get("number"),
+            "question_text": problem.get("question_text") or prompt,
+            "prompt": prompt,
+            "answer": problem.get("answer", ""),
+            "source": "NCERT",
+            "can_request_help": True,
+        }
+
     def _concept_example(self, concept: dict[str, Any]) -> str | None:
         examples = concept.get("ncert_examples") or concept.get("practice_problems") or []
         if examples:
@@ -1711,19 +1854,15 @@ class TutorEngine:
             return [self._generate_jee_question(pattern, getattr(state, "difficulty", "easy")) for pattern in patterns]
 
         topic_obj = find_topic_by_message(state.grade, str(topic or "")) or get_topic(state.grade, state.topic_slug or get_default_topic_slug(state.grade))
-        concepts = get_topic_concepts(state.grade, topic_obj["slug"]) if topic_obj else []
         questions: list[dict[str, Any]] = []
-        for concept in concepts:
-            exercise_questions = self._homework_exercise_questions(concept)
-            for question in exercise_questions:
-                question["topic"] = topic_obj.get("title", "CBSE Mathematics") if topic_obj else "CBSE Mathematics"
-                question["concept"] = concept.get("title")
-                questions.append(question)
-                if len(questions) >= 5:
-                    break
+        for problem in self._current_chapter_pdf_questions(state):
+            question = self._homework_question_from_pdf(state, problem)
+            question["topic"] = topic_obj.get("title", "CBSE Mathematics") if topic_obj else question.get("topic")
+            question["concept"] = getattr(state, "concept_title", None) or question.get("concept")
+            questions.append(question)
             if len(questions) >= 5:
                 break
-        return questions or [self._generate_jee_question("quadratic_difference_of_squares", "easy")]
+        return questions
 
     def _evaluate_homework_answer(self, question: dict[str, Any], answer: str) -> dict[str, Any]:
         try:
@@ -1854,7 +1993,7 @@ class TutorEngine:
 
     def _refresh_public_state(self, state: ClassroomState, include_problem: bool) -> None:
         topic = get_topic(state.grade, state.topic_slug or get_default_topic_slug(state.grade))
-        concept = get_concept(state.grade, state.topic_slug or get_default_topic_slug(state.grade), state.concept_id)
+        concept = self._concept_by_id(state, topic, state.concept_id)
         state.public_state["topic_name"] = (
             getattr(state, "current_concept_title", None)
             or state.topic_title
@@ -1892,20 +2031,46 @@ class TutorEngine:
 
     def _build_whiteboard(self, topic: dict | None, concept: dict | None, problem: dict[str, Any] | None) -> dict[str, Any]:
         board_work = concept.get("board_work", []) if concept else []
-        equations = [line for line in board_work if "=" in line]
+        key_formula = str((concept or {}).get("key_formula") or "").strip()
+        equations = [key_formula] if key_formula else []
+        equations.extend(line for line in board_work if "=" in line)
         if topic and topic.get("teaching_anchor") and "=" in topic["teaching_anchor"]:
             equations = [topic["teaching_anchor"], *equations]
         equations = [line for line in dict.fromkeys(line.strip() for line in equations if line and line.strip())][:5]
 
         chalk_lines: list[str] = []
-        if concept and concept.get("title"):
-            chalk_lines.append(f"Focus: {concept['title']}")
-        if concept and concept.get("definition"):
-            chalk_lines.append(concept["definition"])
-        elif topic and topic.get("teaching_anchor") and "=" not in topic["teaching_anchor"]:
-            chalk_lines.append(topic["teaching_anchor"])
-        chalk_lines.extend(line for line in board_work if "=" not in line)
-        chalk_lines = [line for line in dict.fromkeys(line.strip() for line in chalk_lines if line and line.strip())][:6]
+        concept_title = str((concept or {}).get("title") or "Today topic").strip()
+        definition = str((concept or {}).get("definition") or (topic or {}).get("teaching_anchor") or "").strip()
+        explanation = str((concept or {}).get("explanation") or "").strip()
+        analogy = str((concept or {}).get("analogy") or self._concept_analogy(concept or {})).strip()
+        worked_examples = (concept or {}).get("worked_examples") or (concept or {}).get("ncert_examples") or []
+        mini_questions = (concept or {}).get("mini_questions") or (concept or {}).get("practice_problems") or []
+        common_mistakes = [str(item).strip() for item in (concept or {}).get("common_mistakes", []) if str(item).strip()]
+        exam_tips = [str(item).strip() for item in (concept or {}).get("exam_tips", []) if str(item).strip()]
+
+        def _problem_line(items: list[Any], fallback: str) -> str:
+            for item in items:
+                if isinstance(item, dict):
+                    prompt = item.get("prompt") or item.get("question") or item.get("question_text")
+                    if prompt:
+                        return str(prompt).strip()
+                elif str(item).strip():
+                    return str(item).strip()
+            return fallback
+
+        chalk_lines.extend([
+            f"Concept Title: {concept_title}",
+            f"Definition: {definition or 'Meaning of the concept in simple words.'}",
+            f"Key Formula: {equations[0] if equations else 'Write the rule before solving.'}",
+            f"Visual Analogy: {analogy}",
+            f"Example 1: {_problem_line(worked_examples[:1], 'Teacher-led simple example')}",
+            f"Example 2: {_problem_line(worked_examples[1:2], 'Second teacher-led example')}",
+            f"Mini Check Question: {_problem_line(mini_questions[:1], 'Explain the idea in your own words.')}",
+            f"Important Exam Note: {exam_tips[0] if exam_tips else 'Write the given values first, then apply the rule.'}",
+            f"Common Mistake: {common_mistakes[0] if common_mistakes else 'Do not jump to calculation before understanding the question.'}",
+            f"Summary: {str((concept or {}).get('summary') or explanation or 'Understand, apply, check.').strip()}",
+        ])
+        chalk_lines = [line for line in dict.fromkeys(line.strip() for line in chalk_lines if line and line.strip())][:12]
         whiteboard = {
             "title": topic["title"] if topic else "CBSE Mathematics",
             "subtitle": concept["title"] if concept else "Guided board",
@@ -2012,15 +2177,16 @@ class TutorEngine:
         questions = self.generate_homework(state, topic_obj.get("title") if topic_obj else state.topic_title)
         if not questions:
             return self._class_response(
-                response_type="teach",
+                response_type="homework",
                 state=state,
                 chapter=chapter or topic_obj,
                 topic=topic_obj,
                 concept=concept,
-                explanation=self.PRACTICE_GATE_MESSAGE,
-                steps=[],
-                next_action="continue",
-                voice_text=self.PRACTICE_GATE_MESSAGE,
+                explanation="Homework is not generated because no NCERT PDF exercise questions are indexed for this chapter yet.",
+                steps=["NCERT PDF exercise source required", "No AI-generated homework was created."],
+                next_action="evaluation",
+                voice_text="Homework is not generated because no NCERT PDF exercise questions are indexed for this chapter yet. No AI-generated homework was created.",
+                homework=[],
             )
         state.homework_questions = questions
         state.homework = [
@@ -2037,10 +2203,10 @@ class TutorEngine:
             chapter=chapter or topic_obj,
             topic=topic_obj,
             concept=concept,
-            explanation="Class is complete for today. Homework is ready, and I saved the important notes from this session.",
+            explanation="Homework is ready from actual NCERT PDF exercise questions. I saved the important notes from this session.",
             steps=[],
             next_action="homework",
-            voice_text="Good work today. I have saved your important notes and prepared homework for revision.",
+            voice_text="Homework is ready from actual NCERT PDF exercise questions. I have saved your important notes for revision.",
             homework=questions,
             session_notes=notes,
         )
@@ -2185,6 +2351,16 @@ class TutorEngine:
             if role == "user":
                 return False
         return False
+
+    def _is_explain_differently_or_stuck(self, question: str) -> bool:
+        """Detects if student is stuck or needs alternative explanation."""
+        lowered = self._sentence(question).lower()
+        phrases = (
+            "explain differently", "another way", "don't understand", "not clear",
+            "explain again", "stuck", "confused", "simpler", "easier", "help",
+            "don't get it", "did not get", "lost"
+        )
+        return any(phrase in lowered for phrase in phrases)
 
     def _append_transcript_turn(self, state: ClassroomState, role: str, content: str, session: Any | None = None) -> None:
         text = self._sentence(content)
@@ -2488,7 +2664,7 @@ class TutorEngine:
         )
 
     def _build_ai_doubt_response(self, state: ClassroomState, question: str) -> dict[str, Any] | None:
-        from app.services.ai_gateway import generate_response
+        from app.services.ai_gateway import generate_response, generate_local_response
 
         student_doubt = self._sentence(question)
         topic = getattr(state, "topic_title", None) or getattr(state, "current_topic", None) or "Current mathematics topic"
@@ -2554,14 +2730,24 @@ Return ONLY JSON:
         if isinstance(cached, dict):
             return cached
 
-        future = AI_DOUBT_EXECUTOR.submit(generate_response, prompt)
-        try:
-            text = future.result(timeout=45)
-        except FutureTimeoutError:
-            future.cancel()
-            raise RuntimeError(f"AI generation timed out for doubt: {student_doubt[:100]}")
-        except Exception as error:
-            raise RuntimeError(f"AI generation failed for doubt: {type(error).__name__}: {error}") from error
+        text = None
+        # Use local LLM (Qwen) if student is stuck or needs different explanation
+        if self._is_explain_differently_or_stuck(student_doubt):
+            try:
+                text = AI_DOUBT_EXECUTOR.submit(generate_local_response, prompt).result(timeout=30)
+            except Exception as e:
+                print(f"Local AI failed for doubt, falling back to Gemini: {e}")
+        
+        # Fallback to Gemini if local AI didn't answer or condition wasn't met
+        if not text:
+            future = AI_DOUBT_EXECUTOR.submit(generate_response, prompt)
+            try:
+                text = future.result(timeout=45)
+            except FutureTimeoutError:
+                future.cancel()
+                raise RuntimeError(f"AI generation timed out for doubt: {student_doubt[:100]}")
+            except Exception as error:
+                raise RuntimeError(f"AI generation failed for doubt: {type(error).__name__}: {error}") from error
 
         plan = self._parse_ai_doubt_plan(text)
         if plan:
@@ -2966,12 +3152,25 @@ Return ONLY JSON:
             },
         }
 
-    def start_class(self, state: ClassroomState, grade: int = 10, subject: str = "math") -> None:
+    def start_class(
+        self,
+        state: ClassroomState,
+        grade: int = 10,
+        subject: str = "math",
+        chapter_slug: str | None = None,
+    ) -> None:
         self._set_active_phase(state, SessionPhase.TEACHING)
         curriculum = get_grade_curriculum(int(grade or 10))
         state.grade = int(grade or 10)
         state.curriculum = curriculum
-        state.current_chapter_index = 0
+        chapters = curriculum.get("chapters") or []
+        selected_index = 0
+        if chapter_slug:
+            for index, chapter in enumerate(chapters):
+                if chapter.get("slug") == chapter_slug:
+                    selected_index = index
+                    break
+        state.current_chapter_index = selected_index
         state.current_topic_index = 0
         state.current_concept_index = 0
         state.current_question_index = 0
@@ -2983,7 +3182,7 @@ Return ONLY JSON:
         state.current_concept = None
         state.exam_state = {}
 
-        first_chapter = (curriculum.get("chapters") or [{}])[0]
+        first_chapter = chapters[selected_index] if selected_index < len(chapters) else {}
         state.topic_slug = first_chapter.get("slug") or get_default_topic_slug(state.grade)
         state.topic_title = first_chapter.get("title") or "Mathematics"
         state.current_chapter = state.topic_title
@@ -2993,6 +3192,9 @@ Return ONLY JSON:
         state.completed_exercise_types = []
         state.completed_concepts = []
         state.current_exercise_type = None
+        first_concept = self._concept_by_id(state, first_chapter, None)
+        state.concept_id = first_concept.get("id") if first_concept else None
+        state.concept_title = first_concept.get("title", "") if first_concept else ""
 
     def _get_current_concept(self, state: ClassroomState) -> dict[str, Any]:
         curriculum = getattr(state, "curriculum", None) or get_grade_curriculum(state.grade)
@@ -3003,7 +3205,7 @@ Return ONLY JSON:
 
         chapter_index = min(max(getattr(state, "current_chapter_index", 0), 0), len(chapters) - 1)
         chapter = chapters[chapter_index]
-        concepts = get_topic_concepts(state.grade, chapter.get("slug") or get_default_topic_slug(state.grade))
+        concepts = self._chapter_concepts(state, chapter)
         if not concepts:
             return {"chapter": chapter, "topic": chapter, "concept": None}
 
@@ -3119,9 +3321,45 @@ Return ONLY JSON:
             or getattr(state, "topic_title", None)
             or "this chapter"
         )
-        explanation = f"Welcome to the class! Let's start with the theory for {topic_title}."
-        state.class_last_step = "intro"
+        pack = self._load_teaching_pack(state, chapter)
+        chapter_intro = self._sentence(
+            pack.get("chapter_intro")
+            or (chapter or {}).get("summary")
+            or f"We are starting {topic_title} from the basics."
+        )
+        analogy = self._sentence(pack.get("real_life_analogy") or self._concept_analogy(concept or {}))
+        concept_names = [
+            item.get("title") or item.get("concept_name")
+            for item in self._chapter_concepts(state, chapter)
+            if isinstance(item, dict)
+        ]
+        agenda = [
+            "Welcome and chapter introduction",
+            *[f"Concept {index + 1}: {name}" for index, name in enumerate(concept_names[:4]) if name],
+            "NCERT practice from extracted PDF questions",
+            "Homework and evaluation",
+        ]
+        explanation = (
+            f"Welcome to class. Today we begin Chapter 1: {topic_title}. "
+            f"{chapter_intro} We will learn it like a classroom lesson: first meaning, then analogy, examples, "
+            "a mini check, practice, homework, and evaluation."
+        )
+        state.class_last_step = "chapter_intro"
         state.stage = "TEACH"
+        whiteboard = {
+            "mode": "chapter_intro",
+            "title": topic_title,
+            "subtitle": "Chapter Introduction",
+            "chalk_lines": [
+                f"Chapter: {topic_title}",
+                f"Chapter Introduction: {chapter_intro}",
+                f"Real Life Analogy: {analogy}",
+                "Class Flow: Welcome -> Concepts -> Practice -> Homework -> Evaluation",
+                *agenda[:6],
+            ],
+            "equations": [],
+        }
+        state.whiteboard = whiteboard
         return self._class_response(
             response_type="teach",
             state=state,
@@ -3129,13 +3367,11 @@ Return ONLY JSON:
             topic=topic,
             concept=concept,
             explanation=explanation,
-            steps=[
-                f"Topic: {topic_title}",
-                "NCERT theory: Understand the core concept.",
-                "NCERT example: Build intuition with one simple example.",
-            ],
+            steps=whiteboard["chalk_lines"],
             next_action="continue",
-            voice_text=explanation,
+            analogy=analogy,
+            voice_text=self._slow_voice_text(state, concept, explanation),
+            whiteboard=whiteboard,
         )
 
     def transition_to_practice_phase(
@@ -3274,25 +3510,21 @@ Return ONLY JSON:
         check_question = self._generate_cbse_check_question(concept)
         state.active_problem = check_question
         state.attempts_on_problem = 0
-        steps = concept.get("board_work", [])[:3] or [
-            "Read the meaning first.",
-            "Connect it with one small example.",
-            "Check the answer carefully.",
-        ]
-        steps = [re.sub(r"^Step\s*\d+\s*:\s*", "", self._sentence(step)) for step in steps][:4]
+        key_formula = self._sentence(concept.get("key_formula") or (concept.get("board_work") or [""])[0])
         analogy = self._concept_analogy(concept)
         explanation = self._sentence(
-            concept.get("explanation")
-            or f"{concept.get('title', 'This idea')} tells us a simple rule. First we understand what the rule means. Then we use it in one easy example."
+            f"Concept introduction: {concept.get('title', 'This idea')}. "
+            f"{concept.get('definition') or concept.get('explanation') or 'We first understand what this idea means before using it in sums.'}"
         )
         whiteboard = self._prepare_concept_board(state, topic, concept, question, mode="concept")
-        whiteboard["chalk_lines"] = [
-            f"Concept: {concept.get('title', 'Today topic')}",
-            explanation,
-            f"Analogy: {analogy}",
-        ][:6]
-        whiteboard["solution_steps"] = steps
+        steps = [
+            f"Concept Title: {concept.get('title', 'Today topic')}",
+            f"Definition: {concept.get('definition') or concept.get('explanation') or 'Meaning first.'}",
+            f"Key Formula: {key_formula or 'Write the rule before solving.'}",
+        ]
         notes = self._remember_session_notes(state, topic, concept, [analogy, *steps])
+        state.class_last_step = "concept_intro"
+        state.stage = "TEACH"
         return self._class_response(
             response_type="teach",
             state=state,
@@ -3301,13 +3533,140 @@ Return ONLY JSON:
             concept=concept,
             explanation=explanation,
             steps=steps,
-            next_action="question",
+            next_action="continue",
             example=example,
             analogy=analogy,
             check_question=check_question.get("prompt"),
-            voice_text=self._build_voice_text(f"{explanation} For example, {example or steps[-1]}. {analogy}", steps),
+            voice_text=self._slow_voice_text(state, concept, explanation, "Next I will explain it in very simple language."),
             whiteboard=whiteboard,
             session_notes=notes,
+        )
+
+    def _simple_explanation_response(self, state: ClassroomState) -> dict[str, Any]:
+        current = self._get_current_concept(state)
+        chapter = current["chapter"]
+        topic = current["topic"]
+        concept = current["concept"]
+        if not concept:
+            return self._class_homework_response(state, chapter, topic, concept)
+
+        explanation = self._sentence(
+            concept.get("simple_explanation")
+            or concept.get("explanation")
+            or f"{concept.get('title', 'This concept')} is a rule we understand first, then use in small steps."
+        )
+        steps = [
+            "Simple Explanation:",
+            explanation,
+            "Teacher rule: do not start calculation until the meaning is clear.",
+        ]
+        whiteboard = self._prepare_concept_board(state, topic, concept, getattr(state, "active_problem", None), mode="simple_explanation")
+        whiteboard["solution_steps"] = steps
+        state.class_last_step = "simple_explanation"
+        return self._class_response(
+            response_type="teach",
+            state=state,
+            chapter=chapter,
+            topic=topic,
+            concept=concept,
+            explanation=explanation,
+            steps=steps,
+            next_action="continue",
+            voice_text=self._slow_voice_text(state, concept, explanation, "Next, I will connect this to a real life analogy."),
+            whiteboard=whiteboard,
+            session_notes=self._remember_session_notes(state, topic, concept, [explanation]),
+        )
+
+    def _real_life_analogy_response(self, state: ClassroomState) -> dict[str, Any]:
+        current = self._get_current_concept(state)
+        chapter = current["chapter"]
+        topic = current["topic"]
+        concept = current["concept"]
+        if not concept:
+            return self._class_homework_response(state, chapter, topic, concept)
+
+        analogy = self._sentence(concept.get("analogy") or self._concept_analogy(concept))
+        explanation = f"Real life analogy: {analogy}"
+        steps = [
+            "Visual Analogy:",
+            analogy,
+            "Now connect the analogy back to the formula or definition.",
+        ]
+        whiteboard = self._prepare_concept_board(state, topic, concept, getattr(state, "active_problem", None), mode="analogy")
+        whiteboard["solution_steps"] = steps
+        state.class_last_step = "real_life_analogy"
+        return self._class_response(
+            response_type="teach",
+            state=state,
+            chapter=chapter,
+            topic=topic,
+            concept=concept,
+            explanation=explanation,
+            steps=steps,
+            next_action="continue",
+            analogy=analogy,
+            voice_text=self._slow_voice_text(state, concept, explanation, "Next, I will solve the first worked example."),
+            whiteboard=whiteboard,
+            session_notes=self._remember_session_notes(state, topic, concept, [analogy]),
+        )
+
+    def _concept_worked_examples(self, state: ClassroomState, concept: dict[str, Any]) -> list[dict[str, Any]]:
+        examples = [
+            self._normalize_pack_problem(problem, source=str(problem.get("source") or "NCERT Example"))
+            for problem in (concept.get("worked_examples") or concept.get("ncert_examples") or [])
+            if isinstance(problem, dict)
+        ]
+        if len(examples) < 2:
+            for problem in concept.get("practice_problems", []) or []:
+                if isinstance(problem, dict):
+                    examples.append(self._normalize_pack_problem(problem, source=str(problem.get("source") or "NCERT Example")))
+                if len(examples) >= 2:
+                    break
+        return examples[:2]
+
+    def _worked_example_response(self, state: ClassroomState, example_index: int) -> dict[str, Any]:
+        current = self._get_current_concept(state)
+        chapter = current["chapter"]
+        topic = current["topic"]
+        concept = current["concept"]
+        if not concept:
+            return self._class_homework_response(state, chapter, topic, concept)
+
+        examples = self._concept_worked_examples(state, concept)
+        fallback = self._concept_check_question(concept)
+        problem = examples[example_index] if example_index < len(examples) else fallback
+        state.active_problem = problem
+        state.board_problem_index = example_index
+        state.class_last_step = f"worked_example_{example_index + 1}"
+
+        steps = [str(step).strip() for step in problem.get("steps", []) if str(step).strip()]
+        if not steps:
+            steps = [
+                f"Read the example: {problem.get('prompt') or problem.get('question') or concept.get('title')}",
+                "Write the definition or formula needed.",
+                "Substitute the values slowly.",
+                f"Answer: {self._format_expected_answer(problem)}",
+            ]
+        whiteboard = self._prepare_concept_board(state, topic, concept, problem, mode=f"worked_example_{example_index + 1}")
+        whiteboard["solution_steps"] = steps
+        label = f"Worked Example {example_index + 1}"
+        explanation = (
+            f"{label}: first I will read the question, then I will solve it like I would on a classroom board. "
+            f"Question: {problem.get('prompt') or problem.get('question') or concept.get('title')}."
+        )
+        return self._class_response(
+            response_type="board_example",
+            state=state,
+            chapter=chapter,
+            topic=topic,
+            concept=concept,
+            explanation=explanation,
+            steps=steps,
+            next_action="continue",
+            example=problem.get("prompt") or problem.get("question"),
+            voice_text=self._slow_voice_text(state, concept, explanation, "Copy each step before we move ahead."),
+            whiteboard=whiteboard,
+            session_notes=self._remember_session_notes(state, topic, concept, steps[:3]),
         )
 
     def _board_example(self, state: ClassroomState) -> dict[str, Any]:
@@ -3412,7 +3771,9 @@ Return ONLY JSON:
         state.stats.setdefault("by_mistake", {})
         state.stats.setdefault("by_topic", {})
         state.stats.setdefault("by_pattern", {})
-        topic_key = topic.get("title", "Unknown") if topic else "Unknown"
+        topic_key = topic.get("title") if topic else None
+        if not topic_key:
+            raise TeachingPackValidationError("concept_name missing")
         if correct:
             state.stats["correct"] = state.stats.get("correct", 0) + 1
         else:
@@ -3433,37 +3794,13 @@ Return ONLY JSON:
                 state.current_exercise_type = None
             if concept and concept.get("id"):
                 state.completed_concepts = list(dict.fromkeys([*getattr(state, "completed_concepts", []), concept["id"]]))
-            state.class_last_step = "evaluation"
-            next_result = self._next_concept(state)
-            if next_result.get("type") == "chapter_complete":
-                return self.transition_to_practice_phase(
-                    state,
-                    chapter=chapter,
-                    topic=topic,
-                    concept=concept,
-                    target="homework",
-                )
-            if next_result.get("type") == "exercise":
-                return self.transition_to_practice_phase(
-                    state,
-                    chapter=chapter,
-                    topic=topic,
-                    concept=concept,
-                    target="exercise",
-                )
-            return self._class_response(
-                response_type="evaluation",
-                state=state,
+            return self._concept_mastery_response(
+                state,
                 chapter=chapter,
                 topic=topic,
                 concept=concept,
-                explanation="Correct. The next concept is ready.",
-                steps=[],
-                question=question.get("prompt"),
+                question=question,
                 correct=True,
-                hint=None,
-                next_action=next_result.get("next_action", "continue"),
-                voice_text="Correct. Pause for a moment. Next, I will explain the next concept slowly on the board.",
             )
 
         state.attempts_on_problem = int(getattr(state, "attempts_on_problem", 0) or 0) + 1
@@ -3513,6 +3850,72 @@ Return ONLY JSON:
         reteach["next_action"] = "reteach"
         reteach["question"] = question.get("prompt")
         return reteach
+
+    def _concept_mastery_response(
+        self,
+        state: ClassroomState,
+        *,
+        chapter: dict[str, Any] | None,
+        topic: dict[str, Any] | None,
+        concept: dict[str, Any] | None,
+        question: dict[str, Any],
+        correct: bool,
+    ) -> dict[str, Any]:
+        state.class_last_step = "mastery_check"
+        state.stage = "TEACH"
+        concepts = self._chapter_concepts(state, chapter)
+        is_last_concept = int(getattr(state, "current_concept_index", 0) or 0) + 1 >= len(concepts)
+        next_action = "next_exercise" if is_last_concept else "continue"
+        explanation = (
+            "Concept mastery check: your answer shows this idea is clear enough for the next step. "
+            if correct
+            else "Concept mastery check: we need one more slow pass before moving ahead. "
+        )
+        if is_last_concept:
+            explanation += "The chapter concepts are now complete, so next we will start actual NCERT exercise questions from the PDF."
+        else:
+            explanation += "Next I will introduce the next concept in the same classroom style."
+
+        steps = [
+            "Concept Mastery Check",
+            f"Question answered: {question.get('prompt') or question.get('question') or '-'}",
+            "Status: Clear enough to move ahead" if correct else "Status: Needs reteaching",
+            "Next: NCERT PDF exercises" if is_last_concept else "Next: Next concept",
+        ]
+        whiteboard = self._prepare_concept_board(state, topic, concept, question, mode="mastery_check")
+        whiteboard["solution_steps"] = steps
+        return self._class_response(
+            response_type="evaluation",
+            state=state,
+            chapter=chapter,
+            topic=topic,
+            concept=concept,
+            explanation=explanation,
+            steps=steps,
+            question=question.get("prompt"),
+            correct=correct,
+            hint=None,
+            next_action=next_action,
+            voice_text=self._slow_voice_text(state, concept, explanation),
+            whiteboard=whiteboard,
+            session_notes=self._remember_session_notes(state, topic, concept, steps),
+        )
+
+    def _advance_after_mastery_check(self, state: ClassroomState) -> dict[str, Any]:
+        next_result = self._next_concept(state)
+        current = self._get_current_concept(state)
+        if next_result.get("type") == "continue":
+            return self._teach_concept(state)
+        return self.transition_to_practice_phase(
+            state,
+            chapter=current["chapter"],
+            topic=current["topic"],
+            concept=current["concept"],
+            target="pdf_exercises",
+            practice_payload={"scope": "current_chapter"},
+            grade=getattr(state, "grade", 10),
+            subject=getattr(state, "subject", "math"),
+        )
 
     def _chapter_exercise_types(self, state: ClassroomState) -> list[str]:
         outline = getattr(state, "cbse_outline", {}) or {}
@@ -3603,32 +4006,14 @@ Return ONLY JSON:
             return {"type": "chapter_complete", "message": "Chapter completed", "next_action": "test"}
 
         chapter = chapters[min(state.current_chapter_index, len(chapters) - 1)]
-        concepts = get_topic_concepts(state.grade, chapter.get("slug") or get_default_topic_slug(state.grade))
+        concepts = self._chapter_concepts(state, chapter)
         if state.current_concept_index + 1 < len(concepts):
             state.current_concept_index += 1
             state.class_last_step = "evaluation"
             return {"type": "continue", "next_action": "continue"}
 
-        pending_exercise = self._next_pending_exercise_type(state)
-        if _normalize_exam(getattr(state, "exam", "cbse")) == "cbse" and pending_exercise:
-            state.current_exercise_type = pending_exercise
-            state.class_last_step = "evaluation"
-            return {"type": "exercise", "next_action": "continue"}
-
-        if state.current_chapter_index + 1 < len(chapters):
-            state.current_chapter_index += 1
-            state.current_topic_index = 0
-            state.current_concept_index = 0
-            next_chapter = chapters[state.current_chapter_index]
-            state.topic_slug = next_chapter.get("slug")
-            state.topic_title = next_chapter.get("title")
-            state.cbse_outline = self._get_cbse_chapter_outline(next_chapter, state)
-            state.completed_exercise_types = []
-            state.class_last_step = "evaluation"
-            return {"type": "continue", "next_action": "continue"}
-
-        state.class_last_step = "chapter_complete"
-        return {"type": "chapter_complete", "message": "Chapter completed", "next_action": "test"}
+        state.class_last_step = "concepts_complete"
+        return {"type": "chapter_practice", "message": "Chapter concepts complete", "next_action": "next_exercise"}
 
     def run_class(self, state, input_data):
         data = input_data if isinstance(input_data, dict) else {}
@@ -3649,7 +4034,11 @@ Return ONLY JSON:
             "homework",
             "finish",
         }
-        if action in practice_actions and not self._is_practice_phase(state):
+        if (
+            action in practice_actions
+            and not self._is_practice_phase(state)
+            and getattr(state, "class_last_step", None) != "mastery_check"
+        ):
             current = self._get_current_concept(state)
             return self._class_response(
                 response_type="teach",
@@ -3662,6 +4051,9 @@ Return ONLY JSON:
                 next_action="continue",
                 voice_text=self.PRACTICE_GATE_MESSAGE,
             )
+
+        if getattr(state, "class_last_step", None) == "mastery_check":
+            return self._advance_after_mastery_check(state)
 
         if action in {"solve_pdf_exercises", "solve_all_exercises", "solve_all_pdf_exercises"}:
             return self.transition_to_practice_phase(
@@ -3693,17 +4085,35 @@ Return ONLY JSON:
             )
 
         if action == "start" or not getattr(state, "curriculum", None) or getattr(state, "class_last_step", None) is None:
-            self.start_class(state, grade, subject)
+            self.start_class(
+                state,
+                grade,
+                subject,
+                chapter_slug=data.get("chapter_slug") or data.get("topic_slug"),
+            )
             self._set_active_phase(state, SessionPhase.TEACHING)
             return self._theory_welcome_response(state)
 
-        if getattr(state, "class_last_step", None) == "intro":
+        if getattr(state, "class_last_step", None) == "chapter_intro":
             return self._teach_concept(state)
 
+        if getattr(state, "class_last_step", None) == "concept_intro":
+            return self._simple_explanation_response(state)
+
+        if getattr(state, "class_last_step", None) == "simple_explanation":
+            return self._real_life_analogy_response(state)
+
+        if getattr(state, "class_last_step", None) == "real_life_analogy":
+            return self._worked_example_response(state, 0)
+
+        if getattr(state, "class_last_step", None) == "worked_example_1":
+            return self._worked_example_response(state, 1)
+
+        if getattr(state, "class_last_step", None) == "worked_example_2":
+            return self._mini_question(state)
+
         if getattr(state, "class_last_step", None) == "teach":
-            if _normalize_exam(getattr(state, "exam", "cbse")) == "cbse":
-                return self._mini_question(state)
-            return self._board_example(state)
+            return self._simple_explanation_response(state)
 
         if getattr(state, "class_last_step", None) == "exercise_teach":
             return self._mini_question(state)
@@ -3797,10 +4207,10 @@ Return ONLY JSON:
                 chapter=current["chapter"],
                 topic=current["topic"],
                 concept=current["concept"],
-                explanation="I could not find readable exercise questions in the local CBSE PDF files for this scope.",
+                explanation="I could not find readable exercise questions in Firestore for this scope.",
                 steps=[],
                 next_action="continue",
-                voice_text="I could not find readable exercise questions in the local CBSE PDF files for this scope.",
+                voice_text="I could not find readable exercise questions in Firestore for this scope.",
                 whiteboard={
                     "mode": "pdf_exercise",
                     "title": "CBSE PDF Exercises",
@@ -3829,7 +4239,7 @@ Return ONLY JSON:
         session = getattr(state, "pdf_exercise_session", {}) or {}
         problems = session.get("problems") or []
         if not problems:
-            return self._start_pdf_exercise_session(state, {"scope": "all_chapters"}, getattr(state, "grade", 10), "math")
+            return self._start_pdf_exercise_session(state, {"scope": "current_chapter"}, getattr(state, "grade", 10), "math")
 
         session["index"] = int(session.get("index") or 0) + 1
         state.pdf_exercise_session = session

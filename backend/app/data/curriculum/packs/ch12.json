@@ -1,0 +1,219 @@
+{
+  "chapter_name": "Ch12",
+  "concepts": [
+    {
+      "concept_id": "12_1",
+      "concept_name": "12.1 Introduction",
+      "definition_text": "12.1 Introduction\nFrom Class IX, you are familiar with some of the solids like cuboid, cone, cylinder, and\nsphere (see Fig. 12.1). You have also learnt how to find their surface areas and volumes.\nFig. 12.1\nIn our day-to-day life, we come across a number of solids made up of combinations\nof two or more of the basic solids as shown above.\nYou must have seen a truck with a\ncontainer fitted on its back (see Fig. 12.2),\ncarrying oil or water from one place to\nanother. Is it in the shape of any of the four\nbasic solids mentioned above? You may\nguess that it is made of a cylinder with two\nhemispheres as its ends.\nSURFACE AREAS AND\nVOLUMES\nFig. 12.2\nReprint 2026-27",
+      "source_paragraphs": [
+        "12.1 Introduction\nFrom Class IX, you are familiar with some of the solids like cuboid, cone, cylinder, and\nsphere (see Fig. 12.1). You have also learnt how to find their surface areas and volumes.\nFig. 12.1\nIn our day-to-day life, we come across a number of solids made up of combinations\nof two or more of the basic solids as shown above.\nYou must have seen a truck with a\ncontainer fitted on its back (see Fig. 12.2),\ncarrying oil or water from one place to\nanother. Is it in the shape of any of the four\nbasic solids mentioned above? You may\nguess that it is made of a cylinder with two\nhemispheres as its ends.\nSURFACE AREAS AND\nVOLUMES\nFig. 12.2\nReprint 2026-27",
+        "162\nMATHEMATICS\nAgain, you may have seen an object like the\none in Fig. 12.3. Can you name it? A test tube, right!\nYou would have used one in your science laboratory.\nThis tube is also a combination of a cylinder and a\nhemisphere. Similarly, while travelling, you may have\nseen some big and beautiful buildings or monuments\nmade up of a combination of solids mentioned above.\nIf for some reason you wanted to find the\nsurface areas, or volumes, or capacities of such\nobjects, how would you do it? We cannot classify\nthese under any of the solids you have already studied.\nIn this chapter, you will see how to find surface areas and volumes of such\nobjects."
+      ],
+      "formulas": [],
+      "theorems": [],
+      "properties": [],
+      "examples": []
+    },
+    {
+      "concept_id": "12_2",
+      "concept_name": "12.2 Surface Area of a Combination of Solids",
+      "definition_text": "12.2 Surface Area of a Combination of Solids\nLet us consider the container seen in Fig. 12.2. How do we find the surface area of\nsuch a solid? Now, whenever we come across a new problem, we first try to see, if\nwe can break it down into smaller problems, we have earlier solved. We can see that\nthis solid is made up of a cylinder with two hemispheres stuck at either end. It would\nlook like what we have in Fig. 12.4, after we put the pieces all together.\nFig. 12.4\nIf we consider the surface of the newly formed object, we would be able to see\nonly the curved surfaces of the two hemispheres and the curved surface of the cylinder.\nSo, the total surface area of the new solid is the sum of the curved surface\nareas of each of the individual parts. This gives,\nTSA of new solid = CSA of one hemisphere + CSA of cylinder\n                             + CSA of other hemisphere\nwhere TSA, CSA stand for ‘Total Surface Area’ and ‘Curved Surface Area’\nrespectively.\nLet us now consider another situation. Suppose we are making a toy by putting\ntogether a hemisphere and a cone. Let us see the steps that we would be going\nthrough.\nFig. 12.3\nReprint 2026-27",
+      "source_paragraphs": [
+        "12.2 Surface Area of a Combination of Solids\nLet us consider the container seen in Fig. 12.2. How do we find the surface area of\nsuch a solid? Now, whenever we come across a new problem, we first try to see, if\nwe can break it down into smaller problems, we have earlier solved. We can see that\nthis solid is made up of a cylinder with two hemispheres stuck at either end. It would\nlook like what we have in Fig. 12.4, after we put the pieces all together.\nFig. 12.4\nIf we consider the surface of the newly formed object, we would be able to see\nonly the curved surfaces of the two hemispheres and the curved surface of the cylinder.\nSo, the total surface area of the new solid is the sum of the curved surface\nareas of each of the individual parts. This gives,\nTSA of new solid = CSA of one hemisphere + CSA of cylinder\n                             + CSA of other hemisphere\nwhere TSA, CSA stand for ‘Total Surface Area’ and ‘Curved Surface Area’\nrespectively.\nLet us now consider another situation. Suppose we are making a toy by putting\ntogether a hemisphere and a cone. Let us see the steps that we would be going\nthrough.\nFig. 12.3\nReprint 2026-27",
+        "SURFACE AREAS AND VOLUMES\n163\nFirst, we would take a cone and a hemisphere and bring their flat faces together.\nHere, of course, we would take the base radius of the cone equal to the radius of the\nhemisphere, for the toy is to have a smooth surface. So, the steps would be as shown\nin Fig. 12.5.\nFig. 12.5\nAt the end of our trial, we have got ourselves a nice round-bottomed toy. Now if\nwe want to find how much paint we would require to colour the surface of this toy,\nwhat would we need to know? We would need to know the surface area of the toy,\nwhich consists of the CSA of the hemisphere and the CSA of the cone.\nSo, we can say:\nTotal surface area of the toy = CSA of hemisphere + CSA of cone\nNow, let us consider some examples.\nExample 1 : Rasheed got a playing top (lattu) as his\nbirthday present, which surprisingly had no colour on\nit. He wanted to colour it with his crayons. The top is\nshaped like a cone surmounted by a hemisphere\n(see Fig 12.6). The entire top is 5 cm in height and\nthe diameter of the top is 3.5 cm. Find the area he\nhas to colour. (Take  = 22\n7 )\nSolution : This top is exactly like the object we have discussed in Fig. 12.5. So, we\ncan conveniently use the result we have arrived at there. That is :\nTSA of the toy = CSA of hemisphere + CSA of cone\nNow, the curved surface area of the hemisphere =\n2\n2\n1 (4\n)\n2\n2\nr\nr\n\n\n\n=\n2\n22\n3.5\n3.5\n2\ncm\n7\n2\n2\n\n\n\n\n\n\n\n\n\nFig. 12.6\nReprint 2026-27",
+        "164\nMATHEMATICS\nAlso, the height of the cone = height of the top – height (radius) of the hemispherical part\n=\n3.5\n5\ncm\n2\n\n\n\n\n\n\n\n = 3.25 cm\nSo, the slant height of the cone (l ) = \n2\n2\n2\n2\n3.5\n(3.25) cm\n2\nr\nh\n\n\n\n\n\n\n\n\n\n = 3.7 cm (approx.)\nTherefore, CSA of cone = rl = \n2\n22\n3.5\n3.7 cm\n7\n2\n\n\n\n\n\n\n\n\nThis gives the surface area of the top as\n=\n2\n2\n22\n3.5\n3.5\n22\n3.5\n2\ncm\n3.7 cm\n7\n2\n2\n7\n2\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n=\n\n\n2\n22\n3.5 3.5\n3.7 cm\n7\n2\n\n\n = \n2\n2\n11\n(3.5\n3.7) cm\n39.6 cm (approx.)\n2 \n\n\nYou may note that ‘total surface area of the top’ is not the sum of the total\nsurface areas of the cone and hemisphere.\nExample 2 :  The decorative block shown\nin Fig. 12.7 is made of two solids — a cube\nand a hemisphere. The base of the block is a\ncube with edge 5 cm, and the hemisphere\nfixed on the top has a diameter of 4.2 cm.\nFind the total surface area of the block.\n(Take  = 22\n7 )\nSolution : The total surface area of the cube = 6  (edge)2 = 6  5  5 cm2 = 150 cm2.\nNote that the part of the cube where the hemisphere is attached is not included in the\nsurface area.\nSo,\nthe surface area of the block = TSA of cube – base area of hemisphere\n+ CSA of hemisphere\n= 150 – r2 + 2 r2 = (150 + r2) cm2\n=\n2\n2\n22\n4.2\n4.2\n150 cm\ncm\n7\n2\n2\n\n\n\n\n\n\n\n\n\n= (150 + 13.86) cm2 = 163.86 cm2\n.\nFig. 12.7\nReprint 2026-27",
+        "SURFACE AREAS AND VOLUMES\n165\nExample 3 : A wooden toy rocket is in the\nshape of a cone mounted on a cylinder, as\nshown in Fig. 12.8. The height of the entire\nrocket is 26 cm, while the height of the conical\npart is 6 cm. The base of the conical portion\nhas a diameter of 5 cm, while the base\ndiameter of the cylindrical portion is 3 cm. If\nthe conical portion is to be painted orange\nand the cylindrical portion yellow, find the\narea of the rocket painted with each of these\ncolours. (Take  = 3.14)\nSolution : Denote radius of cone by r, slant\nheight of cone by l, height of cone by h, radius\nof cylinder by r and height of cylinder by h.\nThen r = 2.5 cm, h = 6 cm, r = 1.5 cm,\nh = 26 – 6 = 20 cm and\nl =\n2\n2\nr\nh\n\n = \n2\n2\n2.5\n6\ncm\n\n = 6.5 cm\nHere, the conical portion has its circular base resting on the base of the cylinder, but\nthe base of the cone is larger than the base of the cylinder. So, a part of the base of the\ncone (a ring) is to be painted.\nSo,\nthe area to be painted orange = CSA of the cone + base area of the cone\n                                                           – base area of the cylinder\n= rl + r2 – r2\n= [(2.5  6.5) + (2.5)2  – (1.5)2] cm2\n= [20.25] cm2 = 3.14  20.25 cm2\n= 63.585 cm2\nNow,\nthe area to be painted yellow = CSA of the cylinder\n+ area of one base of the cylinder\n= 2rh + (r)2\n= r (2h + r)\n= (3.14  1.5) (2  20 + 1.5) cm2\n= 4.71  41.5 cm2\n= 195.465 cm2\nFig. 12.8\nReprint 2026-27",
+        "166\nMATHEMATICS\nExample 4 : Mayank made a bird-bath for his garden\nin the shape of a cylinder with a hemispherical\ndepression at one end (see Fig. 12.9). The height of\nthe cylinder is 1.45 m and its radius is 30 cm. Find the\ntotal surface area of the bird-bath. (Take  = 22\n7 )\nSolution : Let h be height of the cylinder, and r the\ncommon radius of the cylinder and hemisphere. Then,\nthe total surface area of the bird-bath = CSA of cylinder + CSA of hemisphere\n= 2rh + 2r2 = 2r(h + r)\n=\n2\n22\n2\n30(145\n30) cm\n7\n\n\n\n= 33000 cm2  = 3.3 m2\nEXERCISE 12.1\nUnless stated otherwise, take  = \n22\n7 \n1. 2 cubes each of volume 64 cm3 are joined end to end. Find the surface area of the\nresulting cuboid.\n2. A vessel is in the form of a hollow hemisphere mounted by a hollow cylinder. The\ndiameter of the hemisphere is 14 cm and the total height of the vessel is 13 cm. Find the\ninner surface area of the vessel.\n3. A toy is in the form of a cone of radius 3.5 cm mounted on a hemisphere of same radius.\nThe total height of the toy is 15.5 cm. Find the total surface area of the toy.\n4. A cubical block of side 7 cm is surmounted by a hemisphere. What is the greatest\ndiameter the hemisphere can have? Find the surface area of the solid.\n5. A hemispherical depression is cut out from one face of a cubical wooden block such\nthat the diameter l of the hemisphere is equal to the edge of the cube.  Determine the\nsurface area of the remaining solid.\n6. A medicine capsule is in the shape of a\ncylinder with two hemispheres stuck to each\nof its ends (see Fig. 12.10). The length of\nthe entire capsule is 14 mm and the diameter\nof the capsule is 5 mm. Find its surface area.\nFig. 12.10\nFig. 12.9\nReprint 2026-27"
+      ],
+      "formulas": [
+        "TSA of new solid = CSA of one hemisphere + CSA of cylinder\n                             + CSA of other hemisphere",
+        "Total surface area of the toy = CSA of hemisphere + CSA of cone",
+        "TSA of the toy = CSA of hemisphere + CSA of cone",
+        "This gives the surface area of the top as\n=\n2\n2\n22",
+        "= \n2\n2\n11",
+        "l =\n2\n2\nr\nh",
+        "= \n2\n2",
+        "the area to be painted orange = CSA of the cone + base area of the cone",
+        "the area to be painted yellow = CSA of the cylinder\n+ area of one base of the cylinder",
+        "the total surface area of the bird-bath = CSA of cylinder + CSA of hemisphere"
+      ],
+      "theorems": [],
+      "properties": [],
+      "examples": [
+        {
+          "question": "Rasheed got a playing top (lattu) as his birthday present, which surprisingly had no colour on it. He wanted to colour it with his crayons. The top is shaped like a cone surmounted by a hemisphere (see Fig 12.6). The entire top is 5 cm in height and the diameter of the top is 3.5 cm. Find the area he has to colour. (Take  = 22 7 )",
+          "solution_text": "This top is exactly like the object we have discussed in Fig. 12.5. So, we\ncan conveniently use the result we have arrived at there. That is :\nTSA of the toy = CSA of hemisphere + CSA of cone\nNow, the curved surface area of the hemisphere =\n2\n2\n1 (4\n)\n2\n2\nr\nr\n\n\n\n=\n2\n22\n3.5\n3.5\n2\ncm\n7\n2\n2\n\n\n\n\n\n\n\n\n\nFig. 12.6\nReprint 2026-27\n\n164\nMATHEMATICS\nAlso, the height of the cone = height of the top – height (radius) of the hemispherical part\n=\n3.5\n5\ncm\n2\n\n\n\n\n\n\n\n = 3.25 cm\nSo, the slant height of the cone (l ) = \n2\n2\n2\n2\n3.5\n(3.25) cm\n2\nr\nh\n\n\n\n\n\n\n\n\n\n = 3.7 cm (approx.)\nTherefore, CSA of cone = rl = \n2\n22\n3.5\n3.7 cm\n7\n2\n\n\n\n\n\n\n\n\nThis gives the surface area of the top as\n=\n2\n2\n22\n3.5\n3.5\n22\n3.5\n2\ncm\n3.7 cm\n7\n2\n2\n7\n2\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n=\n\n\n2\n22\n3.5 3.5\n3.7 cm\n7\n2\n\n\n = \n2\n2\n11\n(3.5\n3.7) cm\n39.6 cm (approx.)\n2 \n\n\nYou may note that ‘total surface area of the top’ is not the sum of the total\nsurface areas of the cone and hemisphere."
+        },
+        {
+          "question": "The decorative block shown in Fig. 12.7 is made of two solids — a cube and a hemisphere. The base of the block is a cube with edge 5 cm, and the hemisphere fixed on the top has a diameter of 4.2 cm. Find the total surface area of the block. (Take  = 22 7 )",
+          "solution_text": "The total surface area of the cube = 6  (edge)2 = 6  5  5 cm2 = 150 cm2.\nNote that the part of the cube where the hemisphere is attached is not included in the\nsurface area.\nSo,\nthe surface area of the block = TSA of cube – base area of hemisphere\n+ CSA of hemisphere\n= 150 – r2 + 2 r2 = (150 + r2) cm2\n=\n2\n2\n22\n4.2\n4.2\n150 cm\ncm\n7\n2\n2\n\n\n\n\n\n\n\n\n\n= (150 + 13.86) cm2 = 163.86 cm2\n.\nFig. 12.7\nReprint 2026-27\n\nSURFACE AREAS AND VOLUMES\n165"
+        },
+        {
+          "question": "A wooden toy rocket is in the shape of a cone mounted on a cylinder, as shown in Fig. 12.8. The height of the entire rocket is 26 cm, while the height of the conical part is 6 cm. The base of the conical portion has a diameter of 5 cm, while the base diameter of the cylindrical portion is 3 cm. If the conical portion is to be painted orange and the cylindrical portion yellow, find the area of the rocket painted with each of these colours. (Take  = 3.14)",
+          "solution_text": "Denote radius of cone by r, slant\nheight of cone by l, height of cone by h, radius\nof cylinder by r and height of cylinder by h.\nThen r = 2.5 cm, h = 6 cm, r = 1.5 cm,\nh = 26 – 6 = 20 cm and\nl =\n2\n2\nr\nh\n\n = \n2\n2\n2.5\n6\ncm\n\n = 6.5 cm\nHere, the conical portion has its circular base resting on the base of the cylinder, but\nthe base of the cone is larger than the base of the cylinder. So, a part of the base of the\ncone (a ring) is to be painted.\nSo,\nthe area to be painted orange = CSA of the cone + base area of the cone\n                                                           – base area of the cylinder\n= rl + r2 – r2\n= [(2.5  6.5) + (2.5)2  – (1.5)2] cm2\n= [20.25] cm2 = 3.14  20.25 cm2\n= 63.585 cm2\nNow,\nthe area to be painted yellow = CSA of the cylinder\n+ area of one base of the cylinder\n= 2rh + (r)2\n= r (2h + r)\n= (3.14  1.5) (2  20 + 1.5) cm2\n= 4.71  41.5 cm2\n= 195.465 cm2\nFig. 12.8\nReprint 2026-27\n\n166\nMATHEMATICS"
+        },
+        {
+          "question": "Mayank made a bird-bath for his garden in the shape of a cylinder with a hemispherical depression at one end (see Fig. 12.9). The height of the cylinder is 1.45 m and its radius is 30 cm. Find the total surface area of the bird-bath. (Take  = 22 7 )",
+          "solution_text": "Let h be height of the cylinder, and r the\ncommon radius of the cylinder and hemisphere. Then,\nthe total surface area of the bird-bath = CSA of cylinder + CSA of hemisphere\n= 2rh + 2r2 = 2r(h + r)\n=\n2\n22\n2\n30(145\n30) cm\n7\n\n\n\n= 33000 cm2  = 3.3 m2"
+        }
+      ]
+    },
+    {
+      "concept_id": "12_3",
+      "concept_name": "12.3 Volume of a Combination of Solids",
+      "definition_text": "12.3 Volume of a Combination of Solids\nIn the previous section, we have discussed how to find the surface area of solids made\nup of a combination of two basic solids. Here, we shall see how to calculate their\nvolumes. It may be noted that in calculating the surface area, we have not added the\nsurface areas of the two constituents, because some part of the surface area disappeared\nin the process of joining them. However, this will not be the case when we calculate\nthe volume. The volume of the solid formed by joining two basic solids will actually be\nthe sum of the volumes of the constituents, as we see in the examples below.\nExample 5 : Shanta runs an industry in\na shed which is in the shape of a cuboid\nsurmounted by a half cylinder (see Fig.\n12.12). If the base of the shed is of\ndimension 7 m  15 m, and the height of\nthe cuboidal portion is 8 m, find the volume\nof air that the shed can hold. Further,\nsuppose the machinery in the shed\noccupies a total space of 300 m3, and\nthere are 20 workers, each of whom\noccupy about 0.08 m3 space on an\naverage. Then, how much air is in the\nshed? (Take  = 22\n7 )\nFig. 12.12\nFig. 12.11\nReprint 2026-27",
+      "source_paragraphs": [
+        "12.3 Volume of a Combination of Solids\nIn the previous section, we have discussed how to find the surface area of solids made\nup of a combination of two basic solids. Here, we shall see how to calculate their\nvolumes. It may be noted that in calculating the surface area, we have not added the\nsurface areas of the two constituents, because some part of the surface area disappeared\nin the process of joining them. However, this will not be the case when we calculate\nthe volume. The volume of the solid formed by joining two basic solids will actually be\nthe sum of the volumes of the constituents, as we see in the examples below.\nExample 5 : Shanta runs an industry in\na shed which is in the shape of a cuboid\nsurmounted by a half cylinder (see Fig.\n12.12). If the base of the shed is of\ndimension 7 m  15 m, and the height of\nthe cuboidal portion is 8 m, find the volume\nof air that the shed can hold. Further,\nsuppose the machinery in the shed\noccupies a total space of 300 m3, and\nthere are 20 workers, each of whom\noccupy about 0.08 m3 space on an\naverage. Then, how much air is in the\nshed? (Take  = 22\n7 )\nFig. 12.12\nFig. 12.11\nReprint 2026-27",
+        "168\nMATHEMATICS\nSolution : The volume of air inside the shed (when there are no people or machinery)\nis given by the volume of air inside the cuboid and inside the half cylinder, taken\ntogether.\nNow, the length, breadth and height of the cuboid are 15 m, 7 m and 8 m, respectively.\nAlso, the diameter of the half cylinder is 7 m and its height is 15 m.\nSo, the required volume = volume of the cuboid + 1\n2  volume of the cylinder\n=\n3\n1\n22\n7\n7\n15\n7\n8\n15 m\n2\n7\n2\n2\n\n\n\n\n\n\n\n\n\n\n\n\n\n = 1128.75 m3\nNext, the total space occupied by the machinery = 300 m3\nAnd the total space occupied by the workers = 20  0.08 m3 = 1.6 m3\nTherefore, the volume of the air, when there are machinery and workers\n= 1128.75 – (300.00 + 1.60) = 827.15 m3\nExample 6 : A juice seller was serving his\ncustomers using glasses as shown in Fig. 12.13.\nThe inner diameter of the cylindrical glass was\n5 cm, but the bottom of the glass had a\nhemispherical raised portion which reduced the\ncapacity of the glass. If the height of a glass\nwas 10 cm, find the apparent capacity of the\nglass and its actual capacity. (Use  = 3.14.)\nSolution : Since the inner diameter of the glass = 5 cm and height = 10 cm,\nthe apparent capacity of the glass = r2h\n= 3.14  2.5  2.5  10 cm3 = 196.25 cm3\nBut the actual capacity of the glass is less by the volume of the hemisphere at the\nbase of the glass.\ni.e.,\nit is less by 2\n3  r3 =\n3\n2\n3.14\n2.5\n2.5\n2.5 cm\n3 \n\n\n\n = 32.71 cm3\nSo, the actual capacity of the glass = apparent capacity of glass – volume of the\nhemisphere\n= (196.25 – 32.71) cm3\n= 163.54 cm3\nFig. 12.13\nReprint 2026-27",
+        "SURFACE AREAS AND VOLUMES\n169\nExample 7 : A solid toy is in the form of a\nhemisphere surmounted by a right circular cone. The\nheight of the cone is 2 cm and the diameter of the\nbase is 4 cm. Determine the volume of the toy.  If a\nright circular cylinder circumscribes the toy, find the\ndifference of the volumes of the cylinder and the toy.\n(Take  = 3.14)\nSolution : Let BPC be the hemisphere and ABC be the cone standing on the base\nof the hemisphere (see Fig. 12.14). The radius BO of the hemisphere (as well as\nof the cone) = 1\n2   4 cm = 2 cm.\nSo,\nvolume of the toy =\n3\n2\n2\n1\n3\n3\n\n\n\nr\nr h\n=\n3\n2\n3\n2\n1\n3.14\n(2)\n3.14\n(2)\n2 cm\n3\n3\n\n\n\n\n\n\n\n\n\n\n\n\n = 25.12 cm3\nNow, let the right circular cylinder EFGH circumscribe the given solid. The radius of\nthe base of the right circular cylinder = HP = BO = 2 cm, and its height is\nEH = AO + OP = (2 + 2) cm = 4 cm\nSo, the volume required = volume of the right circular cylinder – volume of the toy\n    =  (3.14  22  4 – 25.12) cm3\n    =  25.12 cm3\nHence, the required difference of the two volumes = 25.12 cm3.\nEXERCISE 12.2\nUnless stated otherwise, take  = 22\n7 .\n\n\n\n\nA solid is in the shape of a cone standing on a hemisphere with both their radii being\nequal to 1 cm and the height of the cone is equal to its radius.  Find the volume of the solid\nin terms of .\n2. Rachel, an engineering student, was asked to make a model shaped like a cylinder with\ntwo cones attached at its two ends by using a thin aluminium sheet. The diameter of the\nmodel is 3 cm and its length is 12 cm.  If each cone has a height of 2 cm, find the volume\nof air contained in the model that Rachel made. (Assume the outer and inner dimensions\nof the model to be nearly the same.)\nFig. 12.14\nReprint 2026-27",
+        "170\nMATHEMATICS\n3. A gulab jamun, contains sugar syrup up to about\n30% of its volume.  Find approximately how much\nsyrup would be found in 45 gulab jamuns, each\nshaped like a cylinder with two hemispherical ends\nwith length 5 cm and diameter 2.8 cm (see Fig. 12.15).\n4. A pen stand made of wood is in the shape of a\ncuboid with four conical depressions to hold pens.\nThe dimensions of the cuboid are 15 cm by 10 cm by\n3.5 cm.  The radius of each of the depressions is 0.5\ncm and the depth is 1.4 cm.  Find the volume of\nwood in the entire stand (see Fig. 12.16).\n5. A vessel is in the form of an inverted cone.  Its\nheight is 8 cm and the radius of its top, which is\nopen, is 5 cm. It is filled with water up to the brim.\nWhen lead shots, each of which is a sphere of radius\n0.5 cm are dropped into the vessel, one-fourth of\nthe water flows out.  Find the number of lead shots\ndropped in the vessel.\n6. A solid iron pole consists of a cylinder of height 220 cm and base diameter 24 cm, which\nis surmounted by another cylinder of height 60 cm and radius 8 cm.  Find the mass of the\npole, given that 1 cm3 of iron has approximately 8g mass.  (Use = 3.14)\n7. A solid consisting of a right circular cone of height 120 cm and radius 60 cm standing on\na hemisphere of radius 60 cm is placed upright in a right circular cylinder full of water\nsuch that it touches the bottom.  Find the volume of water left in the cylinder, if the radius\nof the cylinder is 60 cm and its height is 180 cm.\n8. A spherical glass vessel has a cylindrical neck 8 cm long, 2 cm in diameter; the diameter\nof the spherical part is 8.5 cm. By measuring the amount of water it holds, a child finds its\nvolume to be 345 cm3. Check whether she is correct, taking the above as the inside\nmeasurements, and  = 3.14."
+      ],
+      "formulas": [
+        "2  volume of the cylinder\n=\n3\n1\n22\n7\n7\n15\n7\n8\n15 m\n2\n7\n2\n2",
+        "of the cone) = 1",
+        "volume of the toy =\n3\n2\n2\n1\n3\n3",
+        "r\nr h\n=\n3\n2\n3\n2\n1"
+      ],
+      "theorems": [],
+      "properties": [],
+      "examples": [
+        {
+          "question": "Shanta runs an industry in a shed which is in the shape of a cuboid surmounted by a half cylinder (see Fig. 12.12). If the base of the shed is of dimension 7 m 15 m, and the height of the cuboidal portion is 8 m, find the volume of air that the shed can hold. Further, suppose the machinery in the shed occupies a total space of 300 m3, and there are 20 workers, each of whom occupy about 0.08 m3 space on an average. Then, how much air is in the shed? (Take  = 22 7 ) Fig. 12.12 Fig. 12.11 Reprint 2026-27 168 MATHEMATICS",
+          "solution_text": "The volume of air inside the shed (when there are no people or machinery)\nis given by the volume of air inside the cuboid and inside the half cylinder, taken\ntogether.\nNow, the length, breadth and height of the cuboid are 15 m, 7 m and 8 m, respectively.\nAlso, the diameter of the half cylinder is 7 m and its height is 15 m.\nSo, the required volume = volume of the cuboid + 1\n2  volume of the cylinder\n=\n3\n1\n22\n7\n7\n15\n7\n8\n15 m\n2\n7\n2\n2\n\n\n\n\n\n\n\n\n\n\n\n\n\n = 1128.75 m3\nNext, the total space occupied by the machinery = 300 m3\nAnd the total space occupied by the workers = 20  0.08 m3 = 1.6 m3\nTherefore, the volume of the air, when there are machinery and workers\n= 1128.75 – (300.00 + 1.60) = 827.15 m3"
+        },
+        {
+          "question": "A juice seller was serving his customers using glasses as shown in Fig. 12.13. The inner diameter of the cylindrical glass was 5 cm, but the bottom of the glass had a hemispherical raised portion which reduced the capacity of the glass. If the height of a glass was 10 cm, find the apparent capacity of the glass and its actual capacity. (Use  = 3.14.)",
+          "solution_text": "Since the inner diameter of the glass = 5 cm and height = 10 cm,\nthe apparent capacity of the glass = r2h\n= 3.14  2.5  2.5  10 cm3 = 196.25 cm3\nBut the actual capacity of the glass is less by the volume of the hemisphere at the\nbase of the glass.\ni.e.,\nit is less by 2\n3  r3 =\n3\n2\n3.14\n2.5\n2.5\n2.5 cm\n3 \n\n\n\n = 32.71 cm3\nSo, the actual capacity of the glass = apparent capacity of glass – volume of the\nhemisphere\n= (196.25 – 32.71) cm3\n= 163.54 cm3\nFig. 12.13\nReprint 2026-27\n\nSURFACE AREAS AND VOLUMES\n169"
+        },
+        {
+          "question": "A solid toy is in the form of a hemisphere surmounted by a right circular cone. The height of the cone is 2 cm and the diameter of the base is 4 cm. Determine the volume of the toy. If a right circular cylinder circumscribes the toy, find the difference of the volumes of the cylinder and the toy. (Take  = 3.14)",
+          "solution_text": "Let BPC be the hemisphere and ABC be the cone standing on the base\nof the hemisphere (see Fig. 12.14). The radius BO of the hemisphere (as well as\nof the cone) = 1\n2   4 cm = 2 cm.\nSo,\nvolume of the toy =\n3\n2\n2\n1\n3\n3\n\n\n\nr\nr h\n=\n3\n2\n3\n2\n1\n3.14\n(2)\n3.14\n(2)\n2 cm\n3\n3\n\n\n\n\n\n\n\n\n\n\n\n\n = 25.12 cm3\nNow, let the right circular cylinder EFGH circumscribe the given solid. The radius of\nthe base of the right circular cylinder = HP = BO = 2 cm, and its height is\nEH = AO + OP = (2 + 2) cm = 4 cm\nSo, the volume required = volume of the right circular cylinder – volume of the toy\n    =  (3.14  22  4 – 25.12) cm3\n    =  25.12 cm3\nHence, the required difference of the two volumes = 25.12 cm3."
+        }
+      ]
+    },
+    {
+      "concept_id": "12_4",
+      "concept_name": "12.4 Summary",
+      "definition_text": "12.4 Summary\nIn this chapter, you have studied the following points:\n1. To determine the surface area of an object formed by combining any two of the basic\nsolids, namely, cuboid, cone, cylinder, sphere and hemisphere.\n2. To find the volume of objects formed by combining any two of a cuboid, cone, cylinder,\nsphere and hemisphere.\nFig. 12.16\nFig. 12.15\nReprint 2026-27",
+      "source_paragraphs": [
+        "12.4 Summary\nIn this chapter, you have studied the following points:\n1. To determine the surface area of an object formed by combining any two of the basic\nsolids, namely, cuboid, cone, cylinder, sphere and hemisphere.\n2. To find the volume of objects formed by combining any two of a cuboid, cone, cylinder,\nsphere and hemisphere.\nFig. 12.16\nFig. 12.15\nReprint 2026-27"
+      ],
+      "formulas": [],
+      "theorems": [],
+      "properties": [],
+      "examples": []
+    }
+  ],
+  "exercise_questions": [
+    {
+      "exercise_id": "Ex_12.1",
+      "question_number": "1",
+      "question_text": "2 cubes each of volume 64 cm3 are joined end to end. Find the surface area of the resulting cuboid."
+    },
+    {
+      "exercise_id": "Ex_12.1",
+      "question_number": "2",
+      "question_text": "A vessel is in the form of a hollow hemisphere mounted by a hollow cylinder. The diameter of the hemisphere is 14 cm and the total height of the vessel is 13 cm. Find the inner surface area of the vessel."
+    },
+    {
+      "exercise_id": "Ex_12.1",
+      "question_number": "3",
+      "question_text": "A toy is in the form of a cone of radius 3.5 cm mounted on a hemisphere of same radius. The total height of the toy is 15.5 cm. Find the total surface area of the toy."
+    },
+    {
+      "exercise_id": "Ex_12.1",
+      "question_number": "4",
+      "question_text": "A cubical block of side 7 cm is surmounted by a hemisphere. What is the greatest diameter the hemisphere can have? Find the surface area of the solid."
+    },
+    {
+      "exercise_id": "Ex_12.1",
+      "question_number": "5",
+      "question_text": "A hemispherical depression is cut out from one face of a cubical wooden block such that the diameter l of the hemisphere is equal to the edge of the cube. Determine the surface area of the remaining solid."
+    },
+    {
+      "exercise_id": "Ex_12.1",
+      "question_number": "6",
+      "question_text": "A medicine capsule is in the shape of a cylinder with two hemispheres stuck to each of its ends (see Fig. 12.10). The length of the entire capsule is 14 mm and the diameter of the capsule is 5 mm. Find its surface area. Fig. 12.10 Fig. 12.9 Reprint 2026-27 SURFACE AREAS AND VOLUMES 167"
+    },
+    {
+      "exercise_id": "Ex_12.1",
+      "question_number": "7",
+      "question_text": "A tent is in the shape of a cylinder surmounted by a conical top. If the height and diameter of the cylindrical part are 2.1 m and 4 m respectively, and the slant height of the top is 2.8 m, find the area of the canvas used for making the tent. Also, find the cost of the canvas of the tent at the rate of ` 500 per m2. (Note that the base of the tent will not be covered with canvas.)"
+    },
+    {
+      "exercise_id": "Ex_12.1",
+      "question_number": "8",
+      "question_text": "From a solid cylinder whose height is 2.4 cm and diameter 1.4 cm, a conical cavity of the same height and same diameter is hollowed out. Find the total surface area of the remaining solid to the nearest cm2."
+    },
+    {
+      "exercise_id": "Ex_12.1",
+      "question_number": "9",
+      "question_text": "A wooden article was made by scooping out a hemisphere from each end of a solid cylinder, as shown in Fig. 12.11. If the height of the cylinder is 10 cm, and its base is of radius 3.5 cm, find the total surface area of the article."
+    },
+    {
+      "exercise_id": "Ex_12.1",
+      "question_number": "12",
+      "question_text": "3 Volume of a Combination of Solids In the previous section, we have discussed how to find the surface area of solids made up of a combination of two basic solids. Here, we shall see how to calculate their volumes. It may be noted that in calculating the surface area, we have not added the surface areas of the two constituents, because some part of the surface area disappeared in the process of joining them. However, this will not be the case when we calculate the volume. The volume of the solid formed by joining two basic solids will actually be the sum of the volumes of the constituents, as we see in the examples below."
+    },
+    {
+      "exercise_id": "Ex_12.2",
+      "question_number": "2",
+      "question_text": "Rachel, an engineering student, was asked to make a model shaped like a cylinder with two cones attached at its two ends by using a thin aluminium sheet. The diameter of the model is 3 cm and its length is 12 cm. If each cone has a height of 2 cm, find the volume of air contained in the model that Rachel made. (Assume the outer and inner dimensions of the model to be nearly the same.) Fig. 12.14 Reprint 2026-27 170 MATHEMATICS"
+    },
+    {
+      "exercise_id": "Ex_12.2",
+      "question_number": "3",
+      "question_text": "A gulab jamun, contains sugar syrup up to about 30% of its volume. Find approximately how much syrup would be found in 45 gulab jamuns, each shaped like a cylinder with two hemispherical ends with length 5 cm and diameter 2.8 cm (see Fig. 12.15)."
+    },
+    {
+      "exercise_id": "Ex_12.2",
+      "question_number": "4",
+      "question_text": "A pen stand made of wood is in the shape of a cuboid with four conical depressions to hold pens. The dimensions of the cuboid are 15 cm by 10 cm by"
+    },
+    {
+      "exercise_id": "Ex_12.2",
+      "question_number": "3",
+      "question_text": "5 cm. The radius of each of the depressions is 0.5 cm and the depth is 1.4 cm. Find the volume of wood in the entire stand (see Fig. 12.16)."
+    },
+    {
+      "exercise_id": "Ex_12.2",
+      "question_number": "5",
+      "question_text": "A vessel is in the form of an inverted cone. Its height is 8 cm and the radius of its top, which is open, is 5 cm. It is filled with water up to the brim. When lead shots, each of which is a sphere of radius"
+    },
+    {
+      "exercise_id": "Ex_12.2",
+      "question_number": "0",
+      "question_text": "5 cm are dropped into the vessel, one-fourth of the water flows out. Find the number of lead shots dropped in the vessel."
+    },
+    {
+      "exercise_id": "Ex_12.2",
+      "question_number": "6",
+      "question_text": "A solid iron pole consists of a cylinder of height 220 cm and base diameter 24 cm, which is surmounted by another cylinder of height 60 cm and radius 8 cm. Find the mass of the pole, given that 1 cm3 of iron has approximately 8g mass. (Use = 3.14)"
+    },
+    {
+      "exercise_id": "Ex_12.2",
+      "question_number": "7",
+      "question_text": "A solid consisting of a right circular cone of height 120 cm and radius 60 cm standing on a hemisphere of radius 60 cm is placed upright in a right circular cylinder full of water such that it touches the bottom. Find the volume of water left in the cylinder, if the radius of the cylinder is 60 cm and its height is 180 cm."
+    },
+    {
+      "exercise_id": "Ex_12.2",
+      "question_number": "8",
+      "question_text": "A spherical glass vessel has a cylindrical neck 8 cm long, 2 cm in diameter; the diameter of the spherical part is 8.5 cm. By measuring the amount of water it holds, a child finds its volume to be 345 cm3. Check whether she is correct, taking the above as the inside measurements, and  = 3.14."
+    },
+    {
+      "exercise_id": "Ex_12.2",
+      "question_number": "12",
+      "question_text": "4 Summary In this chapter, you have studied the following points:"
+    },
+    {
+      "exercise_id": "Ex_12.2",
+      "question_number": "1",
+      "question_text": "To determine the surface area of an object formed by combining any two of the basic solids, namely, cuboid, cone, cylinder, sphere and hemisphere."
+    },
+    {
+      "exercise_id": "Ex_12.2",
+      "question_number": "2",
+      "question_text": "To find the volume of objects formed by combining any two of a cuboid, cone, cylinder, sphere and hemisphere. Fig. 12.16 Fig. 12.15 Reprint 2026-27"
+    }
+  ]
+}

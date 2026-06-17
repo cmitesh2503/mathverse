@@ -1,5 +1,8 @@
 import os
 
+class RateLimitError(Exception):
+    pass
+
 from vertexai.generative_models import GenerativeModel
 import vertexai
 
@@ -15,7 +18,6 @@ vertexai.init(
 )
 
 model = GenerativeModel(os.getenv("GEMINI_PLANNER_MODEL", os.getenv("GEMINI_TEXT_MODEL", "gemini-3.1-pro-preview")))
-#model = GenerativeModel("gemini-1.5-flash")
 
 def call_gemini(prompt: str):
     try:
@@ -164,7 +166,9 @@ async def build_lesson_plan(rag_text: str, mistake_type: str = None, exam: str =
 
     except Exception as e:
         print("❌ GEMINI ERROR:", e)
-
+        if "429" in str(e) or "ResourceExhausted" in str(e) or "rate limit" in str(e).lower():
+            raise RateLimitError("Rate limit exceeded") from e
+        
         # ---------------------------
         # 🔁 FALLBACK (IMPORTANT)
         # ---------------------------

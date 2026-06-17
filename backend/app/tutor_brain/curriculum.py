@@ -6,17 +6,11 @@ from pathlib import Path
 from typing import List, Optional
 
 try:
-    from app.services.firebase_service import _get_db
-    from app.services.cbse_exercises import (
-        GRADE_10_PDF_CHAPTERS,
-        load_chapter_pdf_exercises,
-    )
+    from app.core.firestore_client import FIRESTORE_TIMEOUT_SECONDS, get_firestore_client
+    from app.services.cbse_exercises import GRADE_10_PDF_CHAPTERS
 except ModuleNotFoundError:
-    from ..services.firebase_service import _get_db
-    from ..services.cbse_exercises import (
-        GRADE_10_PDF_CHAPTERS,
-        load_chapter_pdf_exercises,
-    )
+    from ..core.firestore_client import FIRESTORE_TIMEOUT_SECONDS, get_firestore_client
+    from ..services.cbse_exercises import GRADE_10_PDF_CHAPTERS
 
 
 LOCAL_CURRICULUM_DIR = Path(__file__).resolve().parents[1] / "data" / "curriculum"
@@ -54,9 +48,12 @@ def _load_local_curriculum(grade: int, exam: str = "cbse") -> dict:
                 payload = json.load(handle)
             if isinstance(payload, dict):
                 return payload
+            if isinstance(payload, list):
+                return {"chapters": payload}
         except Exception as error:
             print(f"Local curriculum read failed ({path.name}): {error}")
     return {}
+
 
 def _augment_curriculum_from_pdf(payload: dict, grade: int, exam: str) -> dict:
     if not isinstance(payload, dict):
@@ -96,7 +93,7 @@ def _augment_curriculum_from_pdf(payload: dict, grade: int, exam: str) -> dict:
 
 
 def get_grade_curriculum(grade: int, exam: str = "cbse") -> dict:
-    """Fetch grade+exam curriculum from Firestore, with local JSON fallback."""
+    """Fetch grade+exam curriculum from local JSON, with optional Firestore source."""
     cache_key = (int(grade or 10), str(exam or "cbse").lower())
     cached = _CURRICULUM_CACHE.get(cache_key)
     if cached is not None:
@@ -108,9 +105,9 @@ def get_grade_curriculum(grade: int, exam: str = "cbse") -> dict:
         return payload
 
     try:
-        db = _get_db()
+        db = get_firestore_client()
         doc_ref = db.collection("curriculums").document(f"{exam}_{grade}")
-        doc = doc_ref.get()
+        doc = doc_ref.get(timeout=FIRESTORE_TIMEOUT_SECONDS)
         if doc.exists:
             data = doc.to_dict()
             if isinstance(data, dict):
@@ -118,14 +115,12 @@ def get_grade_curriculum(grade: int, exam: str = "cbse") -> dict:
                 _CURRICULUM_CACHE[cache_key] = payload
                 return payload
         print(f"Firestore curriculum missing for {exam}_{grade}. Using local fallback.")
-        payload = _augment_curriculum_from_pdf(_load_local_curriculum(grade, exam), grade, exam)
-        _CURRICULUM_CACHE[cache_key] = payload
-        return payload
     except Exception as error:
         print(f"Firestore fetch failed: {error}")
-        payload = _augment_curriculum_from_pdf(_load_local_curriculum(grade, exam), grade, exam)
-        _CURRICULUM_CACHE[cache_key] = payload
-        return payload
+
+    payload = _augment_curriculum_from_pdf(_load_local_curriculum(grade, exam), grade, exam)
+    _CURRICULUM_CACHE[cache_key] = payload
+    return payload
 
 
 def list_chapters(grade: int, exam: str = "cbse") -> List[dict]:

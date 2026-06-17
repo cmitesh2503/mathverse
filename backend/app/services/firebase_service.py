@@ -1,9 +1,10 @@
 import os
 from typing import Any
 
+from google.cloud.firestore_v1.base_query import FieldFilter
+from app.core.firestore_client import get_firestore_client
+
 # ✅ Correct path based on your structure
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-FIREBASE_KEY_PATH = os.path.join(BASE_DIR, "core", "firebase_key.json")
 FIREBASE_ENABLED = os.getenv("MATHVERSE_ENABLE_FIREBASE", "").lower() in {"1", "true", "yes"}
 
 db = None
@@ -18,14 +19,7 @@ def _get_db():
     if db is not None:
         return db
 
-    import firebase_admin
-    from firebase_admin import credentials, firestore
-
-    if not firebase_admin._apps:
-        cred = credentials.Certificate(FIREBASE_KEY_PATH)
-        firebase_admin.initialize_app(cred)
-
-    db = firestore.client()
+    db = get_firestore_client()
     return db
 
 
@@ -41,7 +35,7 @@ def get_homework(student_id: str):
         return []
 
     docs = _get_db().collection("homeworks") \
-        .where("student_id", "==", student_id) \
+        .where(filter=FieldFilter("student_id", "==", student_id)) \
         .stream()
 
     return [doc.to_dict() for doc in docs]
@@ -61,7 +55,7 @@ def get_attempts(student_id: str, limit: int = 100):
     query = (
         _get_db()
         .collection("attempts")
-        .where("student_id", "==", student_id)
+        .where(filter=FieldFilter("student_id", "==", student_id))
         .limit(limit)
         .stream()
     )
@@ -81,7 +75,7 @@ def get_evaluation_records_by_test(test_id: str, limit: int = 1000) -> list[dict
         query = (
             _get_db()
             .collection("evaluation_records")
-            .where("test_id", "==", test_id)
+            .where(filter=FieldFilter("test_id", "==", test_id))
             .limit(limit)
             .stream()
         )
@@ -95,7 +89,7 @@ def get_evaluation_records_by_student(student_id: str, limit: int = 1000) -> lis
         query = (
             _get_db()
             .collection("evaluation_records")
-            .where("student_id", "==", student_id)
+            .where(filter=FieldFilter("student_id", "==", student_id))
             .limit(limit)
             .stream()
         )

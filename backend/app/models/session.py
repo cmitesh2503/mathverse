@@ -51,6 +51,7 @@ class StudentSession(BaseModel):
     correct_attempts: int = 0
     wrong_attempts: int = 0
     questions_asked: int = 0
+    gemini_call_count: int = 0
     class_problem_cursor: int = 0
     class_intro_done: bool = False
     concept_teaching_index: int = 0
