@@ -118,6 +118,20 @@ data "archive_file" "jee_answers_extractor_zip" {
   output_path = "${path.module}/jee_answer_extractor.zip"
 }
 
+resource "google_storage_bucket_object" "jee_solution_extractor_zip" {
+
+  name = "jee-solution-extractor-${data.archive_file.jee_solution_extractor_zip.output_md5}.zip"
+
+  bucket = google_storage_bucket.function_source_bucket.name
+
+  source = data.archive_file.jee_solution_extractor_zip.output_path
+}
+data "archive_file" "jee_solution_extractor_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/cloud_function_solution_extractor"
+  output_path = "${path.module}/jee_solution_extractor.zip"
+}
+
 
 resource "google_project_iam_member" "docai_viewer" {
   project = var.project_id
@@ -399,6 +413,55 @@ resource "google_cloudfunctions2_function" "jee_answer_extractor" {
       storage_source {
         bucket = google_storage_bucket.function_source_bucket.name
         object = google_storage_bucket_object.jee_answers_extractor_zip.name
+      }
+    }
+  }
+
+  service_config {
+    timeout_seconds       = 540
+    available_memory      = "2G"
+    max_instance_count    = 5
+    service_account_email = google_service_account.jee_processor.email
+
+    environment_variables = {
+      PROJECT_ID = var.project_id
+    }
+
+  }
+
+  event_trigger {
+    trigger_region = var.region
+    event_type     = "google.cloud.storage.object.v1.finalized"
+
+    event_filters {
+      attribute = "bucket"
+      value     = google_storage_bucket.jee_assets.name
+    }
+  }
+
+  depends_on = [
+    google_project_service.requited_apis,
+    google_project_iam_member.firestore_user,
+    google_project_iam_member.storage_object_admin,
+  ]
+
+
+}
+
+resource "google_cloudfunctions2_function" "jee_solution_extractor" {
+
+  name     = "jee-solution-extractor"
+  location = var.region
+  project  = var.project_id
+
+  build_config {
+    runtime     = "python311"
+    entry_point = "process_solutions"
+
+    source {
+      storage_source {
+        bucket = google_storage_bucket.function_source_bucket.name
+        object = google_storage_bucket_object.jee_solution_extractor_zip.name
       }
     }
   }
