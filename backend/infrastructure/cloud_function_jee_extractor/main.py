@@ -173,6 +173,7 @@ def process_ocr_json(event, context):
 
             "created_at": datetime.utcnow()
 
-        })
+        }),
+        merge=True
 
     print("Question extraction completed.")

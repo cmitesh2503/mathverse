@@ -36,10 +36,18 @@ export function TopNav({ active, onNavigate, session, onLogout }: Props) {
         <div className="flex items-center gap-6">
           <button
             type="button"
-            onClick={() => onNavigate("home")}
+            onClick={() =>
+              onNavigate(
+                examMode === "jee"
+                  ? "jee-home"
+                  : "home"
+              )
+            }
             className="text-lg font-semibold text-slate-950"
           >
-            Mathverse
+            {examMode === "jee"
+              ? "MathVerse JEE"
+              : "MathVerse CBSE"}
           </button>
           <nav className="hidden items-center gap-1 md:flex">
             {navItems.map((item) => (
@@ -89,23 +97,31 @@ export function TopNav({ active, onNavigate, session, onLogout }: Props) {
           </select>
 
           <div className="flex rounded-xl border border-slate-200 bg-slate-50 p-1 shadow-sm">
-            {(["cbse", "jee"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setExamMode(mode)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold uppercase transition ${
-                  examMode === mode
-                    ? mode === "jee"
-                      ? "bg-orange-100 text-orange-800 shadow-sm"
-                      : "bg-blue-100 text-blue-800 shadow-sm"
-                    : "text-slate-500"
-                }`}
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
+          {(["cbse", "jee"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => {
+                setExamMode(mode);
+
+                if (mode === "jee") {
+                  onNavigate("jee-home");
+                } else {
+                  onNavigate("home");
+                }
+              }}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold uppercase transition ${
+                examMode === mode
+                  ? mode === "jee"
+                    ? "bg-orange-100 text-orange-800 shadow-sm"
+                    : "bg-blue-100 text-blue-800 shadow-sm"
+                  : "text-slate-500"
+              }`}
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
         </div>
       </div>
     </header>

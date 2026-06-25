@@ -11,6 +11,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from .api.routes import auth, auth_firestore
 from .core.guards import verify_access_privileges
+from datetime import datetime
+from google.cloud import firestore
+from app.api.jee.question_solver import (
+    router as jee_question_router
+)
+from app.api.jee.live_tutor import (
+    router as live_tutor_router
+)
+from app.api.jee.tts import (
+    router as tts_router
+)
 
 load_dotenv()
 
@@ -21,9 +32,16 @@ from .core.stream_manager import cancel_stream, end_stream, is_cancelled, start_
 from .services.firebase_service import get_homework
 from .api.practice import router as practice_router
 from .api.tutor import router as tutor_router
+from app.api.jee.question_chat import (
+    router as jee_chat_router
+)
 
 app = FastAPI(title="MathVerse API")
-from fastapi.middleware.cors import CORSMiddleware
+
+
+
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # or ["http://localhost:3000"]
@@ -43,6 +61,45 @@ os.makedirs(uploads_root, exist_ok=True)
 app.mount("/uploads/evaluation", StaticFiles(directory=uploads_root), name="evaluation_uploads")
 app.include_router(auth.router)
 app.include_router(auth_firestore.router)
+from app.api.jee.voice_tutor import (
+    router as voice_router
+)
+from app.api.jee.whiteboard import (
+    router as whiteboard_router
+)
+
+app.include_router(
+    jee_question_router,
+    prefix="/api/jee",
+    tags=["JEE"]
+)
+
+app.include_router(
+    jee_chat_router,
+    prefix="/api/jee",
+    tags=["JEE Chat"]
+)
+
+app.include_router(
+    live_tutor_router,
+    prefix="/api/jee"
+)
+
+app.include_router(
+    voice_router,
+    prefix="/api/jee"
+)
+
+app.include_router(
+    tts_router,
+    prefix="/api/jee"
+)
+
+app.include_router(
+    whiteboard_router,
+    prefix="/api/jee"
+)
+
 
 @app.get("/")
 def root():
@@ -484,6 +541,8 @@ async def startup_event():
     if not ok:
         raise RuntimeError("Critical startup failure: Redis connection check failed.")
     print("MathVerse multi-agent backend ready.")
+    
+
             
 @app.get("/homework/{student_id}")
 def fetch_homework(student_id: str):

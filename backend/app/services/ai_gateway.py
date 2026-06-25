@@ -98,7 +98,7 @@ else:
     masked_key = GEMINI_API_KEY[:4] + "..." + GEMINI_API_KEY[-4:] if len(GEMINI_API_KEY) > 8 else "***"
     print(f"🔑 [AI GATEWAY] Active API Key detected: {masked_key}")
 
-TEXT_MODEL_ID = "gemini-2.0-flash"
+TEXT_MODEL_ID = "gemini-2.5-flash"
 TTS_MODEL_ID = os.getenv("GEMINI_TTS_MODEL", "gemini-2.0-flash")
 DEPRECATED_TEXT_MODEL_SUFFIXES = (
     "1.5-flash",
@@ -150,9 +150,15 @@ def live_api_available() -> bool:
 @lru_cache(maxsize=1)
 def _new_sdk_client():
     google_genai = _google_genai_module()
-    if not GEMINI_API_KEY or google_genai is None:
+
+    if google_genai is None:
         return None
-    return google_genai.Client(api_key=GEMINI_API_KEY, http_options={"timeout": GENAI_HTTP_TIMEOUT_MS})
+
+    return google_genai.Client(
+        vertexai=True,
+        project="matverse",
+        location="us-central1"
+    )
 
 
 def get_live_client():
@@ -220,6 +226,11 @@ def _handle_generation_error(error: Exception, *, source: str, prompt: str) -> s
     print(f"{source} error: {error}")
     return None
 
+def generate_image_response(
+    prompt,
+    image_bytes
+):    client = _new_sdk_client()
+  
 
 def generate_response(
     prompt: str, 
@@ -234,9 +245,9 @@ def generate_response(
     if cached:
         return cached
 
-    if not GEMINI_API_KEY:
-        print("🚨 [AI Gateway Error] GEMINI_API_KEY is not configured in the active environment.")
-        return FALLBACK_TEXT
+    #if not GEMINI_API_KEY:
+     #   print("🚨 [AI Gateway Error] GEMINI_API_KEY is not configured in the active environment.")
+     #   return FALLBACK_TEXT
 
     model_id = _normalize_model_id(model)
     text: str | None = None
@@ -249,11 +260,19 @@ def generate_response(
         if client is not None:
             from google.genai import types
 
-            config = types.GenerateContentConfig(
-                temperature=0.0,
-                response_mime_type="application/json",
-                response_schema=response_schema,
-            )
+            if response_schema:
+
+                config = types.GenerateContentConfig(
+                    temperature=0.0,
+                    response_mime_type="application/json",
+                    response_schema=response_schema,
+                )
+
+            else:
+
+                config = types.GenerateContentConfig(
+                    temperature=0.0
+                )
             
             for attempt in range(max_retries):
                 try:
@@ -288,8 +307,12 @@ def generate_response(
             if _configure_legacy_sdk():
                 legacy_genai = _legacy_genai_module()
                 legacy_model = legacy_genai.GenerativeModel(model_id)
-                gen_config = {"temperature": 0.0, "response_mime_type": "application/json"}
+                gen_config = {
+                    "temperature": 0.0
+                }
+
                 if response_schema:
+                    gen_config["response_mime_type"] = "application/json"
                     gen_config["response_schema"] = response_schema
                 
                 for attempt in range(max_retries):

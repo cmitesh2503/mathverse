@@ -1,8 +1,8 @@
 import os
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-DEFAULT_GEMINI_TEXT_MODEL = "gemini-3.1-flash-lite-preview"
-FALLBACK_GEMINI_TEXT_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_TEXT_MODEL = "gemini-2.5-flash"
+FALLBACK_GEMINI_TEXT_MODEL = "gemini-2.5-flash-lite"
 _DEPRECATED_GEMINI_TEXT_MODELS = {
     "gemini-1.5-flash",
     "gemini-1.5-flash-8b",
