@@ -265,8 +265,8 @@ export default function JeeSolveQuestion({
                 border: "1px solid #ddd",
                 borderRadius: "10px",
                 background: "#fafafa",
-                marginTop: "10px",
-                fontSize: "15px"
+                marginTop: "15px",
+                fontSize: "20px"
             }}
             >
             {result.solution}
