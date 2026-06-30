@@ -98,6 +98,11 @@ class TeacherBrain:
         print("\n========== STRATEGY ==========")
         print(strategy) # Temporary add remove after test
         
+        self.session_manager.update_teaching_state(
+            session,
+            strategy
+        )
+        
         
         
         session.record_followup()
@@ -135,6 +140,11 @@ class TeacherBrain:
         
         print("\n========== EVALUATION ==========")
         print(evaluation)
+        
+        self.session_manager.update_from_evaluation(
+            session,
+            evaluation
+        )
 
         self.memory_updater.update(
             session,

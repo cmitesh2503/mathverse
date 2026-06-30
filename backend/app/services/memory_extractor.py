@@ -62,9 +62,26 @@ Rules
 2. explained_topics must contain ONLY concept names.
 
 Example:
+Good concepts
+
 Median
-Cumulative Frequency
 Mean Deviation
+Frequency Distribution
+Cumulative Frequency
+Variance
+Probability
+
+Do NOT store
+
+Variables
+
+x
+y
+Age (x_i)
+Table
+Option A
+Student
+Numbers
 
 Never explanation sentences.
 
@@ -95,6 +112,16 @@ Mastered
 9. Never create topics unrelated to the supplied question.
 
 10.If uncertain, use the supplied chapter instead of guessing.
+
+11.Maximum explained_topics = 2.
+
+12.Choose the two most important mathematical concepts only.
+
+13.Never store notation.
+
+14.Never store variable names.
+
+15.Never store table headings.
 """
 
         response = generate_structured_response(
