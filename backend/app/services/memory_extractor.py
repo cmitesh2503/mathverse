@@ -89,6 +89,12 @@ Mastered
 6. Never invent information.
 
 7. Return JSON only.
+
+8. Never infer a chapter different from the supplied chapter.
+
+9. Never create topics unrelated to the supplied question.
+
+10.If uncertain, use the supplied chapter instead of guessing.
 """
 
         response = generate_structured_response(

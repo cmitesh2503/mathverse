@@ -29,6 +29,7 @@ class MemoryUpdater:
         # Ask AI to summarize the teaching memory
 
         memory = self.extractor.extract(
+            
             student_message,
             teacher_response
         )

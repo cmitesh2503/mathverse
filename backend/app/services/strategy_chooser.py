@@ -8,26 +8,63 @@ class StrategyChooser:
     def choose(
         self,
         session,
-        observation
+        observation,
+        reasoning
     ):
+        """
+        Chooses the best teaching strategy.
 
-        # Student is confused
+        Inputs
+        ------
+        observation:
+            What the teacher observed.
+
+        reasoning:
+            What the teacher inferred.
+
+        Phase 2:
+            Deterministic rules.
+
+        Phase 4:
+            Reasoning may come from Gemini,
+            but this interface remains unchanged.
+        """
+
+        # ---------------------------------------
+        # Use TeacherReasoning first
+        # ---------------------------------------
+
+        if reasoning.learning_stage == "STRUGGLING":
+            return TeachingStrategy.SIMPLIFY
+
+        if reasoning.next_objective == "Teach using a simple worked example":
+            return TeachingStrategy.EXAMPLE
+
+        if reasoning.next_objective == "Guide the student with a hint":
+            return TeachingStrategy.HINT
+
+        if reasoning.next_objective == "Explain using whiteboard steps":
+            return TeachingStrategy.WHITEBOARD
+
+        if reasoning.learning_stage == "UNDERSTANDING":
+            return TeachingStrategy.CHECK_UNDERSTANDING
+
+        # ---------------------------------------
+        # Fallback to Observation
+        # ---------------------------------------
+
         if observation.confused:
             return TeachingStrategy.SIMPLIFY
 
-        # Wants a worked example
         if observation.needs_example:
             return TeachingStrategy.EXAMPLE
 
-        # Wants a drawing
         if observation.needs_whiteboard:
             return TeachingStrategy.WHITEBOARD
 
-        # Wants only a hint
         if observation.needs_hint:
             return TeachingStrategy.HINT
 
-        # Student already understands
         if observation.understood:
             return TeachingStrategy.CHECK_UNDERSTANDING
 
