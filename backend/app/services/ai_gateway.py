@@ -354,6 +354,41 @@ def generate_response(
 LOCAL_AI_API_BASE = os.getenv("LOCAL_AI_API_BASE", "http://localhost:11434/api/generate")
 LOCAL_AI_MODEL = os.getenv("LOCAL_AI_MODEL", "qwen2.5")
 
+def generate_structured_response(
+    prompt: str,
+    response_schema: Any
+) -> dict:
+    """
+    Generate structured JSON using Gemini.
+
+    Reuses generate_response() and converts the
+    JSON string into a Python dictionary.
+    """
+
+    response = generate_response(
+        prompt=prompt,
+        response_schema=response_schema
+    )
+
+    if isinstance(response, dict):
+        return response
+
+    if not isinstance(response, str):
+        return {}
+
+    try:
+        return json.loads(response)
+
+    except Exception as e:
+
+        print("=" * 60)
+        print("STRUCTURED RESPONSE ERROR")
+        print(e)
+        print(response)
+        print("=" * 60)
+
+        return {}
+
 def generate_local_response(prompt: str, model: str = LOCAL_AI_MODEL) -> str:
     """
     Calls a local LLM (like Qwen running on Ollama) to save cloud API quotas
