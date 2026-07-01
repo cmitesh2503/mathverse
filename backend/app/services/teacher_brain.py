@@ -22,6 +22,7 @@ from app.services.teacher_evaluator import (
 )
 from app.services.teaching_state import TeachingState
 
+
 class TeacherBrain:
     """
     Central AI teaching engine for MathVerse.
@@ -106,18 +107,15 @@ class TeacherBrain:
         
         
         session.record_followup()
-        
-
-        
-        
                 
         prompt = self.prompt_builder.build(
             strategy,
+            reasoning,
             context,
             session,
             student_message
-        )
-        
+        )             
+               
         
         session.record_explanation()
         
@@ -140,16 +138,17 @@ class TeacherBrain:
         
         print("\n========== EVALUATION ==========")
         print(evaluation)
-        
+                       
         self.session_manager.update_from_evaluation(
             session,
             evaluation
         )
 
         self.memory_updater.update(
-            session,
-            student_message,
-            response
+            session=session,
+            context=context,
+            student_message=student_message,
+            teacher_response=response
         )
         print(session)
 

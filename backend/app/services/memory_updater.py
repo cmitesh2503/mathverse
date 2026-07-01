@@ -12,6 +12,7 @@ class MemoryUpdater:
     def update(
         self,
         session,
+        context,
         student_message: str,
         teacher_response: str
     ):
@@ -29,9 +30,9 @@ class MemoryUpdater:
         # Ask AI to summarize the teaching memory
 
         memory = self.extractor.extract(
-            
-            student_message,
-            teacher_response
+            context=context,
+            student_message=student_message,
+            teacher_response=teacher_response
         )
         
         print("=" * 60)

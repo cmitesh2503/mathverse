@@ -8,23 +8,27 @@ class MemoryExtractor:
 
     def extract(
         self,
+        context,
         student_message: str,
         teacher_response: str
     ) -> dict:
 
         prompt = f"""
-You are updating an AI teacher's long-term teaching memory.
+You are updating the AI Teacher's long-term teaching memory.
 
-Student Question
-----------------
+Current Question Chapter:
+{context["chapter"]}
+
+Current Question:
+{context["question"]}
+
+Student Message:
 {student_message}
 
-Teacher Response
-----------------
+Teacher Response:
 {teacher_response}
 
-Extract ONLY the educational memory that a human teacher would remember for the next interaction.
-
+Extract ONLY the important mathematical concepts actually discussed.
 Focus on:
 
 • mathematical topic
@@ -122,6 +126,15 @@ Mastered
 14.Never store variable names.
 
 15.Never store table headings.
+
+16.Always ground your extraction in the supplied chapter and question.
+17.Never invent another chapter.
+18.Never infer concepts outside the current question.
+19.Never extract variable names.
+20.Never extract table headings.
+21.Never extract option numbers.
+22.Maximum explained_topics = 2.
+23.Prefer curriculum concepts over notation.
 """
 
         response = generate_structured_response(

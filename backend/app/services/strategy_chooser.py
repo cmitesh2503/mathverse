@@ -14,37 +14,60 @@ class StrategyChooser:
         """
         Chooses the best teaching strategy.
 
-        Inputs
-        ------
-        observation:
-            What the teacher observed.
-
-        reasoning:
-            What the teacher inferred.
-
         Phase 2:
             Deterministic rules.
 
-        Phase 4:
-            Reasoning may come from Gemini,
-            but this interface remains unchanged.
+        Phase 3:
+            Uses previous teaching methods to
+            avoid repeating the same strategy.
         """
 
+        used_methods = {
+            method.upper().replace(" ", "_")
+            for method in session.memory.teaching_methods_used
+        }
+
+        def already_used(strategy: TeachingStrategy) -> bool:
+            return strategy.name in used_methods
+
         # ---------------------------------------
-        # Use TeacherReasoning first
+        # Student is struggling
         # ---------------------------------------
 
         if reasoning.learning_stage == "STRUGGLING":
-            return TeachingStrategy.SIMPLIFY
+
+            if not already_used(TeachingStrategy.SIMPLIFY):
+                return TeachingStrategy.SIMPLIFY
+
+            if not already_used(TeachingStrategy.EXAMPLE):
+                return TeachingStrategy.EXAMPLE
+
+            if not already_used(TeachingStrategy.WHITEBOARD):
+                return TeachingStrategy.WHITEBOARD
+
+            if not already_used(TeachingStrategy.HINT):
+                return TeachingStrategy.HINT
+
+            return TeachingStrategy.EXPLAIN
+
+        # ---------------------------------------
+        # TeacherReasoning objectives
+        # ---------------------------------------
 
         if reasoning.next_objective == "Teach using a simple worked example":
-            return TeachingStrategy.EXAMPLE
+
+            if not already_used(TeachingStrategy.EXAMPLE):
+                return TeachingStrategy.EXAMPLE
 
         if reasoning.next_objective == "Guide the student with a hint":
-            return TeachingStrategy.HINT
+
+            if not already_used(TeachingStrategy.HINT):
+                return TeachingStrategy.HINT
 
         if reasoning.next_objective == "Explain using whiteboard steps":
-            return TeachingStrategy.WHITEBOARD
+
+            if not already_used(TeachingStrategy.WHITEBOARD):
+                return TeachingStrategy.WHITEBOARD
 
         if reasoning.learning_stage == "UNDERSTANDING":
             return TeachingStrategy.CHECK_UNDERSTANDING
@@ -54,16 +77,35 @@ class StrategyChooser:
         # ---------------------------------------
 
         if observation.confused:
-            return TeachingStrategy.SIMPLIFY
 
-        if observation.needs_example:
-            return TeachingStrategy.EXAMPLE
+            if not already_used(TeachingStrategy.SIMPLIFY):
+                return TeachingStrategy.SIMPLIFY
 
-        if observation.needs_whiteboard:
+            if not already_used(TeachingStrategy.EXAMPLE):
+                return TeachingStrategy.EXAMPLE
+
             return TeachingStrategy.WHITEBOARD
 
+        if observation.needs_example:
+
+            if not already_used(TeachingStrategy.EXAMPLE):
+                return TeachingStrategy.EXAMPLE
+
+            return TeachingStrategy.WHITEBOARD
+
+        if observation.needs_whiteboard:
+
+            if not already_used(TeachingStrategy.WHITEBOARD):
+                return TeachingStrategy.WHITEBOARD
+
+            return TeachingStrategy.SIMPLIFY
+
         if observation.needs_hint:
-            return TeachingStrategy.HINT
+
+            if not already_used(TeachingStrategy.HINT):
+                return TeachingStrategy.HINT
+
+            return TeachingStrategy.EXAMPLE
 
         if observation.understood:
             return TeachingStrategy.CHECK_UNDERSTANDING

@@ -15,6 +15,10 @@ class TeacherObserver:
 
         observation = TeacherObservation()
 
+        # ---------------------------------------
+        # Current message analysis
+        # ---------------------------------------
+
         if "don't understand" in message:
             observation.confused = True
 
@@ -47,5 +51,59 @@ class TeacherObserver:
 
         if "understand" in message and not observation.confused:
             observation.understood = True
+
+        # =======================================
+        # Phase 3 : History-aware observation
+        # =======================================
+
+        # Student is repeatedly asking follow-up questions
+
+        if session.followup_questions >= 3:
+            observation.confused = True
+
+        # Student already requested examples before
+
+        example_requests = sum(
+            1
+            for q in session.memory.student_questions
+            if "example" in q.lower()
+        )
+
+        if example_requests >= 2:
+            observation.needs_example = True
+
+        # Student already requested hints before
+
+        hint_requests = sum(
+            1
+            for q in session.memory.student_questions
+            if "hint" in q.lower()
+        )
+
+        if hint_requests >= 2:
+            observation.needs_hint = True
+
+        # If Hint was already used but student still says confused,
+        # escalate to Example.
+
+        methods = [
+            method.lower()
+            for method in session.memory.teaching_methods_used
+        ]
+
+        if (
+            observation.confused
+            and "hint" in methods
+        ):
+            observation.needs_example = True
+
+        # If Example was already used and student is still confused,
+        # escalate to Whiteboard.
+
+        if (
+            observation.confused
+            and "example" in methods
+        ):
+            observation.needs_whiteboard = True
 
         return observation

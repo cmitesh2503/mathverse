@@ -1,3 +1,7 @@
+from flask import session
+from sentence_transformers import evaluation
+
+from app.api.routes import evaluation
 from app.services.teaching_strategy import TeachingStrategy
 
 
@@ -5,12 +9,13 @@ class PromptBuilder:
 
     def build(
         self,
-        strategy: TeachingStrategy,
-        context: dict,
+        strategy,
+        reasoning,
+        context,
         session,
-        student_message: str
-    ) -> str:
-
+        student_message
+    ):
+        
         conversation = context.get(
             "conversation",
             ""
@@ -19,23 +24,29 @@ class PromptBuilder:
         if strategy == TeachingStrategy.EXPLAIN:
 
             return self._normal_prompt(
+                reasoning,
                 context,
                 conversation,
+                session,
                 student_message
             )
 
         if strategy == TeachingStrategy.SIMPLIFY:
 
             return self._simplify_prompt(
+                reasoning,
                 context,
                 conversation,
+                session,
                 student_message
             )
 
         if strategy == TeachingStrategy.EXAMPLE:
 
             return self._example_prompt(
+                reasoning,
                 context,
+                conversation,
                 session,
                 student_message
             )
@@ -43,7 +54,9 @@ class PromptBuilder:
         if strategy == TeachingStrategy.WHITEBOARD:
 
             return self._whiteboard_prompt(
+                reasoning,
                 context,
+                conversation,
                 session,
                 student_message
             )
@@ -51,7 +64,9 @@ class PromptBuilder:
         if strategy == TeachingStrategy.HINT:
 
             return self._hint_prompt(
+                reasoning,
                 context,
+                conversation,
                 session,
                 student_message
             )
@@ -59,21 +74,29 @@ class PromptBuilder:
         if strategy == TeachingStrategy.CHECK_UNDERSTANDING:
 
             return self._check_prompt(
+                reasoning,
                 context,
+                conversation,
                 session,
                 student_message
             )
 
         return self._normal_prompt(
+            reasoning,
             context,
             conversation,
+            session,
             student_message
         )
+        
+    
 
     def _normal_prompt(
         self,
+        reasoning,
         context,
         conversation,
+        session,
         student_message
     ):
 
@@ -112,11 +135,14 @@ Rules
 
 5. Return plain text only.
 """
+    
 
     def _simplify_prompt(
         self,
+        reasoning,
         context,
         conversation,
+        session,
         student_message
     ):
 
@@ -162,7 +188,9 @@ Rules
 
     def _example_prompt(
         self,
+        reasoning,
         context,
+        conversation,
         session,
         student_message
     ):
@@ -217,7 +245,9 @@ Rules
 
     def _hint_prompt(
         self,
+        reasoning,
         context,
+        conversation,
         session,
         student_message
     ):
@@ -262,7 +292,9 @@ Rules
 
     def _check_prompt(
         self,
+        reasoning,
         context,
+        conversation,
         session,
         student_message
     ):
@@ -305,7 +337,9 @@ Rules
 
     def _whiteboard_prompt(
         self,
+        reasoning,
         context,
+        conversation,
         session,
         student_message
     ):
