@@ -1,7 +1,18 @@
 from typing import List, Dict
 from pydantic import BaseModel, Field
 
+class Concept(BaseModel):
 
+    id: str
+
+    name: str
+
+    chapter_id: str
+
+    order: int
+
+    prerequisites: List[str] = Field(default_factory=list)
+    
 class Chapter(BaseModel):
 
     id: str
@@ -10,6 +21,7 @@ class Chapter(BaseModel):
 
     order: int
 
+    concepts: List[Concept] = Field(default_factory=list)
 
 class Curriculum(BaseModel):
 

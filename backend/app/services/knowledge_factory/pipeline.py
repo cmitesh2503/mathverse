@@ -1,22 +1,8 @@
-from app.services.knowledge_factory.curriculum_extractor import (
-    CurriculumExtractor
-)
-
-from app.services.knowledge_factory.validator import (
-    Validator
-)
-
-from app.services.knowledge_factory.graph_builder import (
-    GraphBuilder
-)
-
-from app.services.knowledge_factory.firestore_writer import (
-    FirestoreWriter
-)
-
-from app.services.knowledge_factory.chapter_extractor import (
-    ChapterExtractor
-)
+from app.services.knowledge_factory.curriculum_extractor import CurriculumExtractor
+from app.services.knowledge_factory.concept_extractor import ConceptExtractor
+from app.services.knowledge_factory.validator import Validator
+from app.services.knowledge_factory.graph_builder import GraphBuilder
+from app.services.knowledge_factory.firestore_writer import FirestoreWriter
 
 
 class KnowledgePipeline:
@@ -24,54 +10,55 @@ class KnowledgePipeline:
     def __init__(self):
 
         self.curriculum = CurriculumExtractor()
+        self.concepts = ConceptExtractor()
 
         self.validator = Validator()
-        
-        self.firestore.save_curriculum(
-            curriculum
-        )
-
         self.graph = GraphBuilder()
 
         self.firestore = FirestoreWriter()
-        
-        self.chapter = ChapterExtractor()
 
-    def process_pdf(
+    def build_knowledge(
         self,
-        bucket_name: str,
-        blob_name: str
+        document_text: str
     ):
 
         print("=" * 60)
         print("Knowledge Factory")
-        print(blob_name)
         print("=" * 60)
 
         curriculum = self.curriculum.extract(
-            bucket_name,
-            blob_name
-        )
-        
-        chapters = self.chapter.extract(
-            curriculum
+            document_text
         )
 
+        for chapter in curriculum.chapters:
+
+            updated = self.concepts.extract(
+                chapter,
+                document_text
+            )
+
+            chapter.concepts = updated.concepts
+
         validation = self.validator.validate(
-            chapters
+            curriculum
         )
 
         if not validation.valid:
+            raise ValueError(validation.errors)
 
-            raise ValueError(
-                validation.errors
-            )
-
-        graph = self.graph.build(
+        self.firestore.save_curriculum(
             curriculum
         )
 
-        self.firestore.save(
+        self.firestore.save_chapters(
+            curriculum
+        )
+        
+        self.firestore.save_concepts(
+            curriculum
+        )
+
+        graph = self.graph.build(
             curriculum
         )
 

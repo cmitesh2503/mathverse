@@ -1,26 +1,108 @@
-from app.services.knowledge_factory.models import (
-    ExtractionResult
+from app.services.ai_gateway import (
+    generate_structured_response
 )
+
+from app.services.knowledge_factory.models import (
+    Concept
+)
+
+
+CONCEPT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "concepts": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        }
+    }
+}
 
 
 class ConceptExtractor:
 
     """
-    Extracts chapter concepts from structured educational content.
+    Extract concepts from a single chapter.
     """
 
     def extract(
         self,
-        curriculum
-    ) -> ExtractionResult:
+        chapter,
+        document_text: str
+    ):
 
-        return ExtractionResult(
-            success=True,
-            document_type="concepts",
-            metadata={
-                "source": "curriculum"
-            },
-            data={
-                "concepts": []
-            }
+        prompt = f"""
+You are an expert JEE Mathematics curriculum designer.
+
+Chapter
+
+{chapter.name}
+
+Document
+
+{document_text}
+
+Extract ONLY the major teachable concepts.
+
+Return JSON.
+
+Example
+
+Matrices
+
+↓
+
+Definition
+
+Order of Matrix
+
+Types of Matrix
+
+Matrix Equality
+
+Matrix Addition
+
+Matrix Multiplication
+
+Transpose
+
+Inverse
+
+Properties
+"""
+
+        response = generate_structured_response(
+            prompt,
+            CONCEPT_SCHEMA
         )
+
+        concepts = []
+
+        for index, concept_name in enumerate(
+            response.get(
+                "concepts",
+                []
+            )
+        ):
+
+            concepts.append(
+
+                Concept(
+
+                    id=concept_name.lower().replace(
+                        " ",
+                        "_"
+                    ),
+
+                    name=concept_name,
+
+                    chapter_id=chapter.id,
+
+                    order=index + 1
+                )
+            )
+
+        chapter.concepts = concepts
+
+        return chapter

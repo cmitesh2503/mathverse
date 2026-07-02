@@ -13,34 +13,32 @@ class Validator:
         errors = []
 
         if not curriculum.exam:
-
-            errors.append(
-                "Exam missing."
-            )
+            errors.append("Exam missing.")
 
         if not curriculum.subject:
-
-            errors.append(
-                "Subject missing."
-            )
+            errors.append("Subject missing.")
 
         if not curriculum.grade:
+            errors.append("Grade missing.")
 
-            errors.append(
-                "Grade missing."
-            )
+        if len(curriculum.chapters) == 0:
+            errors.append("No chapters extracted.")
 
-        if len(
-            curriculum.chapters
-        ) == 0:
+        for chapter in curriculum.chapters:
 
-            errors.append(
-                "No chapters extracted."
-            )
+            if not chapter.name:
+                errors.append(
+                    "Chapter name missing."
+                )
+
+            for concept in chapter.concepts:
+
+                if not concept.name:
+                    errors.append(
+                        f"Concept missing in {chapter.name}"
+                    )
 
         return ValidationResult(
-
             valid=len(errors) == 0,
-
             errors=errors
         )

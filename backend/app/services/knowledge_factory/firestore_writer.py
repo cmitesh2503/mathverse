@@ -9,14 +9,27 @@ class FirestoreWriter:
 
         self.db = get_firestore_client()
 
-    def save(
+    def save_chapters(
         self,
-        extraction
+        curriculum
     ):
 
-        print(
-            "Knowledge ready for Firestore"
-        )
+        batch = self.db.batch()
+
+        for chapter in curriculum.chapters:
+
+            ref = (
+                self.db
+                .collection("chapters")
+                .document(chapter.id)
+            )
+
+            batch.set(
+                ref,
+                chapter.model_dump()
+            )
+
+        batch.commit()
         
     def save_curriculum(
         self,
@@ -31,6 +44,30 @@ class FirestoreWriter:
 
             curriculum.model_dump()
         )
+        
+    def save_concepts(
+        self,
+        curriculum
+    ):
+
+        batch = self.db.batch()
+
+        for chapter in curriculum.chapters:
+
+            for concept in chapter.concepts:
+
+                ref = (
+                    self.db
+                    .collection("concepts")
+                    .document(concept.id)
+                )
+
+                batch.set(
+                    ref,
+                    concept.model_dump()
+                )
+
+        batch.commit()
 
         # Commit 5
         # Firestore persistence
