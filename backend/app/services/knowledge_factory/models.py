@@ -1,5 +1,25 @@
-from pydantic import BaseModel, Field
 from typing import List, Dict
+from pydantic import BaseModel, Field
+
+
+class Chapter(BaseModel):
+
+    id: str
+
+    name: str
+
+    order: int
+
+
+class Curriculum(BaseModel):
+
+    exam: str
+
+    subject: str
+
+    grade: str
+
+    chapters: List[Chapter] = Field(default_factory=list)
 
 
 class ExtractionResult(BaseModel):

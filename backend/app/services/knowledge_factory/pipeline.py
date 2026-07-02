@@ -26,6 +26,10 @@ class KnowledgePipeline:
         self.curriculum = CurriculumExtractor()
 
         self.validator = Validator()
+        
+        self.firestore.save_curriculum(
+            curriculum
+        )
 
         self.graph = GraphBuilder()
 

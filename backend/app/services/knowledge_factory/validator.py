@@ -7,9 +7,40 @@ class Validator:
 
     def validate(
         self,
-        extraction
-    ) -> ValidationResult:
+        curriculum
+    ):
+
+        errors = []
+
+        if not curriculum.exam:
+
+            errors.append(
+                "Exam missing."
+            )
+
+        if not curriculum.subject:
+
+            errors.append(
+                "Subject missing."
+            )
+
+        if not curriculum.grade:
+
+            errors.append(
+                "Grade missing."
+            )
+
+        if len(
+            curriculum.chapters
+        ) == 0:
+
+            errors.append(
+                "No chapters extracted."
+            )
 
         return ValidationResult(
-            valid=True
+
+            valid=len(errors) == 0,
+
+            errors=errors
         )

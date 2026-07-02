@@ -17,6 +17,20 @@ class FirestoreWriter:
         print(
             "Knowledge ready for Firestore"
         )
+        
+    def save_curriculum(
+        self,
+        curriculum
+    ):
+
+        self.db.collection(
+            "curriculums"
+        ).document(
+            f"{curriculum.exam}_{curriculum.subject}_{curriculum.grade}"
+        ).set(
+
+            curriculum.model_dump()
+        )
 
         # Commit 5
         # Firestore persistence
