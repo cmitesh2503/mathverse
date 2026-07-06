@@ -5,7 +5,6 @@ import json
 import os
 import sys
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -23,7 +22,8 @@ from app.api.jee.tts import (
     router as tts_router
 )
 
-load_dotenv()
+# dotenv loading disabled for ADC-first production deployments.
+# Local development may load .env via a separate startup script if needed.
 
 #sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -34,6 +34,15 @@ from .api.practice import router as practice_router
 from .api.tutor import router as tutor_router
 from app.api.jee.question_chat import (
     router as jee_chat_router
+)
+from app.api.knowledge.knowledge_compiler import (
+    router as knowledge_router
+)
+from app.api.jee.voice_tutor import (
+    router as voice_router
+)
+from app.api.jee.whiteboard import (
+    router as whiteboard_router
 )
 
 app = FastAPI(title="MathVerse API")
@@ -61,12 +70,11 @@ os.makedirs(uploads_root, exist_ok=True)
 app.mount("/uploads/evaluation", StaticFiles(directory=uploads_root), name="evaluation_uploads")
 app.include_router(auth.router)
 app.include_router(auth_firestore.router)
-from app.api.jee.voice_tutor import (
-    router as voice_router
+app.include_router(
+    knowledge_router,
+    prefix="/api/knowledge"
 )
-from app.api.jee.whiteboard import (
-    router as whiteboard_router
-)
+
 
 app.include_router(
     jee_question_router,

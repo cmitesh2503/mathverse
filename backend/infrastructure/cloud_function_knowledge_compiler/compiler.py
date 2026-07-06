@@ -1,15 +1,15 @@
 from datetime import datetime
 import logging
 
-from app.services.knowledge_factory.pipeline import (
+from pipeline import (
     KnowledgePipeline
 )
 
-from app.services.knowledge_factory.document_loader import (
+from document_loader import (
     DocumentLoader
 )
 
-from app.services.knowledge_factory.ocr_service import (
+from ocr_service import (
     OCRService
 )
 
@@ -55,6 +55,14 @@ class KnowledgeCompiler:
         text = self.ocr.extract_text(
             pdf
         )
+
+        logger.info(
+            "OCR extraction completed. Text length=%d",
+            len(text) if isinstance(text, str) else 0,
+        )
+
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("OCR extracted empty text from PDF.")
 
         graph = self.pipeline.build_knowledge(
             text

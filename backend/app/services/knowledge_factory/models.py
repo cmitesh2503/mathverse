@@ -1,61 +1,26 @@
-from typing import List, Dict
-from pydantic import BaseModel, Field
+from dataclasses import dataclass, field
+from typing import List
+from datetime import datetime
 
-class Concept(BaseModel):
 
-    id: str
-
-    name: str
-
-    chapter_id: str
-
-    order: int
-
-    prerequisites: List[str] = Field(default_factory=list)
-    
-class Chapter(BaseModel):
+@dataclass
+class Chapter:
 
     id: str
-
-    name: str
-
     order: int
+    title: str
+    description: str = ""
 
-    concepts: List[Concept] = Field(default_factory=list)
 
-class Curriculum(BaseModel):
+@dataclass
+class Curriculum:
 
+    curriculum_id: str
     exam: str
-
     subject: str
-
     grade: str
+    version: str
 
-    chapters: List[Chapter] = Field(default_factory=list)
+    chapters: List[Chapter] = field(default_factory=list)
 
-
-class ExtractionResult(BaseModel):
-
-    success: bool = True
-
-    document_type: str
-
-    metadata: Dict = Field(default_factory=dict)
-
-    data: Dict = Field(default_factory=dict)
-
-    warnings: List[str] = Field(default_factory=list)
-
-
-class ValidationResult(BaseModel):
-
-    valid: bool
-
-    errors: List[str] = Field(default_factory=list)
-
-
-class KnowledgeGraphResult(BaseModel):
-
-    nodes_created: int = 0
-
-    relationships_created: int = 0
+    created_at: datetime = field(default_factory=datetime.utcnow)

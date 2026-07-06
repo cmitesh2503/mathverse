@@ -1,4 +1,4 @@
-from app.services.knowledge_factory.models import (
+from backend.app.services.knowledge_factory.models import (
     ExtractionResult
 )
 

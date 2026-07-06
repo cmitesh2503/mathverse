@@ -1,24 +1,24 @@
-from backend.app.services.knowledge_factory.models import (
+from models import (
     ExtractionResult
 )
 
 
-class WhiteboardExtractor:
+class CheatSheetExtractor:
 
     """
-    Generates whiteboard teaching steps.
+    Generates revision cheat sheets.
     """
 
     def extract(
         self,
-        teacher_scripts
+        chapter
     ) -> ExtractionResult:
 
         return ExtractionResult(
             success=True,
-            document_type="whiteboards",
+            document_type="cheatsheet",
             metadata={},
             data={
-                "whiteboards": []
+                "cheatsheet": {}
             }
         )

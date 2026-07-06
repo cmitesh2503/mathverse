@@ -1,9 +1,7 @@
 import google.generativeai as genai
-from dotenv import load_dotenv
 import os
 
-load_dotenv()
-
+# Do not auto-load .env in production; allow explicit env setup for local dev.
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 model = genai.GenerativeModel("gemini-pro")

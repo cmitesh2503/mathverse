@@ -11,12 +11,13 @@ import time
 from functools import lru_cache
 from typing import Any
 
-# Production/ADC-first configuration: do not automatically load .env files here.
-# Local development may still use a separate startup script to load env vars.
+# Vertex AI usage in Cloud Functions relies on ADC (service account) instead
+# of loading local .env files. Environment variables are provided by the
+# Cloud Function runtime and by Terraform service_config environment entries.
 
-from ..cache.cache_manager import get_cache, set_cache
-from ..core.config import GEMINI_LIVE_MODEL, GEMINI_TEXT_MODEL
-from ..guardrails.ai_guardrail import validate_response
+from cache_manager import get_cache, set_cache
+from config import GEMINI_LIVE_MODEL, GEMINI_TEXT_MODEL
+from ai_guardrail import validate_response
 
 try:
     from google.api_core.exceptions import ResourceExhausted
@@ -24,9 +25,9 @@ except ImportError:  # pragma: no cover - optional dependency
     ResourceExhausted = None
 
 
-# GEMINI_API_KEY is not required in production when using ADC/Vertex AI.
-# Keep as None to avoid code paths that expect an explicit key.
-GEMINI_API_KEY = None
+# Do not rely on an explicit API key inside the Cloud Function. Vertex AI
+# client will use Application Default Credentials (ADC) provided by the
+# function's service account. Local testing may still set env vars.
 
 TEXT_MODEL_ID = "gemini-2.5-flash"
 TTS_MODEL_ID = os.getenv("GEMINI_TTS_MODEL", "gemini-2.0-flash")
@@ -82,10 +83,16 @@ def _new_sdk_client():
     google_genai = _google_genai_module()
 
     if google_genai is None:
+        print(
+            "⚠️ Vertex AI GenAI SDK unavailable: google.genai could not be imported. "
+            "Install google-genai in requirements.txt and redeploy."
+        )
         return None
-
     project = os.getenv("PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT") or "matverse"
-    location = os.getenv("PROCESSOR_LOCATION") or os.getenv("GOOGLE_CLOUD_LOCATION") or "us-central1"
+    raw_location = os.getenv("PROCESSOR_LOCATION") or os.getenv("GOOGLE_CLOUD_LOCATION") or "us-central1"
+    location = _normalize_location(raw_location)
+    if raw_location and raw_location != location:
+        print(f"⚠️ Normalized Vertex AI location from '{raw_location}' to '{location}'.")
     return google_genai.Client(
         vertexai=True,
         project=project,
@@ -99,16 +106,9 @@ def get_live_client():
 
 
 def _configure_legacy_sdk() -> bool:
-    # Legacy client is only configured when an explicit API key is provided.
-    # In ADC-first deployments this will usually be False.
-    legacy_genai = _legacy_genai_module()
-    if legacy_genai is None:
-        return False
-    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        return False
-    legacy_genai.configure(api_key=api_key)
-    return True
+    # Legacy client path removed: we rely on the official google.genai SDK
+    # initialized via ADC. Keep this stub for backwards compatibility.
+    return False
 
 
 def _normalize_model_id(model: str | None) -> str:
@@ -119,6 +119,32 @@ def _normalize_model_id(model: str | None) -> str:
     if model in deprecated_model_ids:
         return TEXT_MODEL_ID
     return model
+
+
+def _normalize_location(location: str | None) -> str:
+    if not location:
+        return "us-central1"
+    normalized = location.strip().lower()
+    if normalized == "us":
+        return "us-central1"
+    if normalized == "us-central":
+        return "us-central1"
+    return normalized
+
+
+@lru_cache(maxsize=1)
+def _has_adc_credentials() -> bool:
+    try:
+        import google.auth
+        credentials, _ = google.auth.default()
+        return credentials is not None
+    except Exception:
+        return False
+
+
+def _has_active_auth() -> bool:
+    # Active auth is satisfied by ADC (service account) for Vertex AI.
+    return _has_adc_credentials()
 
 
 def _fallback_json() -> str:
@@ -153,8 +179,17 @@ def _is_transient_error(error: Exception) -> bool:
     )
 
 
-def _handle_generation_error(error: Exception, *, source: str, prompt: str) -> str | None:
+def _handle_generation_error(
+    error: Exception,
+    *,
+    source: str,
+    prompt: str,
+    response_schema: Any = None,
+) -> str | None:
     if _is_quota_error(error):
+        if response_schema:
+            print(f"{source} quota exhausted; structured response cannot fallback.")
+            return None
         fallback = _fallback_json()
         set_cache(prompt, fallback)
         print(f"{source} quota exhausted; returning safe fallback response.")
@@ -164,24 +199,59 @@ def _handle_generation_error(error: Exception, *, source: str, prompt: str) -> s
     return None
 
 
-@lru_cache(maxsize=1)
-def _has_adc_credentials() -> bool:
+def _serialize_parsed_response(parsed: Any) -> str:
     try:
-        import google.auth
-        credentials, _ = google.auth.default()
-        return credentials is not None
+        return json.dumps(parsed, default=lambda value: getattr(value, '__dict__', str(value)))
     except Exception:
-        return False
+        return json.dumps(str(parsed))
 
 
-def _has_active_auth() -> bool:
-    return _has_adc_credentials()
+def _extract_json_object(text: str) -> str | None:
+    if not isinstance(text, str):
+        return None
+    depth = 0
+    start = None
+    for idx, char in enumerate(text):
+        if char == "{":
+            if start is None:
+                start = idx
+            depth += 1
+        elif char == "}" and start is not None:
+            depth -= 1
+            if depth == 0:
+                candidate = text[start:idx + 1]
+                try:
+                    json.loads(candidate)
+                    return candidate
+                except json.JSONDecodeError:
+                    continue
+    return None
+
+
+def _normalize_response_schema(response_schema: Any) -> Any:
+    if response_schema is None:
+        return None
+    if isinstance(response_schema, type) and hasattr(response_schema, "model_json_schema"):
+        try:
+            schema = response_schema.model_json_schema()
+            if isinstance(schema, dict):
+                schema.setdefault("additionalProperties", False)
+                return schema
+        except Exception:
+            pass
+    if isinstance(response_schema, dict):
+        response_schema.setdefault("additionalProperties", False)
+        return response_schema
+    return response_schema
+
 
 def generate_image_response(
     prompt,
     image_bytes
-):    client = _new_sdk_client()
-  
+):
+    client = _new_sdk_client()
+    return None
+
 
 def generate_response(
     prompt: str, 
@@ -199,7 +269,7 @@ def generate_response(
     if response_schema and not _has_active_auth():
         raise RuntimeError(
             "Structured response generation requires Application Default Credentials (ADC) with Vertex AI access. "
-            "Deploy the app with a service account that has Vertex AI permission, or set ADC locally."
+            "Deploy the function with a service account that has Vertex AI permission, or set ADC locally."
         )
 
     model_id = _normalize_model_id(model)
@@ -210,19 +280,23 @@ def generate_response(
     # 1. Primary Attempt using the New Google GenAI SDK Client
     try:
         client = _new_sdk_client()
-        if client is not None:
+        if client is None:
+            if response_schema:
+                raise RuntimeError(
+                    "Structured response generation requires the Google GenAI SDK (google-genai) and Application Default Credentials (ADC). "
+                    "Install google-genai in requirements.txt, deploy with a service account with Vertex AI access, and ensure PROJECT_ID/PROCESSOR_LOCATION are set."
+                )
+        else:
             from google.genai import types
 
             if response_schema:
-
+                normalized_schema = _normalize_response_schema(response_schema)
                 config = types.GenerateContentConfig(
                     temperature=0.0,
                     response_mime_type="application/json",
-                    response_schema=response_schema,
+                    response_schema=normalized_schema,
                 )
-
             else:
-
                 config = types.GenerateContentConfig(
                     temperature=0.0
                 )
@@ -230,7 +304,47 @@ def generate_response(
             for attempt in range(max_retries):
                 try:
                     response = client.models.generate_content(model=model_id, contents=prompt, config=config)
-                    text = getattr(response, "text", None)
+                    parsed_response = getattr(response, "parsed", None)
+                    text = None
+
+                    if response_schema and parsed_response is not None:
+                        text = (
+                            parsed_response
+                            if isinstance(parsed_response, str)
+                            else _serialize_parsed_response(parsed_response)
+                        )
+
+                    if text is None:
+                        text = getattr(response, "text", None)
+
+                    if text is None and hasattr(response, "json"):
+                        try:
+                            json_text = response.json()
+                            if isinstance(json_text, str):
+                                text = json_text
+                        except Exception:
+                            pass
+
+                    if text is None and response_schema:
+                        raw_response = None
+                        try:
+                            raw_response = json.dumps(
+                                {
+                                    "candidates": [
+                                        {
+                                            "content": getattr(candidate, "content", None)
+                                        }
+                                        for candidate in getattr(response, "candidates", [])
+                                    ],
+                                    "parsed": parsed_response,
+                                },
+                                default=lambda obj: getattr(obj, "_asdict", lambda: str(obj))(),
+                            )
+                        except Exception:
+                            raw_response = str(response)
+                        print("⚠️ Structured response generated no text. Raw response payload:")
+                        print(raw_response)
+
                     if text is not None:
                         break
                 except Exception as err:
@@ -250,56 +364,28 @@ def generate_response(
                     raise err
 
     except Exception as error:  # pragma: no cover - network dependent
-        fallback = _handle_generation_error(error, source="GenAI SDK", prompt=prompt)
+        fallback = _handle_generation_error(
+            error,
+            source="GenAI SDK",
+            prompt=prompt,
+            response_schema=response_schema,
+        )
         if fallback is not None:
             return fallback
 
-    # 2. Secondary Fallback Attempt using Legacy GenerativeAI SDK Configurations
+    # If no text was returned from the Vertex AI client, handle structured
+    # vs free-text requests explicitly.
     if text is None:
-        try:
-            if _configure_legacy_sdk():
-                legacy_genai = _legacy_genai_module()
-                legacy_model = legacy_genai.GenerativeModel(model_id)
-                gen_config = {
-                    "temperature": 0.0
-                }
+        if response_schema:
+            raise RuntimeError(
+                "Structured response generation failed: no valid text was returned by the AI service. "
+                "This may indicate an authentication, quota, or response parsing issue. "
+                "Check that the function service account has Vertex AI access and that the latest runtime package is deployed."
+            )
+        # For non-structured (plain text) requests, fall back to the safe text.
+        text = FALLBACK_TEXT
 
-                if response_schema:
-                    gen_config["response_mime_type"] = "application/json"
-                    gen_config["response_schema"] = response_schema
-                
-                for attempt in range(max_retries):
-                    try:
-                        response = legacy_model.generate_content(
-                            prompt,
-                            generation_config=gen_config,
-                            request_options={"timeout": 300.0},
-                        )
-                        text = getattr(response, "text", None)
-                        if text is not None:
-                            break
-                    except Exception as err:
-                        if (_is_transient_error(err) or _is_quota_error(err)) and attempt < max_retries - 1:
-                            delay = (base_delay * (2 ** attempt)) + random.uniform(0.1, 0.4)
-                            retry_match = re.search(r"retry(?: in|Delay['\"]?:\s*['\"]?)\s*(\d+(?:\.\d+)?)s?", str(err), re.IGNORECASE)
-                            if retry_match:
-                                with contextlib.suppress(ValueError):
-                                    requested_delay = float(retry_match.group(1))
-                                    if requested_delay > 15.0:
-                                        print(f"⚠️ Requested retry delay ({requested_delay}s) is too long. Failing fast to fallback.")
-                                        raise err
-                                    delay = requested_delay + 1.0
-                            print(f"⚠️ Legacy Gemini Client experiencing high demand (503/429). Retrying in {delay:.2f}s... (Attempt {attempt + 1}/{max_retries})")
-                            time.sleep(delay)
-                            continue
-                        raise err
-
-        except Exception as error:  # pragma: no cover - network dependent
-            fallback = _handle_generation_error(error, source="Legacy Gemini SDK", prompt=prompt)
-            if fallback is not None:
-                return fallback
-
-    final_text = validate_response(text or FALLBACK_TEXT)
+    final_text = validate_response(text)
     set_cache(prompt, final_text)
     return final_text
 
@@ -327,20 +413,39 @@ def generate_structured_response(
         return response
 
     if not isinstance(response, str):
-        return {}
+        raise RuntimeError(
+            f"Structured response generation returned unexpected type {type(response).__name__}."
+        )
 
     try:
-        return json.loads(response)
+        parsed = json.loads(response)
+    except json.JSONDecodeError as primary_error:
+        extracted = _extract_json_object(response)
+        if extracted is not None:
+            try:
+                parsed = json.loads(extracted)
+            except json.JSONDecodeError:
+                parsed = None
+        else:
+            parsed = None
 
-    except Exception as e:
+        if parsed is None:
+            print("=" * 60)
+            print("STRUCTURED RESPONSE ERROR")
+            print("Error:", primary_error)
+            print("Raw response content:")
+            print(response)
+            print("=" * 60)
+            raise RuntimeError(
+                "Structured response generation failed to parse JSON output. "
+                "Inspect the raw payload above for malformed or non-JSON schema output."
+            ) from primary_error
 
-        print("=" * 60)
-        print("STRUCTURED RESPONSE ERROR")
-        print(e)
-        print(response)
-        print("=" * 60)
-
-        return {}
+    if not isinstance(parsed, dict):
+        raise RuntimeError(
+            "Structured response generation must return a JSON object."
+        )
+    return parsed
 
 def generate_local_response(prompt: str, model: str = LOCAL_AI_MODEL) -> str:
     """

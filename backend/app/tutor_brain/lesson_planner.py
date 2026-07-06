@@ -6,15 +6,14 @@ class RateLimitError(Exception):
 from vertexai.generative_models import GenerativeModel
 import vertexai
 
-from dotenv import load_dotenv
 import json
 import re
 import asyncio
 import requests
 
 vertexai.init(
-    project="mathverse-live-ai",   # 👈 replace
-    location="global"
+    project=os.getenv("PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT") or "mathverse-live-ai",
+    location=os.getenv("PROCESSOR_LOCATION") or os.getenv("GOOGLE_CLOUD_LOCATION") or "global",
 )
 
 model = GenerativeModel(os.getenv("GEMINI_PLANNER_MODEL", os.getenv("GEMINI_TEXT_MODEL", "gemini-3.1-pro-preview")))

@@ -98,7 +98,7 @@ def resolve_firestore_project_id() -> str | None:
 
 @lru_cache(maxsize=1)
 def validate_required_gcloud_account() -> None:
-    required_account = _clean_env_value(os.getenv(_REQUIRED_GCLOUD_ACCOUNT_ENV_VAR, "miteshc527@gmail.com"))
+    required_account = _clean_env_value(os.getenv(_REQUIRED_GCLOUD_ACCOUNT_ENV_VAR, "miteshc@gmail.com"))
     if not required_account:
         return
 
@@ -125,6 +125,18 @@ def validate_required_gcloud_account() -> None:
         )
 
 
+def _is_cloud_runtime() -> bool:
+    return bool(
+        os.getenv("K_SERVICE")
+        or os.getenv("FUNCTION_TARGET")
+        or os.getenv("FUNCTION_NAME")
+        or os.getenv("CLOUD_RUN_SERVICE_NAME")
+        or os.getenv("K_REVISION")
+        or os.getenv("K_CONFIGURATION")
+        or os.getenv("GAE_SERVICE")
+    )
+
+
 @lru_cache(maxsize=1)
 def get_firestore_client():
     from google.cloud import firestore
@@ -144,5 +156,7 @@ def get_firestore_client():
             "The backend will not infer a Firestore project from another account."
         )
 
-    validate_required_gcloud_account()
+    if not _is_cloud_runtime():
+        validate_required_gcloud_account()
+
     return firestore.Client(project=project_id)

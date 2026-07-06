@@ -1,12 +1,12 @@
-from backend.app.services.knowledge_factory.models import (
+from models import (
     ExtractionResult
 )
 
 
-class TeacherScriptExtractor:
+class FormulaExtractor:
 
     """
-    Generates teacher scripts for each concept.
+    Extracts mathematical formulas.
     """
 
     def extract(
@@ -16,9 +16,9 @@ class TeacherScriptExtractor:
 
         return ExtractionResult(
             success=True,
-            document_type="teacher_scripts",
+            document_type="formulas",
             metadata={},
             data={
-                "teacher_scripts": []
+                "formulas": []
             }
         )

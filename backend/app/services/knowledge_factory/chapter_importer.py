@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from app.services.knowledge_factory.chapter_parser import ChapterParser
+from app.services.knowledge_factory.chapter_firestore_writer import (
+    ChapterFirestoreWriter,
+)
+
+
+class ChapterImporter:
+    """
+    Orchestrates importing an Azure Document Intelligence
+    chapter JSON into Firestore.
+
+    Responsibilities
+    ----------------
+    1. Load Azure JSON
+    2. Parse chapter
+    3. Persist chapter
+    """
+
+    def __init__(self) -> None:
+        self.parser = ChapterParser()
+        self.writer = ChapterFirestoreWriter()
+
+    def import_json(self, json_file: str | Path) -> str:
+        """
+        Import a chapter from Azure JSON.
+
+        Parameters
+        ----------
+        json_file:
+            Path to Azure Layout JSON.
+
+        Returns
+        -------
+        curriculum_id
+        """
+
+        json_file = Path(json_file)
+
+        if not json_file.exists():
+            raise FileNotFoundError(json_file)
+
+        print("=" * 80)
+        print("MathVerse Chapter Import")
+        print("=" * 80)
+
+        print(f"Loading : {json_file.name}")
+
+        chapter = self.parser.parse(json_file)
+
+        print(f"Parsed Chapter : {chapter.metadata.order}")
+        print(f"Title          : {chapter.metadata.title}")
+
+        curriculum_id = self.writer.save(chapter)
+
+        print("Firestore write completed.")
+
+        return curriculum_id

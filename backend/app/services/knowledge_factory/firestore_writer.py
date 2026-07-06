@@ -1,73 +1,53 @@
-from app.core.firestore_client import (
-    get_firestore_client
-)
+from google.cloud import firestore
+
+from backend.app.services.knowledge_factory.models import Curriculum
 
 
 class FirestoreWriter:
 
     def __init__(self):
 
-        self.db = get_firestore_client()
+        self.db = firestore.Client()
 
-    def save_chapters(
-        self,
-        curriculum
-    ):
+    def save_curriculum(self, curriculum: Curriculum):
+
+        curriculum_doc = self.db.collection(
+            "curriculums"
+        ).document(curriculum.curriculum_id)
+
+        curriculum_doc.set(
+            {
+                "curriculum_id": curriculum.curriculum_id,
+                "exam": curriculum.exam,
+                "subject": curriculum.subject,
+                "grade": curriculum.grade,
+                "version": curriculum.version,
+                "created_at": curriculum.created_at,
+                "chapter_count": len(curriculum.chapters),
+            }
+        )
+
+        chapters = curriculum_doc.collection("chapters")
 
         batch = self.db.batch()
 
         for chapter in curriculum.chapters:
 
-            ref = (
-                self.db
-                .collection("chapters")
-                .document(chapter.id)
-            )
+            doc = chapters.document(chapter.id)
 
             batch.set(
-                ref,
-                chapter.model_dump()
+                doc,
+                {
+                    "chapter_id": chapter.id,
+                    "order": chapter.order,
+                    "title": chapter.title,
+                    "description": chapter.description,
+                },
             )
 
         batch.commit()
-        
-    def save_curriculum(
-        self,
-        curriculum
-    ):
 
-        self.db.collection(
-            "curriculums"
-        ).document(
-            f"{curriculum.exam}_{curriculum.subject}_{curriculum.grade}"
-        ).set(
-
-            curriculum.model_dump()
+        print(
+            f"Imported {len(curriculum.chapters)} chapters "
+            f"into {curriculum.curriculum_id}"
         )
-        
-    def save_concepts(
-        self,
-        curriculum
-    ):
-
-        batch = self.db.batch()
-
-        for chapter in curriculum.chapters:
-
-            for concept in chapter.concepts:
-
-                ref = (
-                    self.db
-                    .collection("concepts")
-                    .document(concept.id)
-                )
-
-                batch.set(
-                    ref,
-                    concept.model_dump()
-                )
-
-        batch.commit()
-
-        # Commit 5
-        # Firestore persistence

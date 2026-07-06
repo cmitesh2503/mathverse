@@ -44,6 +44,26 @@ resource "google_storage_bucket" "function_source_bucket" {
   uniform_bucket_level_access = true
 }
 
+resource "google_storage_bucket" "content_bucket" {
+
+  name = "mathverse-content"
+
+  location = var.region
+
+  uniform_bucket_level_access = true
+
+  force_destroy = true
+
+  versioning {
+    enabled = true
+  }
+
+  depends_on = [
+    google_project_service.requited_apis["storage.googleapis.com"]
+  ]
+
+}
+
 resource "google_firestore_index" "pdf_chunks_vector" {
   project     = local.firestore_project_id
   database    = "(default)"
@@ -146,6 +166,25 @@ data "archive_file" "metadata_extractor_zip" {
   output_path = "${path.module}/metadata_extractor.zip"
 }
 
+resource "google_storage_bucket_object" "knowledge_compiler_zip" {
+
+  name = "knowledge-compiler-${data.archive_file.knowledge_compiler_zip.output_md5}.zip"
+
+  bucket = google_storage_bucket.function_source_bucket.name
+
+  source = data.archive_file.knowledge_compiler_zip.output_path
+
+}
+data "archive_file" "knowledge_compiler_zip" {
+
+  type = "zip"
+
+  source_dir = "${path.module}/cloud_function_knowledge_compiler"
+
+  output_path = "${path.module}/knowledge_compiler.zip"
+
+}
+
 
 resource "google_project_iam_member" "docai_viewer" {
   project = var.project_id
@@ -209,6 +248,12 @@ resource "google_project_iam_member" "docai_user" {
 resource "google_project_iam_member" "storage_object_admin" {
   project = var.project_id
   role    = "roles/storage.objectAdmin"
+  member  = "serviceAccount:${google_service_account.jee_processor.email}"
+}
+
+resource "google_project_iam_member" "jee_processor_ai_user" {
+  project = var.project_id
+  role    = "roles/aiplatform.user"
   member  = "serviceAccount:${google_service_account.jee_processor.email}"
 }
 
@@ -560,18 +605,76 @@ resource "google_cloudfunctions2_function" "jee_metadata_extractor" {
 
 }
 
-resource "google_project_iam_member" "firestore_writer_cross_project" {
-  count   = local.firestore_project_id != var.project_id ? 1 : 0
-  project = local.firestore_project_id
-  role    = "roles/datastore.user"
-  member  = "serviceAccount:${google_service_account.ingestion_sa.email}"
-}
+resource "google_cloudfunctions2_function" "knowledge_compiler" {
 
-resource "google_project_iam_member" "ai_user_cross_project" {
-  count   = local.firestore_project_id != var.project_id ? 1 : 0
-  project = local.firestore_project_id
-  role    = "roles/aiplatform.user"
-  member  = "serviceAccount:${google_service_account.ingestion_sa.email}"
+  name = "knowledge-compiler"
+
+  location = var.region
+
+  project = var.project_id
+
+  build_config {
+
+    runtime = "python311"
+
+    entry_point = "process_knowledge_document"
+
+    source {
+
+      storage_source {
+
+        bucket = google_storage_bucket.function_source_bucket.name
+
+        object = google_storage_bucket_object.knowledge_compiler_zip.name
+
+      }
+
+    }
+
+  }
+
+  service_config {
+
+    timeout_seconds = 540
+
+    available_memory = "2G"
+
+    max_instance_count = 5
+
+    service_account_email = google_service_account.jee_processor.email
+
+    environment_variables = {
+
+      PROJECT_ID = var.project_id
+
+      PROCESSOR_ID = var.processor_id
+
+      PROCESSOR_LOCATION = var.processor_location
+
+    }
+
+  }
+
+  event_trigger {
+
+    trigger_region = var.region
+
+    event_type = "google.cloud.storage.object.v1.finalized"
+
+    event_filters {
+      attribute = "bucket"
+      value     = google_storage_bucket.content_bucket.name
+    }
+
+  }
+
+  depends_on = [
+    google_project_service.requited_apis,
+    google_project_iam_member.docai_user,
+    google_project_iam_member.firestore_user,
+    google_project_iam_member.storage_object_admin,
+  ]
+
 }
 
 resource "google_project_iam_member" "service_usage_consumer_cross_project" {
