@@ -9,10 +9,11 @@ from typing import Any
 import redis.asyncio as redis
 from redis.exceptions import RedisError
 
+from app.core import config
 from ..models.session import SessionPhase, StudentSession
 from ..services.ai_gateway import generate_response
 from ..tutor_brain.curriculum import list_chapters
-
+from app.core import config
 
 class Orchestrator:
     ANSWER_KEYWORDS = ("answer is", "submitted", "final")
@@ -43,13 +44,13 @@ Based on the rules above, output ONLY the exact name of the agent to route to ("
     """
 
     def __init__(self) -> None:
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-        self._redis_key_prefix = os.getenv("ORCHESTRATOR_SESSION_KEY_PREFIX", "orchestrator:session:")
-        configured_store = os.getenv("ORCHESTRATOR_STORE", "").strip().lower()
-        self._require_redis = os.getenv("ORCHESTRATOR_REQUIRE_REDIS", "").lower() in {"1", "true", "yes"}
+        redis_url = config.REDIS_URL
+        self._redis_key_prefix = config.ORCHESTRATOR_SESSION_KEY_PREFIX
+        configured_store = str(config.ORCHESTRATOR_STORE or "").strip().lower()
+        self._require_redis = config.ORCHESTRATOR_REQUIRE_REDIS
         self._use_memory_store = (
             not self._require_redis
-            and (configured_store == "memory" or (not configured_store and not os.getenv("REDIS_URL")))
+            and (configured_store == "memory" or (not configured_store and not config.REDIS_URL))
         )
         self.redis_client = None
         if not self._use_memory_store:

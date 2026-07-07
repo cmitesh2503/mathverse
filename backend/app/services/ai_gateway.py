@@ -10,6 +10,7 @@ import re
 import time
 from functools import lru_cache
 from typing import Any
+from app.core import config
 
 # Production/ADC-first configuration: do not automatically load .env files here.
 # Local development may still use a separate startup script to load env vars.
@@ -29,14 +30,14 @@ except ImportError:  # pragma: no cover - optional dependency
 GEMINI_API_KEY = None
 
 TEXT_MODEL_ID = "gemini-2.5-flash"
-TTS_MODEL_ID = os.getenv("GEMINI_TTS_MODEL", "gemini-2.0-flash")
+TTS_MODEL_ID = config.GEMINI_TTS_MODEL
 DEPRECATED_TEXT_MODEL_SUFFIXES = (
     "1.5-flash",
     "1.5-flash-8b",
     "1.5-pro",
 )
 
-GEMINI_TEXT_MODEL_ENV = os.getenv("GEMINI_TEXT_MODEL") or os.getenv("MATHVERSE_TEXT_MODEL") or GEMINI_TEXT_MODEL or "gemini-2.0-flash"
+GEMINI_TEXT_MODEL_ENV = config.GEMINI_TEXT_MODEL
 DEFAULT_TEXT_MODEL = (
     TEXT_MODEL_ID
     if GEMINI_TEXT_MODEL_ENV in {f"gemini-{suffix}" for suffix in DEPRECATED_TEXT_MODEL_SUFFIXES}
@@ -84,8 +85,8 @@ def _new_sdk_client():
     if google_genai is None:
         return None
 
-    project = os.getenv("PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT") or "matverse"
-    location = os.getenv("PROCESSOR_LOCATION") or os.getenv("GOOGLE_CLOUD_LOCATION") or "us-central1"
+    project = config.GOOGLE_CLOUD_PROJECT
+    location = config.GOOGLE_CLOUD_LOCATION
     return google_genai.Client(
         vertexai=True,
         project=project,
@@ -104,7 +105,7 @@ def _configure_legacy_sdk() -> bool:
     legacy_genai = _legacy_genai_module()
     if legacy_genai is None:
         return False
-    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    api_key = config.GEMINI_API_KEY
     if not api_key:
         return False
     legacy_genai.configure(api_key=api_key)
@@ -304,8 +305,8 @@ def generate_response(
     return final_text
 
 
-LOCAL_AI_API_BASE = os.getenv("LOCAL_AI_API_BASE", "http://localhost:11434/api/generate")
-LOCAL_AI_MODEL = os.getenv("LOCAL_AI_MODEL", "qwen2.5")
+LOCAL_AI_API_BASE = config.LOCAL_AI_API_BASE
+LOCAL_AI_MODEL = config.LOCAL_AI_MODEL
 
 def generate_structured_response(
     prompt: str,

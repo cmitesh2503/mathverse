@@ -6,6 +6,7 @@ import subprocess
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from app.core import config
 
 FIRESTORE_TIMEOUT_SECONDS = 10
 
@@ -34,7 +35,7 @@ def _clean_env_value(value: str | None) -> str:
 
 @lru_cache(maxsize=1)
 def resolve_firestore_auth_mode() -> str:
-    auth_mode = _clean_env_value(os.getenv(_AUTH_MODE_ENV_VAR)).lower()
+    auth_mode = config.MATHVERSE_FIRESTORE_AUTH_MODE.lower()
     if not auth_mode:
         for env_name in _SERVICE_ACCOUNT_ENV_VARS:
             configured_path = _clean_env_value(os.getenv(env_name))
@@ -82,23 +83,24 @@ def _read_service_account_json(path: str) -> dict[str, Any]:
 
 @lru_cache(maxsize=1)
 def resolve_firestore_project_id() -> str | None:
-    for env_name in _PROJECT_ENV_VARS:
-        project_id = _clean_env_value(os.getenv(env_name))
-        if project_id:
-            return project_id
+    if config.FIRESTORE_PROJECT_ID:
+        return config.FIRESTORE_PROJECT_ID
 
     service_account_path = get_firestore_service_account_path()
+
     if service_account_path:
-        project_id = _clean_env_value(_read_service_account_json(service_account_path).get("project_id"))
+        project_id = _clean_env_value(
+            _read_service_account_json(service_account_path).get("project_id")
+        )
+
         if project_id:
             return project_id
 
     return None
 
-
 @lru_cache(maxsize=1)
 def validate_required_gcloud_account() -> None:
-    required_account = _clean_env_value(os.getenv(_REQUIRED_GCLOUD_ACCOUNT_ENV_VAR, "miteshc527@gmail.com"))
+    required_account = config.MATHVERSE_REQUIRED_GCLOUD_ACCOUNT.strip()
     if not required_account:
         return
 
@@ -109,18 +111,28 @@ def validate_required_gcloud_account() -> None:
             check=True,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=10,
         )
+
+    except FileNotFoundError:
+        print("WARNING: gcloud CLI not found. Skipping account validation.")
+        return
+
+    except subprocess.TimeoutExpired:
+        print("WARNING: gcloud CLI timeout. Skipping account validation.")
+        return
+
     except Exception as error:
         raise RuntimeError(
-            f"{_REQUIRED_GCLOUD_ACCOUNT_ENV_VAR} is set to {required_account}, "
-            "but the active gcloud account could not be verified."
+            f"Unable to verify active gcloud account: {error}"
         ) from error
 
     active_account = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
+
     if active_account != required_account:
         raise RuntimeError(
-            f"Refusing Firestore access with gcloud account {active_account or '<unknown>'}. "
+            f"Refusing Firestore access with gcloud account "
+            f"{active_account or '<unknown>'}. "
             f"Expected {required_account}."
         )
 

@@ -1,8 +1,11 @@
 import google.generativeai as genai
 import os
+from app.core import config
 
 # Do not auto-load .env in production; allow explicit env setup for local dev.
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+genai.configure(
+    api_key=config.GEMINI_API_KEY
+)
 
 model = genai.GenerativeModel("gemini-pro")
 

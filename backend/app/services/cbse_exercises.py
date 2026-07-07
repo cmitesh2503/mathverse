@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -10,14 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from app.cache.cache_manager import get_cache, set_cache
-from app.core.config import GEMINI_API_KEY, GEMINI_TEXT_MODEL
+from app.core import config
 
-EXERCISES_SOURCE = os.getenv("MATHVERSE_EXERCISES_SOURCE", "firestore").strip().lower()
+EXERCISES_SOURCE = config.MATHVERSE_EXERCISES_SOURCE.strip().lower()
 USE_FIRESTORE_EXERCISES = EXERCISES_SOURCE == "firestore"
-ALLOW_LOCAL_EXERCISE_FALLBACK = os.getenv(
-    "MATHVERSE_EXERCISES_ALLOW_LOCAL_FALLBACK",
-    "false",
-).strip().lower() in {"1", "true", "yes", "on"}
+ALLOW_LOCAL_EXERCISE_FALLBACK = config.MATHVERSE_EXERCISES_ALLOW_LOCAL_FALLBACK
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 GENAI_HTTP_TIMEOUT_MS = 300_000

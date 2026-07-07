@@ -1,11 +1,11 @@
-import os
 from typing import Any
 
 from google.cloud.firestore_v1.base_query import FieldFilter
+from app.core import config
 from app.core.firestore_client import get_firestore_client
 
 # ✅ Correct path based on your structure
-FIREBASE_ENABLED = os.getenv("MATHVERSE_ENABLE_FIREBASE", "").lower() in {"1", "true", "yes"}
+FIREBASE_ENABLED = config.MATHVERSE_ENABLE_FIREBASE
 
 db = None
 _local_evaluation_records: list[dict[str, Any]] = []

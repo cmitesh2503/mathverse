@@ -2,7 +2,7 @@ from app.services.ai_gateway import (
     generate_structured_response
 )
 
-from backend.app.services.knowledge_factory.models import (
+from app.services.knowledge_factory.models import (
     Concept
 )
 

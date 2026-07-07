@@ -1,6 +1,6 @@
 from google.cloud import firestore
 
-from backend.app.services.knowledge_factory.models import Curriculum
+from app.services.knowledge_factory.models import Curriculum
 
 
 class FirestoreWriter:

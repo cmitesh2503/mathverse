@@ -10,10 +10,7 @@ from datetime import timedelta
 from contextlib import AsyncExitStack
 from typing import Awaitable, Callable
 
-from ..core.config import (
-    GEMINI_LIVE_MODEL,
-    GEMINI_LIVE_VOICE,
-)
+from app.core import config
 from ..core.guards import verify_tutor_action_access
 from ..services.ai_gateway import generate_audio, get_live_client, live_api_available
 from ..services.cbse_exercises import build_exercise_solution
@@ -252,10 +249,10 @@ class LiveTutorBridge:
         if not session_record:
             return False
 
-        config = self._build_connect_config(session_record)
+        connect_config = self._build_connect_config(session_record)
         connect_cm = self._client.aio.live.connect(
-            model=GEMINI_LIVE_MODEL,
-            config=config,
+            model=config.GEMINI_LIVE_MODEL,
+            config=connect_config,
         )
         self._live_session = await self._exit_stack.enter_async_context(connect_cm)
         self._receiver_task = asyncio.create_task(self._receive_loop())
@@ -481,7 +478,7 @@ class LiveTutorBridge:
                 language_code=speech_language_code,
                 voice_config=live_types.VoiceConfig(
                     prebuilt_voice_config=live_types.PrebuiltVoiceConfig(
-                        voice_name=GEMINI_LIVE_VOICE
+                        voice_name=config.GEMINI_LIVE_VOICE
                     )
                 ),
             ),
@@ -1058,7 +1055,7 @@ class LiveTutorBridge:
                 )
                 audio_bytes = await generate_audio(
                     _sanitize_for_speech(self._assistant_transcript.strip()),
-                    voice_name=GEMINI_LIVE_VOICE,
+                    voice_name=config.GEMINI_LIVE_VOICE,
                     language_code=_speech_language_code(teaching_language),
                 )
                 if audio_bytes:

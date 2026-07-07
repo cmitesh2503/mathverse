@@ -1,7 +1,7 @@
 import re
 from typing import List
 
-from backend.app.services.knowledge_factory.models import Curriculum, Chapter
+from app.services.knowledge_factory.models import Curriculum, Chapter
 
 
 class SyllabusParser:

@@ -44,6 +44,7 @@ from app.api.jee.voice_tutor import (
 from app.api.jee.whiteboard import (
     router as whiteboard_router
 )
+from app.core import config
 
 app = FastAPI(title="MathVerse API")
 
@@ -560,5 +561,5 @@ def fetch_homework(student_id: str):
 if __name__ == "__main__":
     import uvicorn
 
-    reload_enabled = os.getenv("MATHVERSE_RELOAD", "false").lower() in {"1", "true", "yes"}
+    reload_enabled = config.MATHVERSE_RELOAD
     uvicorn.run(app, host="localhost", port=8000, reload=reload_enabled)

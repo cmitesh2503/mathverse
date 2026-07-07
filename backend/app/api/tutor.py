@@ -1,4 +1,3 @@
-import os
 import base64
 import json
 from typing import Any
@@ -27,14 +26,14 @@ from ..services.math_formatter import (
     convert_display_symbols_to_speech,
     convert_text_to_speech,
 )
-from ..core.config import GEMINI_LIVE_VOICE
+from app.core import config
 from ..core.guards import verify_tutor_action_access
 from ..tutor_brain.curriculum import get_grade_curriculum
 from .models import TutorRequest
 
 router = APIRouter()
-ATTEMPT_LOGGING_ENABLED = os.getenv("MATHVERSE_ENABLE_ATTEMPT_LOGGING", "").lower() in {"1", "true", "yes"}
-TTS_ENABLED = os.getenv("MATHVERSE_ENABLE_TTS", "").lower() in {"1", "true", "yes"}
+ATTEMPT_LOGGING_ENABLED = getattr(config, "MATHVERSE_ENABLE_ATTEMPT_LOGGING", False)
+TTS_ENABLED = config.MATHVERSE_ENABLE_TTS
 CLASS_SESSION_MINUTES = 45
 
 orchestrator = Orchestrator()

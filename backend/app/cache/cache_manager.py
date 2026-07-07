@@ -1,27 +1,24 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from functools import lru_cache
 from typing import Any
 
+from app.core import config
+
 _memory_cache: dict[str, tuple[Any, float | None]] = {}
-_CACHE_TTL_SECONDS = int(os.getenv("MATHVERSE_CACHE_TTL_SECONDS", "86400"))
-_REQUIRE_REDIS = os.getenv("MATHVERSE_CACHE_REQUIRE_REDIS", "").strip().lower() in {
-    "1",
-    "true",
-    "yes",
-}
+_CACHE_TTL_SECONDS = config.MATHVERSE_CACHE_TTL_SECONDS
+_REQUIRE_REDIS = config.MATHVERSE_CACHE_REQUIRE_REDIS
 
 
 def _resolve_cache_backend() -> str:
-    configured_backend = os.getenv("MATHVERSE_CACHE_BACKEND", "").strip().lower()
+    configured_backend = config.MATHVERSE_CACHE_BACKEND.strip().lower()
     if configured_backend:
         return configured_backend
     if _REQUIRE_REDIS:
         return "redis"
-    if os.getenv("REDIS_URL"):
+    if config.REDIS_URL:
         return "redis"
     return "memory"
 
@@ -37,7 +34,7 @@ def _redis_client():
         import redis
 
         client = redis.Redis.from_url(
-            os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+            config.REDIS_URL,
             decode_responses=True,
             socket_connect_timeout=2,
             socket_timeout=2,

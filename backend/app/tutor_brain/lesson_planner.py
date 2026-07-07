@@ -1,10 +1,10 @@
-import os
-
 class RateLimitError(Exception):
     pass
 
 from vertexai.generative_models import GenerativeModel
 import vertexai
+
+from app.core import config
 
 import json
 import re
@@ -12,11 +12,11 @@ import asyncio
 import requests
 
 vertexai.init(
-    project=os.getenv("PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT") or "mathverse-live-ai",
-    location=os.getenv("PROCESSOR_LOCATION") or os.getenv("GOOGLE_CLOUD_LOCATION") or "global",
+    project=config.GOOGLE_CLOUD_PROJECT,
+    location=config.GOOGLE_CLOUD_LOCATION,
 )
 
-model = GenerativeModel(os.getenv("GEMINI_PLANNER_MODEL", os.getenv("GEMINI_TEXT_MODEL", "gemini-3.1-pro-preview")))
+model = GenerativeModel(getattr(config, "GEMINI_PLANNER_MODEL", config.GEMINI_TEXT_MODEL))
 
 def call_gemini(prompt: str):
     try:

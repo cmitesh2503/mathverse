@@ -1,8 +1,8 @@
 from pathlib import Path
 import json
 
-from syllabus_parser import SyllabusParser
-from firestore_writer import FirestoreWriter
+from app.services.knowledge_factory.syllabus_parser import SyllabusParser
+from app.services.knowledge_factory.firestore_writer import FirestoreWriter
 
 
 import sys

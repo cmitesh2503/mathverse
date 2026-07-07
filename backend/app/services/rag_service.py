@@ -1,8 +1,9 @@
-import os
 import re
 import uuid
 from functools import lru_cache
 from typing import Any
+
+from app.core import config
 
 from ..cache.cache_manager import get_cache, set_cache
 from ..core.firestore_client import (
@@ -11,21 +12,12 @@ from ..core.firestore_client import (
     resolve_firestore_project_id,
 )
 
-RAG_COLLECTION = "pdf_chunks"
+RAG_COLLECTION = config.MATHVERSE_RAG_COLLECTION
 # Migrated fallback default to the active stable generation model
-EMBEDDING_MODEL_NAME = os.getenv("MATHVERSE_EMBEDDING_MODEL", "gemini-embedding-001")
-VERTEX_AI_LOCATION = (
-    os.getenv("GOOGLE_CLOUD_LOCATION")
-    or os.getenv("VERTEX_AI_LOCATION")
-    or os.getenv("GOOGLE_CLOUD_REGION")
-    or "us-central1"
-)
-ALLOW_UNSCOPED_RAG_FALLBACK = os.getenv("MATHVERSE_RAG_ALLOW_UNSCOPED_FALLBACK", "").strip().lower() in {
-    "1",
-    "true",
-    "yes",
-}
-RAG_CACHE_TTL_SECONDS = int(os.getenv("MATHVERSE_RAG_CACHE_TTL_SECONDS", "3600"))
+EMBEDDING_MODEL_NAME = getattr(config, "MATHVERSE_EMBEDDING_MODEL", "gemini-embedding-001")
+VERTEX_AI_LOCATION = config.GOOGLE_CLOUD_LOCATION
+ALLOW_UNSCOPED_RAG_FALLBACK = config._env_flag("MATHVERSE_RAG_ALLOW_UNSCOPED_FALLBACK")
+RAG_CACHE_TTL_SECONDS = config.MATHVERSE_RAG_CACHE_TTL_SECONDS
 
 GRADE_10_CHAPTER_IDS = {
     "real numbers": "ch_01",
@@ -106,13 +98,12 @@ def get_query_embedding(text: str, task_type: str = "RETRIEVAL_QUERY") -> list[f
     Converts text into a vector embedding using stable google-genai SDK profiles.
     Forces output truncation to 768 dimensions for database alignment.
     """
-    from ..core.config import GEMINI_API_KEY
-    if GEMINI_API_KEY:
+    if config.GEMINI_API_KEY:
         try:
             from google import genai
             from google.genai import types
             
-            client = genai.Client(api_key=GEMINI_API_KEY)
+            client = genai.Client(api_key=config.GEMINI_API_KEY)
             # Upgraded call utilizing Matryoshka Representation to downscale dimensionality safely
             response = client.models.embed_content(
                 model="gemini-embedding-001",

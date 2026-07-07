@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import List, Optional
+
+from app.core import config
 
 try:
     from app.core.firestore_client import FIRESTORE_TIMEOUT_SECONDS, get_firestore_client
@@ -14,7 +15,7 @@ except ModuleNotFoundError:
 
 
 LOCAL_CURRICULUM_DIR = Path(__file__).resolve().parents[1] / "data" / "curriculum"
-USE_FIRESTORE_CURRICULUM = os.getenv("MATHVERSE_CURRICULUM_SOURCE", "local").strip().lower() == "firestore"
+USE_FIRESTORE_CURRICULUM = config.MATHVERSE_CURRICULUM_SOURCE.strip().lower() == "firestore"
 _CURRICULUM_CACHE: dict[tuple[int, str], dict] = {}
 CBSE10_CHAPTER_TITLES: dict[str, str] = {
     "real_numbers": "Real Numbers",

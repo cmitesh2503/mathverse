@@ -7,9 +7,10 @@ fallback support for gradual migration from local PDFs to Firestore storage.
 
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 from typing import Any, Optional
+
+from app.core import config
 
 try:
     from app.core.firestore_client import FIRESTORE_TIMEOUT_SECONDS, get_firestore_client
@@ -20,8 +21,8 @@ except ImportError:
 CBSE_EXERCISES_COLLECTION = "cbse_practice_problems"
 CBSE_THEORY_COLLECTION = "cbse_theory_content"
 
-# Environment flag for enabling Firestore-first retrieval
-USE_FIRESTORE_EXERCISES = os.getenv("MATHVERSE_EXERCISES_SOURCE", "local").strip().lower() == "firestore"
+# Feature flag for enabling Firestore-first retrieval
+USE_FIRESTORE_EXERCISES = config.MATHVERSE_EXERCISES_SOURCE.strip().lower() == "firestore"
 
 
 @lru_cache(maxsize=1)
