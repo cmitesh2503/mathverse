@@ -6,14 +6,21 @@ Chapter Parser
 Converts Azure Document Intelligence Layout JSON
 into ChapterKnowledge.
 
-This parser intentionally extracts only:
-- metadata
-- markdown
-- chapter summary
+Responsibilities
+----------------
+1. Load Azure Layout JSON
+2. Extract markdown
+3. Parse chapter metadata
+4. Return ChapterKnowledge
 
-Specialized extractors (ConceptExtractor,
-FormulaExtractor, ExerciseExtractor, etc.)
-will populate the remaining collections.
+Specialized extractors populate:
+
+- Concepts
+- Formulas
+- Examples
+- Exercises
+- Figures
+- Embeddings
 """
 
 from __future__ import annotations
@@ -29,57 +36,44 @@ from app.services.knowledge_factory.chapter_models import (
 
 
 class ChapterParser:
+    """
+    Parses Azure Document Intelligence Layout output
+    into a ChapterKnowledge object.
+    """
 
     def parse(self, json_path: str | Path) -> ChapterKnowledge:
 
         json_path = Path(json_path)
 
-        with open(json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        with json_path.open("r", encoding="utf-8") as file:
+            data = json.load(file)
 
-        result = data["analyzeResult"]
+        analyze_result = data.get("analyzeResult", {})
 
-        markdown = result.get("content", "")
+        markdown = analyze_result.get("content", "")
 
         metadata = self._extract_metadata(markdown)
-        
-        chapter = ChapterKnowledge(
+
+        return ChapterKnowledge(
             metadata=metadata,
-            raw_markdown=markdown
+            raw_markdown=markdown,
         )
 
-        return chapter
+    # ------------------------------------------------------------------
+    # Metadata
+    # ------------------------------------------------------------------
 
     def _extract_metadata(self, markdown: str) -> ChapterMetadata:
 
-        chapter_match = re.search(
-            r"Chapter\s+(\d+)\s*-\s*([^\n<]+)",
-            markdown,
-            flags=re.IGNORECASE,
-        )
+        chapter_number = self._extract_chapter_number(markdown)
 
-        if chapter_match:
-            chapter_number = int(chapter_match.group(1))
-            title = chapter_match.group(2).strip()
-        else:
-            chapter_number = 0
-            title = "Unknown"
+        title = self._extract_chapter_title(markdown)
 
-        class_match = re.search(
-            r"Class\s+(\d+)",
-            markdown,
-            flags=re.IGNORECASE,
-        )
+        grade = self._extract_grade(markdown)
 
-        grade = class_match.group(1) if class_match else "Unknown"
+        slug = self._slugify(title)
 
-        slug = (
-            title.lower()
-            .replace(" ", "-")
-            .replace("&", "and")
-        )
-
-        curriculum_id = f"jee-main-2026-mathematics"
+        curriculum_id = "jee-main-2026-mathematics"
 
         return ChapterMetadata(
             chapter_id=f"chapter-{chapter_number:03d}",
@@ -93,3 +87,122 @@ class ChapterParser:
             version="2026",
             summary="",
         )
+
+    # ------------------------------------------------------------------
+    # Chapter Number
+    # ------------------------------------------------------------------
+
+    def _extract_chapter_number(self, markdown: str) -> int:
+        """
+        Supports Azure Layout PageHeader:
+
+            <!-- PageHeader="Chapter 3" -->
+
+        and legacy format:
+
+            Chapter 3 - Matrices
+        """
+
+        match = re.search(
+            r'PageHeader="Chapter\s+(\d+)"',
+            markdown,
+            flags=re.IGNORECASE,
+        )
+
+        if match:
+            return int(match.group(1))
+
+        match = re.search(
+            r"Chapter\s+(\d+)\s*-\s*([^\n<]+)",
+            markdown,
+            flags=re.IGNORECASE,
+        )
+
+        if match:
+            return int(match.group(1))
+
+        return 0
+
+    # ------------------------------------------------------------------
+    # Chapter Title
+    # ------------------------------------------------------------------
+
+    def _extract_chapter_title(self, markdown: str) -> str:
+        """
+        Uses the first H1 heading.
+
+        Example
+
+            # MATRICES
+
+        Falls back to:
+
+            Chapter 3 - Matrices
+        """
+
+        match = re.search(
+            r"^#\s+(.+)$",
+            markdown,
+            flags=re.MULTILINE,
+        )
+
+        if match:
+
+            title = match.group(1).strip()
+
+            title = re.sub(r"\s+", " ", title)
+
+            return title.title()
+
+        match = re.search(
+            r"Chapter\s+\d+\s*-\s*([^\n<]+)",
+            markdown,
+            flags=re.IGNORECASE,
+        )
+
+        if match:
+            return match.group(1).strip().title()
+
+        return "Unknown"
+
+    # ------------------------------------------------------------------
+    # Grade
+    # ------------------------------------------------------------------
+
+    def _extract_grade(self, markdown: str) -> str:
+
+        match = re.search(
+            r'PageHeader="Class\s+(\d+)"',
+            markdown,
+            flags=re.IGNORECASE,
+        )
+
+        if match:
+            return match.group(1)
+
+        match = re.search(
+            r"Class\s+(\d+)",
+            markdown,
+            flags=re.IGNORECASE,
+        )
+
+        if match:
+            return match.group(1)
+
+        return "Unknown"
+
+    # ------------------------------------------------------------------
+    # Slug
+    # ------------------------------------------------------------------
+
+    def _slugify(self, text: str) -> str:
+
+        slug = text.lower()
+
+        slug = slug.replace("&", "and")
+
+        slug = re.sub(r"[^a-z0-9]+", "-", slug)
+
+        slug = slug.strip("-")
+
+        return slug

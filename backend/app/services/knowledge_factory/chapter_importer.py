@@ -6,6 +6,9 @@ from app.services.knowledge_factory.chapter_parser import ChapterParser
 from app.services.knowledge_factory.chapter_firestore_writer import (
     ChapterFirestoreWriter,
 )
+from app.services.knowledge_factory.concept_extractor import (
+    ConceptExtractor,
+)
 
 
 class ChapterImporter:
@@ -23,6 +26,7 @@ class ChapterImporter:
     def __init__(self) -> None:
         self.parser = ChapterParser()
         self.writer = ChapterFirestoreWriter()
+        self.concept_extractor = ConceptExtractor()
 
     def import_json(self, json_file: str | Path) -> str:
         """
@@ -48,8 +52,25 @@ class ChapterImporter:
         print("=" * 80)
 
         print(f"Loading : {json_file.name}")
-
+        
+        # Parse Azure Layout JSON
+        
         chapter = self.parser.parse(json_file)
+        
+        # Extract concepts
+        
+        chapter = self.concept_extractor.extract(chapter)
+        print(f"Concepts extracted: {len(chapter.concepts)}")
+               
+        for concept in chapter.concepts:
+            print(f" - {concept.title}")
+            
+            
+            # Future Sprint 4
+        # chapter = self.formula_extractor.extract(chapter)
+        # chapter = self.example_extractor.extract(chapter)
+        # chapter = self.exercise_extractor.extract(chapter)
+        # chapter = self.figure_extractor.extract(chapter)
 
         print(f"Parsed Chapter : {chapter.metadata.order}")
         print(f"Title          : {chapter.metadata.title}")

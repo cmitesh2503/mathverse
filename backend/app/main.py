@@ -35,9 +35,9 @@ from .api.tutor import router as tutor_router
 from app.api.jee.question_chat import (
     router as jee_chat_router
 )
-from app.api.knowledge.knowledge_compiler import (
-    router as knowledge_router
-)
+#from app.api.knowledge.knowledge_compiler import (
+#    router as knowledge_router
+#)
 from app.api.jee.voice_tutor import (
     router as voice_router
 )
@@ -71,11 +71,11 @@ os.makedirs(uploads_root, exist_ok=True)
 app.mount("/uploads/evaluation", StaticFiles(directory=uploads_root), name="evaluation_uploads")
 app.include_router(auth.router)
 app.include_router(auth_firestore.router)
-app.include_router(
+'''app.include_router(
     knowledge_router,
     prefix="/api/knowledge"
 )
-
+'''
 
 app.include_router(
     jee_question_router,

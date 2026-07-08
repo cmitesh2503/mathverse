@@ -167,5 +167,9 @@ class ChapterFirestoreWriter:
             document = asdict(item)
 
             document_id = document[id_field]
+            if not document_id:
+                raise ValueError(
+                    f"{collection_name}: missing required field '{id_field}'"
+                )
 
             collection.document(document_id).set(document)

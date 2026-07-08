@@ -42,6 +42,20 @@ class ChapterMetadata:
 
     summary: str = ""
 
+@dataclass
+class Section:
+    """
+    Canonical representation of one chapter section.
+
+    All downstream extractors operate on sections
+    instead of reparsing raw markdown.
+    """
+
+    section_id: str
+    number: str
+    title: str
+    level: int
+    content: str
 
 # ============================================================
 # Learning Objectives
@@ -204,6 +218,8 @@ class ChapterKnowledge:
     metadata: ChapterMetadata
 
     raw_markdown: str = ""
+    
+    sections: list[Section] = field(default_factory=list)
 
     learning_objectives: List[LearningObjective] = field(default_factory=list)
 
@@ -224,3 +240,20 @@ class ChapterKnowledge:
     prerequisites: List[Prerequisite] = field(default_factory=list)
 
     embeddings: List[EmbeddingReference] = field(default_factory=list)
+    
+@dataclass
+class Concept:
+
+    concept_id: str
+
+    title: str
+
+    description: str = ""
+
+    keywords: List[str] = field(default_factory=list)
+
+    aliases: List[str] = field(default_factory=list)
+
+    difficulty: str = "medium"
+
+    prerequisites: List[str] = field(default_factory=list)
