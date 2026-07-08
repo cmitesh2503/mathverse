@@ -56,7 +56,7 @@ class Section:
     title: str
     level: int
     content: str
-
+    section_type: str = "content"
 # ============================================================
 # Learning Objectives
 # ============================================================
