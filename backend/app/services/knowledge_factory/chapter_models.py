@@ -73,15 +73,25 @@ class LearningObjective:
 
 @dataclass
 class Concept:
+    """
+    Represents one teachable mathematical concept.
+    """
+
     concept_id: str
 
-    name: str
+    title: str
 
-    definition: str
+    section_number: str = ""
 
-    explanation: str = ""
+    description: str = ""
 
     keywords: List[str] = field(default_factory=list)
+
+    aliases: List[str] = field(default_factory=list)
+
+    difficulty: str = "medium"
+
+    prerequisites: List[str] = field(default_factory=list)
 
 
 # ============================================================
@@ -240,20 +250,3 @@ class ChapterKnowledge:
     prerequisites: List[Prerequisite] = field(default_factory=list)
 
     embeddings: List[EmbeddingReference] = field(default_factory=list)
-    
-@dataclass
-class Concept:
-
-    concept_id: str
-
-    title: str
-
-    description: str = ""
-
-    keywords: List[str] = field(default_factory=list)
-
-    aliases: List[str] = field(default_factory=list)
-
-    difficulty: str = "medium"
-
-    prerequisites: List[str] = field(default_factory=list)
