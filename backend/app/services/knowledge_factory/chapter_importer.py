@@ -9,6 +9,9 @@ from app.services.knowledge_factory.chapter_firestore_writer import (
 from app.services.knowledge_factory.concept_extractor import (
     ConceptExtractor,
 )
+from app.services.knowledge_factory.section_parser import (
+    SectionParser,
+)
 
 
 class ChapterImporter:
@@ -25,6 +28,7 @@ class ChapterImporter:
 
     def __init__(self) -> None:
         self.parser = ChapterParser()
+        self.section_parser = SectionParser()
         self.writer = ChapterFirestoreWriter()
         self.concept_extractor = ConceptExtractor()
 
@@ -56,6 +60,18 @@ class ChapterImporter:
         # Parse Azure Layout JSON
         
         chapter = self.parser.parse(json_file)
+        chapter = self.section_parser.parse(chapter)
+        
+        ##Temporary debug section
+        print(f"Sections extracted: {len(chapter.sections)}")
+
+        for section in chapter.sections:
+            print(
+                f"  L{section.level} "
+                f"{section.number or '-':6} "
+                f"{section.title}"
+            )
+        
         
         # Extract concepts
         
