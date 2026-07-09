@@ -12,7 +12,7 @@ def main():
 
     importer = ChapterImporter()
 
-    curriculum_id = importer.import_json(sys.argv[1])
+    curriculum_id = importer.import_pdf(sys.argv[1])
 
     print()
     print("=" * 80)

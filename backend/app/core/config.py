@@ -1,3 +1,4 @@
+
 """
 MathVerse Configuration
 
@@ -14,6 +15,13 @@ Rules
 from __future__ import annotations
 
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv(
+    Path(__file__).resolve().parents[2] / ".env"
+)
 
 
 # ==========================================================
@@ -433,3 +441,11 @@ FIREBASE_SERVICE_ACCOUNT_PATH = _env(
 # detection where explicitly required.
 #
 # ==========================================================
+
+AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT = _env(
+    "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT",
+)
+
+AZURE_DOCUMENT_INTELLIGENCE_KEY = _env(
+    "AZURE_DOCUMENT_INTELLIGENCE_KEY",
+)

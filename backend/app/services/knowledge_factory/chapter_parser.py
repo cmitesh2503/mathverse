@@ -58,6 +58,21 @@ class ChapterParser:
             metadata=metadata,
             raw_markdown=markdown,
         )
+        
+    def parse_markdown(
+        self,
+        markdown: str,
+    ) -> ChapterKnowledge:
+        """
+        Parse already-generated markdown.
+        """
+
+        metadata = self._extract_metadata(markdown)
+
+        return ChapterKnowledge(
+            metadata=metadata,
+            raw_markdown=markdown,
+        )
 
     # ------------------------------------------------------------------
     # Metadata

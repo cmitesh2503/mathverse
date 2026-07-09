@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.services.knowledge_factory.chapter_pipeline import ChapterPipeline
 from app.services.knowledge_factory.chapter_parser import ChapterParser
+from app.services.knowledge_factory.section_parser import SectionParser
 from app.services.knowledge_factory.chapter_firestore_writer import (
     ChapterFirestoreWriter,
 )
 from app.services.knowledge_factory.concept_extractor import (
     ConceptExtractor,
 )
-from app.services.knowledge_factory.section_parser import (
-    SectionParser,
-)
+
 
 
 class ChapterImporter:
@@ -27,10 +27,50 @@ class ChapterImporter:
     """
 
     def __init__(self) -> None:
+
+        self.pipeline = ChapterPipeline()
+
         self.parser = ChapterParser()
+
         self.section_parser = SectionParser()
-        self.writer = ChapterFirestoreWriter()
+
         self.concept_extractor = ConceptExtractor()
+
+        self.writer = ChapterFirestoreWriter()
+        
+    def import_pdf(
+        self,
+        pdf_file: str | Path,
+    ) -> str:
+
+        markdown = self.pipeline.process(pdf_file)
+
+        chapter = self.parser.parse_markdown(
+            markdown
+        )
+
+        chapter = self.section_parser.extract(
+            chapter
+        )
+
+        chapter = self.concept_extractor.extract(
+            chapter
+        )
+
+        print("=" * 80)
+        print(f"Sections extracted : {len(chapter.sections)}")
+        print(f"Concepts extracted : {len(chapter.concepts)}")
+        print("=" * 80)
+        
+        curriculum = self.writer.save(
+            chapter
+        )
+
+        return curriculum
+    
+    # TODO:
+    # Remove import_json() after PDF pipeline
+    # becomes the default ingestion path.
 
     def import_json(self, json_file: str | Path) -> str:
         """
@@ -60,7 +100,7 @@ class ChapterImporter:
         # Parse Azure Layout JSON
         
         chapter = self.parser.parse(json_file)
-        chapter = self.section_parser.parse(chapter)
+        chapter = self.section_parser.extract(chapter)
         
         ##Temporary debug section
         print(f"Sections extracted: {len(chapter.sections)}")
