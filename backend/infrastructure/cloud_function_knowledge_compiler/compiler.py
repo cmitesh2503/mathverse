@@ -1,16 +1,13 @@
 from datetime import datetime
 import logging
+import shutil
+import tempfile
+from pathlib import Path
 
-from pipeline import (
-    KnowledgePipeline
-)
+from google.cloud import storage
 
-from document_loader import (
-    DocumentLoader
-)
-
-from ocr_service import (
-    OCRService
+from app.services.knowledge_factory.chapter_importer import (
+    ChapterImporter,
 )
 
 logger = logging.getLogger(__name__)
@@ -20,22 +17,15 @@ class KnowledgeCompiler:
 
     def __init__(self):
 
-        self.loader = DocumentLoader()
+        self.storage = storage.Client()
 
-        self.ocr = OCRService()
-
-        self.pipeline = KnowledgePipeline()
+        self.importer = ChapterImporter()
 
     def compile(
-
         self,
-
         bucket_name: str,
-
         blob_name: str,
-
-        document_type: str = "curriculum"
-
+        document_type: str = "curriculum",
     ):
 
         logger.info(
@@ -44,29 +34,23 @@ class KnowledgeCompiler:
 
         started = datetime.utcnow()
 
-        pdf = self.loader.load_pdf(
-
+        pdf_file = self._download_pdf(
             bucket_name,
-
-            blob_name
-
+            blob_name,
         )
 
-        text = self.ocr.extract_text(
-            pdf
-        )
+        try:
 
-        logger.info(
-            "OCR extraction completed. Text length=%d",
-            len(text) if isinstance(text, str) else 0,
-        )
+            curriculum_id = self.importer.import_pdf(
+                pdf_file
+            )
 
-        if not isinstance(text, str) or not text.strip():
-            raise ValueError("OCR extracted empty text from PDF.")
+        finally:
 
-        graph = self.pipeline.build_knowledge(
-            text
-        )
+            shutil.rmtree(
+                pdf_file.parent,
+                ignore_errors=True,
+            )
 
         finished = datetime.utcnow()
 
@@ -80,16 +64,32 @@ class KnowledgeCompiler:
 
             "document_type": document_type,
 
+            "curriculum_id": curriculum_id,
+
             "started": started.isoformat(),
 
             "completed": finished.isoformat(),
 
-            "knowledge_graph": {
-
-                "nodes_created": graph.nodes_created,
-
-                "relationships_created": graph.relationships_created
-
-            }
-
         }
+
+    def _download_pdf(
+        self,
+        bucket_name: str,
+        object_name: str,
+    ) -> Path:
+
+        bucket = self.storage.bucket(bucket_name)
+
+        blob = bucket.blob(object_name)
+
+        temp_dir = Path(
+            tempfile.mkdtemp(prefix="mathverse_")
+        )
+
+        local_pdf = temp_dir / Path(object_name).name
+
+        blob.download_to_filename(
+            str(local_pdf)
+        )
+
+        return local_pdf

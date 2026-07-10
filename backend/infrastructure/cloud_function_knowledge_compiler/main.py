@@ -1,4 +1,22 @@
 import logging
+import sys
+from pathlib import Path
+
+
+FUNCTION_DIR = Path(__file__).resolve().parent
+SOURCE_ROOT = FUNCTION_DIR.parents[1]
+
+for import_path in (
+    SOURCE_ROOT,
+    FUNCTION_DIR,
+):
+    import_path_value = str(import_path)
+
+    if import_path_value not in sys.path:
+        sys.path.insert(
+            0,
+            import_path_value,
+        )
 
 from compiler import KnowledgeCompiler
 

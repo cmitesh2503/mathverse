@@ -175,14 +175,53 @@ resource "google_storage_bucket_object" "knowledge_compiler_zip" {
   source = data.archive_file.knowledge_compiler_zip.output_path
 
 }
+
+locals {
+  knowledge_compiler_app_files = fileset("${path.module}/../app", "**")
+
+  knowledge_compiler_function_files = fileset(
+    "${path.module}/cloud_function_knowledge_compiler",
+    "**",
+  )
+
+  knowledge_compiler_source_hash = sha256(join("", concat(
+    [
+      for file in sort(local.knowledge_compiler_app_files) :
+      "app/${file}:${filesha256("${path.module}/../app/${file}")}"
+    ],
+    [
+      for file in sort(local.knowledge_compiler_function_files) :
+      "infrastructure/cloud_function_knowledge_compiler/${file}:${filesha256("${path.module}/cloud_function_knowledge_compiler/${file}")}"
+    ],
+    [
+      "scripts/build_knowledge_compiler.py:${filesha256("${path.module}/../scripts/build_knowledge_compiler.py")}"
+    ],
+  )))
+}
+
+resource "null_resource" "build_knowledge_compiler" {
+  triggers = {
+    source_hash = local.knowledge_compiler_source_hash
+    always_run  = timestamp()
+  }
+
+  provisioner "local-exec" {
+    command     = "python ../scripts/build_knowledge_compiler.py"
+    working_dir = path.module
+  }
+}
+
 data "archive_file" "knowledge_compiler_zip" {
 
   type = "zip"
 
-  source_dir = "${path.module}/cloud_function_knowledge_compiler"
+  source_dir = "${path.module}/deployment"
 
   output_path = "${path.module}/knowledge_compiler.zip"
 
+  depends_on = [
+    null_resource.build_knowledge_compiler,
+  ]
 }
 
 
@@ -619,6 +658,10 @@ resource "google_cloudfunctions2_function" "knowledge_compiler" {
 
     entry_point = "process_knowledge_document"
 
+    environment_variables = {
+      GOOGLE_FUNCTION_SOURCE = "infrastructure/cloud_function_knowledge_compiler/main.py"
+    }
+
     source {
 
       storage_source {
@@ -647,9 +690,19 @@ resource "google_cloudfunctions2_function" "knowledge_compiler" {
 
       PROJECT_ID = var.project_id
 
+      GOOGLE_CLOUD_PROJECT = var.project_id
+
+      GOOGLE_CLOUD_LOCATION = var.region
+
+      FIRESTORE_PROJECT_ID = var.project_id
+
       PROCESSOR_ID = var.processor_id
 
       PROCESSOR_LOCATION = var.processor_location
+
+      AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT = var.azure_docai_endpoint
+
+      AZURE_DOCUMENT_INTELLIGENCE_KEY = var.azure_docai_key
 
     }
 

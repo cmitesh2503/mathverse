@@ -9,3 +9,6 @@
 # Local state files
 *.tfstate
 *.tfstate.*
+
+# Generated Cloud Function deployment source
+deployment/
