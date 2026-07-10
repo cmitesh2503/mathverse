@@ -48,7 +48,7 @@ class AzureLayoutService:
     def analyze(
         self,
         pdf_file: str | Path,
-    ) -> Path:
+    ) -> dict:
 
         pdf_file = Path(pdf_file)
 
@@ -90,4 +90,7 @@ class AzureLayoutService:
             encoding="utf-8",
         )
 
-        return markdown_file
+        return {
+            "markdown": result.content,
+            "json": result.as_dict(),
+        }

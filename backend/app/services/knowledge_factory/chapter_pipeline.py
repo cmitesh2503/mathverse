@@ -28,6 +28,9 @@ from app.services.knowledge_factory.azure_layout_service import (
     AzureLayoutService,
 )
 
+from app.services.knowledge_factory.pipeline_result import (
+    ChapterPipelineResult,
+)
 
 class ChapterPipeline:
 
@@ -40,16 +43,18 @@ class ChapterPipeline:
     def process(
         self,
         pdf_file: str | Path,
-    ) -> Path:
+    ) -> ChapterPipelineResult:
 
         pdf_file = Path(pdf_file)
 
         chunks = self.chunker.split(
             pdf_file,
             pages_per_chunk=2,
+            output_root=pdf_file.parent,
         )
 
         markdown_files = []
+        azure_pages = []
 
         print("=" * 80)
         print("Processing PDF Chunks")
@@ -59,18 +64,44 @@ class ChapterPipeline:
 
             print(f"Analyzing {chunk.name}")
 
-            markdown = self.layout.analyze(chunk)
+            layout = self.layout.analyze(chunk)
 
-            markdown_files.append(markdown)
+            markdown_file = (
+                chunk.with_suffix(".md")
+            )
 
-        merged = self._merge_markdown(markdown_files)
+            markdown_file.write_text(
+                layout["markdown"],
+                encoding="utf-8",
+            )
 
-        print()
+            markdown_files.append(
+                markdown_file
+            )
 
-        print(f"Merged markdown : {merged}")
+            azure_pages.extend(
+                layout["json"].get(
+                    "pages",
+                    []
+                )
+            )
 
-        return merged.read_text(
-            encoding="utf-8",
+        if not markdown_files:
+            raise ValueError(
+                f"No PDF chunks were produced for {pdf_file}"
+            )
+
+        merged = self._merge_markdown(
+            markdown_files
+        )
+
+        return ChapterPipelineResult(
+            markdown=merged.read_text(
+                encoding="utf-8",
+            ),
+            azure_json={
+                "pages": azure_pages,
+            },
         )
 
     def _merge_markdown(

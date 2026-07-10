@@ -43,31 +43,89 @@ class ChapterImporter:
         pdf_file: str | Path,
     ) -> str:
 
-        markdown = self.pipeline.process(pdf_file)
+        print("=" * 80)
+        print("MathVerse PDF Import")
+        print("=" * 80)
+
+        #
+        # PDF
+        # ↓
+        # Azure Layout
+        # ↓
+        # Merged Markdown
+        #
+
+        pipeline = self.pipeline.process(
+            pdf_file
+        )
+
+
+        #
+        # Markdown
+        # ↓
+        # Chapter
+        #
 
         chapter = self.parser.parse_markdown(
-            markdown
+            pipeline.markdown
         )
 
-        chapter = self.section_parser.extract(
+
+        #
+        # Sections
+        #
+
+        chapter = self.section_parser.parse(
             chapter
         )
+
+        print()
+
+        print(
+            f"Sections extracted : {len(chapter.sections)}"
+        )
+
+        for section in chapter.sections:
+
+            print(
+                f"  L{section.level} "
+                f"{section.number or '-':6} "
+                f"{section.title}"
+            )
+
+        #
+        # Concepts
+        #
 
         chapter = self.concept_extractor.extract(
             chapter
         )
 
-        print("=" * 80)
-        print(f"Sections extracted : {len(chapter.sections)}")
-        print(f"Concepts extracted : {len(chapter.concepts)}")
-        print("=" * 80)
-        
-        curriculum = self.writer.save(
+        print()
+
+        print(
+            f"Concepts extracted : {len(chapter.concepts)}"
+        )
+
+        for concept in chapter.concepts:
+
+            print(
+                f" - {concept.title}"
+            )
+
+        #
+        # Save
+        #
+
+        curriculum_id = self.writer.save(
             chapter
         )
 
-        return curriculum
-    
+        print()
+
+        print("Firestore write completed.")
+
+        return curriculum_id
     # TODO:
     # Remove import_json() after PDF pipeline
     # becomes the default ingestion path.
