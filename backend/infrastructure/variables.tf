@@ -29,16 +29,3 @@ variable "processor_location" {
   description = "The location of the Document AI processor to use for processing PDFs"
   type        = string
 }
-
-variable "azure_docai_endpoint" {
-  description = "Azure Document Intelligence endpoint used by the Knowledge Factory layout service"
-  type        = string
-  default     = ""
-}
-
-variable "azure_docai_key" {
-  description = "Azure Document Intelligence key used by the Knowledge Factory layout service"
-  type        = string
-  default     = ""
-  sensitive   = true
-}

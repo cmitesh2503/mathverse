@@ -700,10 +700,6 @@ resource "google_cloudfunctions2_function" "knowledge_compiler" {
 
       PROCESSOR_LOCATION = var.processor_location
 
-      AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT = var.azure_docai_endpoint
-
-      AZURE_DOCUMENT_INTELLIGENCE_KEY = var.azure_docai_key
-
     }
 
   }
@@ -723,6 +719,7 @@ resource "google_cloudfunctions2_function" "knowledge_compiler" {
 
   depends_on = [
     google_project_service.requited_apis,
+    google_project_iam_member.gcs_pubsub_publishing,
     google_project_iam_member.docai_user,
     google_project_iam_member.firestore_user,
     google_project_iam_member.storage_object_admin,
