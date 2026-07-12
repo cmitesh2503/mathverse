@@ -81,6 +81,8 @@ class Concept:
 
     title: str
 
+    section_id: str = ""
+
     section_number: str = ""
 
     description: str = ""

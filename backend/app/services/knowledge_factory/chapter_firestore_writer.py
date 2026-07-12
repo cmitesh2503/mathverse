@@ -61,25 +61,17 @@ class ChapterFirestoreWriter:
 
         metadata["raw_markdown"] = chapter.raw_markdown
 
+        metadata["section_count"] = len(chapter.sections)
+
         metadata["concept_count"] = len(chapter.concepts)
-
-        metadata["formula_count"] = len(chapter.formulas)
-
-        metadata["example_count"] = len(chapter.examples)
-
-        metadata["exercise_count"] = len(chapter.exercises)
-
-        metadata["pyq_count"] = len(chapter.pyqs)
-
-        metadata["figure_count"] = len(chapter.figures)
 
         chapter_ref.set(metadata)
 
         self._write_collection(
             chapter_ref,
-            "learning_objectives",
-            chapter.learning_objectives,
-            "objective_id",
+            "sections",
+            chapter.sections,
+            "section_id",
         )
 
         self._write_collection(
@@ -87,62 +79,6 @@ class ChapterFirestoreWriter:
             "concepts",
             chapter.concepts,
             "concept_id",
-        )
-
-        self._write_collection(
-            chapter_ref,
-            "formulas",
-            chapter.formulas,
-            "formula_id",
-        )
-
-        self._write_collection(
-            chapter_ref,
-            "examples",
-            chapter.examples,
-            "example_id",
-        )
-
-        self._write_collection(
-            chapter_ref,
-            "exercises",
-            chapter.exercises,
-            "exercise_id",
-        )
-
-        self._write_collection(
-            chapter_ref,
-            "pyqs",
-            chapter.pyqs,
-            "pyq_id",
-        )
-
-        self._write_collection(
-            chapter_ref,
-            "figures",
-            chapter.figures,
-            "figure_id",
-        )
-
-        self._write_collection(
-            chapter_ref,
-            "misconceptions",
-            chapter.misconceptions,
-            "misconception_id",
-        )
-
-        self._write_collection(
-            chapter_ref,
-            "prerequisites",
-            chapter.prerequisites,
-            "prerequisite_id",
-        )
-
-        self._write_collection(
-            chapter_ref,
-            "embeddings",
-            chapter.embeddings,
-            "embedding_id",
         )
 
         return chapter.metadata.curriculum_id

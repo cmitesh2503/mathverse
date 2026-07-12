@@ -33,8 +33,9 @@ class ConceptExtractor:
     """
 
     _EXCLUDED_TITLES = {
-        "matrices",
         "introduction",
+        "summary",
+        "miscellaneous exercise",
     }
 
     _QUOTE_PATTERNS = (
@@ -42,7 +43,7 @@ class ConceptExtractor:
     )
 
     _EXERCISE_PATTERN = re.compile(
-        r"^exercise\b",
+        r"^(exercise|exercises|miscellaneous exercise)\b",
         flags=re.IGNORECASE,
     )
 
@@ -65,6 +66,9 @@ class ConceptExtractor:
             title_lower = title.lower()
 
             # Skip chapter title
+            if title_lower == chapter.metadata.title.lower():
+                continue
+
             if title_lower in self._EXCLUDED_TITLES:
                 continue
 
@@ -89,8 +93,10 @@ class ConceptExtractor:
                 Concept(
                     concept_id=slug,
                     title=title,
+                    section_id=section.section_id,
                     section_number=section.number,
                     description=description,
+                    keywords=self._keywords(title),
                 )
             )
 
@@ -107,16 +113,50 @@ class ConceptExtractor:
         if not text:
             return ""
 
-        paragraphs = [
-            p.strip()
-            for p in text.split("\n\n")
-            if p.strip()
-        ]
+        cleaned = re.sub(
+            r"<!--.*?-->",
+            "",
+            text,
+            flags=re.DOTALL,
+        )
+
+        cleaned = re.sub(
+            r"={5,}",
+            "",
+            cleaned,
+        )
+
+        paragraphs = []
+
+        for paragraph in cleaned.split("\n\n"):
+            paragraph = paragraph.strip()
+
+            if not paragraph:
+                continue
+
+            if paragraph.startswith("#"):
+                continue
+
+            paragraphs.append(paragraph)
 
         if not paragraphs:
             return ""
 
         return paragraphs[0]
+
+    @staticmethod
+    def _keywords(text: str) -> list[str]:
+
+        words = re.findall(
+            r"[A-Za-z][A-Za-z0-9-]*",
+            text.lower(),
+        )
+
+        return [
+            word
+            for word in words
+            if len(word) > 2
+        ]
 
     @staticmethod
     def _slug(text: str) -> str:

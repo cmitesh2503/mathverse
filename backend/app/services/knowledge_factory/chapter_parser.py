@@ -3,29 +3,20 @@ MathVerse Knowledge Factory
 
 Chapter Parser
 
-Converts Azure Document Intelligence Layout JSON
-into ChapterKnowledge.
+Converts merged Azure Layout markdown into ChapterKnowledge.
 
 Responsibilities
 ----------------
-1. Load Azure Layout JSON
-2. Extract markdown
-3. Parse chapter metadata
+1. Load merged markdown
+2. Parse chapter metadata
+3. Return ChapterKnowledge
 4. Return ChapterKnowledge
 
-Specialized extractors populate:
-
-- Concepts
-- Formulas
-- Examples
-- Exercises
-- Figures
-- Embeddings
+Specialized extractors populate concepts and future enrichment.
 """
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
@@ -37,27 +28,18 @@ from app.services.knowledge_factory.chapter_models import (
 
 class ChapterParser:
     """
-    Parses Azure Document Intelligence Layout output
-    into a ChapterKnowledge object.
+    Parses merged markdown into a ChapterKnowledge object.
     """
 
-    def parse(self, json_path: str | Path) -> ChapterKnowledge:
+    def parse(self, markdown_path: str | Path) -> ChapterKnowledge:
 
-        json_path = Path(json_path)
+        markdown_path = Path(markdown_path)
 
-        with json_path.open("r", encoding="utf-8") as file:
-            data = json.load(file)
-
-        analyze_result = data.get("analyzeResult", {})
-
-        markdown = analyze_result.get("content", "")
-
-        metadata = self._extract_metadata(markdown)
-
-        return ChapterKnowledge(
-            metadata=metadata,
-            raw_markdown=markdown,
+        markdown = markdown_path.read_text(
+            encoding="utf-8",
         )
+
+        return self.parse_markdown(markdown)
         
     def parse_markdown(
         self,

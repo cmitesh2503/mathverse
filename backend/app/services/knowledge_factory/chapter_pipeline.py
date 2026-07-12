@@ -21,6 +21,7 @@ No Firestore.
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 from app.services.pdf_utils import PDFChunker
@@ -43,18 +44,25 @@ class ChapterPipeline:
     def process(
         self,
         pdf_file: str | Path,
+        output_root: str | Path | None = None,
     ) -> ChapterPipelineResult:
 
         pdf_file = Path(pdf_file)
 
+        chunk_root = self._resolve_output_root(
+            pdf_file,
+            output_root,
+        )
+
         chunks = self.chunker.split(
             pdf_file,
             pages_per_chunk=2,
-            output_root=pdf_file.parent,
+            output_root=chunk_root,
         )
 
-        markdown_files = []
-        azure_pages = []
+        markdown_files: list[Path] = []
+
+        json_files: list[Path] = []
 
         print("=" * 80)
         print("Processing PDF Chunks")
@@ -66,24 +74,12 @@ class ChapterPipeline:
 
             layout = self.layout.analyze(chunk)
 
-            markdown_file = (
-                chunk.with_suffix(".md")
-            )
-
-            markdown_file.write_text(
-                layout["markdown"],
-                encoding="utf-8",
-            )
-
             markdown_files.append(
-                markdown_file
+                layout["markdown_file"]
             )
 
-            azure_pages.extend(
-                layout["json"].get(
-                    "pages",
-                    []
-                )
+            json_files.append(
+                layout["json_file"]
             )
 
         if not markdown_files:
@@ -95,13 +91,46 @@ class ChapterPipeline:
             markdown_files
         )
 
+        print(f"Merged Markdown created: {merged.name}")
+
         return ChapterPipelineResult(
             markdown=merged.read_text(
                 encoding="utf-8",
             ),
-            azure_json={
-                "pages": azure_pages,
-            },
+            merged_markdown_file=merged,
+            chunk_files=chunks,
+            markdown_files=markdown_files,
+            json_files=json_files,
+        )
+
+    def _resolve_output_root(
+        self,
+        pdf_file: Path,
+        output_root: str | Path | None,
+    ) -> Path:
+
+        if output_root is not None:
+            return Path(output_root)
+
+        base_dir = Path(tempfile.gettempdir()) / "mathverse"
+
+        base_dir.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        prefix = (
+            pdf_file.stem
+            .lower()
+            .replace(" ", "_")
+            .replace("-", "_")
+        )
+
+        return Path(
+            tempfile.mkdtemp(
+                prefix=f"{prefix}_",
+                dir=base_dir,
+            )
         )
 
     def _merge_markdown(
@@ -116,7 +145,7 @@ class ChapterPipeline:
             encoding="utf-8",
         ) as merged:
 
-            for md in markdown_files:
+            for md in sorted(markdown_files):
 
                 merged.write(md.read_text(encoding="utf-8"))
 

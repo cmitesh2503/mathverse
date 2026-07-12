@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from azure.ai.documentintelligence import DocumentIntelligenceClient
 from azure.core.credentials import AzureKeyCredential
@@ -35,9 +36,6 @@ class AzureLayoutService:
 
     def __init__(self) -> None:
 
-        print("Endpoint:", config.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT)
-        print("Key Exists:", bool(config.AZURE_DOCUMENT_INTELLIGENCE_KEY))
-
         self.client = DocumentIntelligenceClient(
             endpoint=config.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT,
             credential=AzureKeyCredential(
@@ -48,7 +46,7 @@ class AzureLayoutService:
     def analyze(
         self,
         pdf_file: str | Path,
-    ) -> dict:
+    ) -> dict[str, Any]:
 
         pdf_file = Path(pdf_file)
 
@@ -68,12 +66,16 @@ class AzureLayoutService:
 
         result = poller.result()
 
+        markdown = result.content or ""
+
+        raw_json = result.as_dict()
+
         #
         # Save Markdown
         #
 
         markdown_file.write_text(
-            result.content,
+            markdown,
             encoding="utf-8",
         )
 
@@ -83,7 +85,7 @@ class AzureLayoutService:
 
         json_file.write_text(
             json.dumps(
-                result.as_dict(),
+                raw_json,
                 indent=2,
                 ensure_ascii=False,
             ),
@@ -91,6 +93,8 @@ class AzureLayoutService:
         )
 
         return {
-            "markdown": result.content,
-            "json": result.as_dict(),
+            "markdown": markdown,
+            "json": raw_json,
+            "markdown_file": markdown_file,
+            "json_file": json_file,
         }

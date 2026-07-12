@@ -20,8 +20,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv(
-    Path(__file__).resolve().parents[2] / ".env"
+    Path(__file__).resolve().parents[2] / ".env",
+    override=False,
 )
+
+
+class ConfigurationError(RuntimeError):
+    """Raised when required runtime configuration cannot be resolved."""
 
 
 # ==========================================================
@@ -59,6 +64,77 @@ def _env_float(name: str, default: float) -> float:
         return float(value)
     except ValueError:
         return default
+
+
+def _secret_manager_project_id() -> str:
+    for name in (
+        "GOOGLE_CLOUD_PROJECT",
+        "PROJECT_ID",
+        "GCLOUD_PROJECT",
+        "GCP_PROJECT",
+    ):
+        value = _env(name)
+        if value:
+            return value
+
+    raise ConfigurationError(
+        "Google Secret Manager fallback requires GOOGLE_CLOUD_PROJECT "
+        "or PROJECT_ID to be set."
+    )
+
+
+def _secret_manager_value(secret_name: str) -> str:
+    project_id = _secret_manager_project_id()
+
+    try:
+        from google.cloud import secretmanager
+    except ImportError as exc:
+        raise ConfigurationError(
+            "Google Secret Manager fallback requires the "
+            "google-cloud-secret-manager package."
+        ) from exc
+
+    resource_name = (
+        f"projects/{project_id}/secrets/{secret_name}/versions/latest"
+    )
+
+    try:
+        client = secretmanager.SecretManagerServiceClient()
+        response = client.access_secret_version(
+            request={"name": resource_name}
+        )
+    except Exception as exc:
+        raise ConfigurationError(
+            f"Unable to read Google Secret Manager secret "
+            f"{secret_name!r} in project {project_id!r}."
+        ) from exc
+
+    return response.payload.data.decode("utf-8").strip()
+
+
+def _env_or_secret(name: str, secret_name: str) -> str:
+    value = _env(name)
+    if value:
+        return value
+
+    try:
+        value = _secret_manager_value(secret_name)
+    except ConfigurationError as exc:
+        raise ConfigurationError(
+            f"{name} is not configured. Set {name} in the runtime "
+            f"environment, set it in backend/.env for local development, "
+            f"or create and grant access to the Google Secret Manager "
+            f"secret {secret_name!r}."
+        ) from exc
+
+    if not value:
+        raise ConfigurationError(
+            f"{name} is not configured. Google Secret Manager secret "
+            f"{secret_name!r} is empty."
+        )
+
+    os.environ[name] = value
+    return value
 
 
 # ==========================================================
@@ -442,10 +518,28 @@ FIREBASE_SERVICE_ACCOUNT_PATH = _env(
 #
 # ==========================================================
 
-AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT = _env(
-    "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT",
-)
+_SECRET_BACKED_ENV_VARS = {
+    "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT": (
+        "azure-document-intelligence-endpoint"
+    ),
+    "AZURE_DOCUMENT_INTELLIGENCE_KEY": (
+        "azure-document-intelligence-key"
+    ),
+}
 
-AZURE_DOCUMENT_INTELLIGENCE_KEY = _env(
-    "AZURE_DOCUMENT_INTELLIGENCE_KEY",
-)
+for _secret_backed_name in _SECRET_BACKED_ENV_VARS:
+    _secret_backed_value = _env(_secret_backed_name)
+    if _secret_backed_value:
+        globals()[_secret_backed_name] = _secret_backed_value
+
+
+def __getattr__(name: str) -> str:
+    secret_name = _SECRET_BACKED_ENV_VARS.get(name)
+    if secret_name is None:
+        raise AttributeError(
+            f"module {__name__!r} has no attribute {name!r}"
+        )
+
+    value = _env_or_secret(name, secret_name)
+    globals()[name] = value
+    return value
