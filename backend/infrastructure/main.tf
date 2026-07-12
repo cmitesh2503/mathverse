@@ -10,6 +10,8 @@ resource "google_project_service" "requited_apis" {
     "pubsub.googleapis.com",
     "run.googleapis.com",
     "documentai.googleapis.com",
+    "secretmanager.googleapis.com",
+    "storage.googleapis.com",
   ])
   service            = each.key
   disable_on_destroy = false
@@ -202,7 +204,6 @@ locals {
 resource "null_resource" "build_knowledge_compiler" {
   triggers = {
     source_hash = local.knowledge_compiler_source_hash
-    always_run  = timestamp()
   }
 
   provisioner "local-exec" {
@@ -329,11 +330,41 @@ resource "google_project_iam_member" "run_invoker" {
   role    = "roles/run.invoker"
   member  = "serviceAccount:${google_service_account.ingestion_sa.email}"
 }
+
+resource "google_project_iam_member" "jee_run_invoker" {
+  project = var.project_id
+  role    = "roles/run.invoker"
+  member  = "serviceAccount:${google_service_account.jee_processor.email}"
+}
+
 resource "google_project_iam_member" "event_receiver" {
   project = var.project_id
   role    = "roles/eventarc.eventReceiver"
   member  = "serviceAccount:${google_service_account.ingestion_sa.email}"
 }
+
+resource "google_project_iam_member" "jee_event_receiver" {
+  project = var.project_id
+  role    = "roles/eventarc.eventReceiver"
+  member  = "serviceAccount:${google_service_account.jee_processor.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "azure_document_intelligence_secret_access" {
+  for_each = toset([
+    "azure-document-intelligence-endpoint",
+    "azure-document-intelligence-key",
+  ])
+
+  project   = var.project_id
+  secret_id = each.value
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.jee_processor.email}"
+
+  depends_on = [
+    google_project_service.requited_apis["secretmanager.googleapis.com"],
+  ]
+}
+
 # 1. Look up the hidden Cloud Storage Service Account
 data "google_storage_project_service_account" "gcs_account" {
   project = var.project_id
@@ -435,6 +466,7 @@ resource "google_cloudfunctions2_function" "jee_pdf_ocr" {
   event_trigger {
     trigger_region = var.region
     event_type     = "google.cloud.storage.object.v1.finalized"
+    retry_policy   = "RETRY_POLICY_DO_NOT_RETRY"
 
     event_filters {
       attribute = "bucket"
@@ -483,6 +515,7 @@ resource "google_cloudfunctions2_function" "jee_question_extractor" {
   event_trigger {
     trigger_region = var.region
     event_type     = "google.cloud.storage.object.v1.finalized"
+    retry_policy   = "RETRY_POLICY_DO_NOT_RETRY"
 
     event_filters {
       attribute = "bucket"
@@ -530,6 +563,7 @@ resource "google_cloudfunctions2_function" "jee_answer_extractor" {
   event_trigger {
     trigger_region = var.region
     event_type     = "google.cloud.storage.object.v1.finalized"
+    retry_policy   = "RETRY_POLICY_DO_NOT_RETRY"
 
     event_filters {
       attribute = "bucket"
@@ -579,6 +613,7 @@ resource "google_cloudfunctions2_function" "jee_solution_extractor" {
   event_trigger {
     trigger_region = var.region
     event_type     = "google.cloud.storage.object.v1.finalized"
+    retry_policy   = "RETRY_POLICY_DO_NOT_RETRY"
 
     event_filters {
       attribute = "bucket"
@@ -628,6 +663,7 @@ resource "google_cloudfunctions2_function" "jee_metadata_extractor" {
   event_trigger {
     trigger_region = var.region
     event_type     = "google.cloud.storage.object.v1.finalized"
+    retry_policy   = "RETRY_POLICY_DO_NOT_RETRY"
 
     event_filters {
       attribute = "bucket"
@@ -710,9 +746,13 @@ resource "google_cloudfunctions2_function" "knowledge_compiler" {
 
     event_type = "google.cloud.storage.object.v1.finalized"
 
+    retry_policy = "RETRY_POLICY_DO_NOT_RETRY"
+
+    service_account_email = google_service_account.jee_processor.email
+
     event_filters {
       attribute = "bucket"
-      value     = google_storage_bucket.content_bucket.name
+      value     = google_storage_bucket.jee_assets.name
     }
 
   }
@@ -720,6 +760,8 @@ resource "google_cloudfunctions2_function" "knowledge_compiler" {
   depends_on = [
     google_project_service.requited_apis,
     google_project_iam_member.gcs_pubsub_publishing,
+    google_project_iam_member.jee_event_receiver,
+    google_project_iam_member.jee_run_invoker,
     google_project_iam_member.docai_user,
     google_project_iam_member.firestore_user,
     google_project_iam_member.storage_object_admin,

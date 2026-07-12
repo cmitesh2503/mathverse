@@ -1,5 +1,6 @@
 import logging
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 
@@ -18,28 +19,23 @@ for import_path in (
             import_path_value,
         )
 
-from compiler import KnowledgeCompiler
-
 logging.basicConfig(
     level=logging.INFO
 )
 
 logger = logging.getLogger(__name__)
 
-compiler = KnowledgeCompiler()
+
+@lru_cache(maxsize=1)
+def get_compiler():
+    from compiler import KnowledgeCompiler
+
+    return KnowledgeCompiler()
 
 
 SUPPORTED_FOLDERS = (
 
-    "curriculum/",
-
-    "ncert/",
-
-    "reference/",
-
-    "pyq/",
-
-    "teacher_assets/",
+    "raw-pdfs/",
 
 )
 
@@ -115,7 +111,7 @@ def process_knowledge_document(event, context):
 
     try:
 
-        result = compiler.compile(
+        result = get_compiler().compile(
 
             bucket_name=bucket_name,
 
@@ -145,28 +141,8 @@ def get_document_type(
 ) -> str:
 
     if blob_name.startswith(
-        "curriculum/"
+        "raw-pdfs/"
     ):
-        return "curriculum"
-
-    if blob_name.startswith(
-        "ncert/"
-    ):
-        return "ncert"
-
-    if blob_name.startswith(
-        "reference/"
-    ):
-        return "reference"
-
-    if blob_name.startswith(
-        "pyq/"
-    ):
-        return "pyq"
-
-    if blob_name.startswith(
-        "teacher_assets/"
-    ):
-        return "teacher_assets"
+        return "jee_raw_pdf"
 
     return "unknown"

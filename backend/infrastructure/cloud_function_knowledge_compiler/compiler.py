@@ -34,6 +34,10 @@ class KnowledgeCompiler:
 
         started = datetime.utcnow()
 
+        logger.info(
+            "Downloading PDF"
+        )
+
         pdf_file = self._download_pdf(
             bucket_name,
             blob_name,
@@ -42,7 +46,8 @@ class KnowledgeCompiler:
         try:
 
             curriculum_id = self.importer.import_pdf(
-                pdf_file
+                pdf_file,
+                output_root=pdf_file.parent,
             )
 
         finally:
@@ -82,8 +87,18 @@ class KnowledgeCompiler:
 
         blob = bucket.blob(object_name)
 
+        temp_root = Path(tempfile.gettempdir()) / "mathverse"
+
+        temp_root.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
         temp_dir = Path(
-            tempfile.mkdtemp(prefix="mathverse_")
+            tempfile.mkdtemp(
+                prefix="knowledge_",
+                dir=temp_root,
+            )
         )
 
         local_pdf = temp_dir / Path(object_name).name
