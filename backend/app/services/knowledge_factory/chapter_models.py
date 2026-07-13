@@ -100,19 +100,29 @@ class Concept:
 
     description: str = ""
 
-    keywords: List[str] = field(default_factory=list)
-
     aliases: List[str] = field(default_factory=list)
 
-    difficulty: str = "medium"
+    keywords: List[str] = field(default_factory=list)
+
+    examples: List[str] = field(default_factory=list)
 
     prerequisites: List[str] = field(default_factory=list)
 
     learning_objectives: List[str] = field(default_factory=list)
 
-    examples: List[str] = field(default_factory=list)
+    related_concepts: List[str] = field(default_factory=list)
+
+    difficulty: str = "medium"
 
     formula_ids: List[str] = field(default_factory=list)
+
+    exercise_ids: List[str] = field(default_factory=list)
+
+    teacher_script_id: str = ""
+
+    whiteboard_id: str = ""
+
+    embedding_id: str = ""
 
 
 # ============================================================

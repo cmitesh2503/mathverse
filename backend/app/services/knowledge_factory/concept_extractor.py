@@ -67,11 +67,13 @@ class ConceptExtractor:
     )
 
     _STOPWORDS = {
+        "a",
         "about",
         "above",
         "after",
         "again",
         "also",
+        "an",
         "another",
         "because",
         "been",
@@ -99,6 +101,7 @@ class ConceptExtractor:
         "such",
         "than",
         "that",
+        "the",
         "their",
         "there",
         "these",
@@ -157,6 +160,17 @@ class ConceptExtractor:
             description = self._first_meaningful_paragraph(
                 section.content
             )
+            aliases = self._aliases(
+                title,
+                section.content,
+            )
+            keywords = self._keywords(
+                title,
+                section.content,
+            )
+            examples = self._examples(
+                section.content,
+            )
 
             concept = Concept(
                 concept_id=slug,
@@ -166,25 +180,32 @@ class ConceptExtractor:
                 chapter_id=chapter.metadata.chapter_id,
                 curriculum_id=chapter.metadata.curriculum_id,
                 description=description,
-                keywords=self._keywords(
-                    title,
-                    section.content,
-                ),
-                aliases=self._aliases(
-                    title,
-                    section.content,
-                ),
+                aliases=aliases,
+                keywords=keywords,
+                examples=examples,
                 prerequisites=self._prerequisites(
                     section.content,
                 ),
-                examples=self._examples(
+                learning_objectives=self._learning_objectives(
+                    title,
+                    description,
                     section.content,
+                ),
+                difficulty=self._difficulty(
+                    title,
+                    section.content,
+                    int(section.level),
                 ),
             )
 
             concepts.append(concept)
 
             section.concept_ids.append(concept.concept_id)
+
+        self._populate_related_concepts(
+            concepts,
+            chapter.sections,
+        )
 
         chapter.concepts = concepts
 
@@ -349,6 +370,172 @@ class ConceptExtractor:
 
         return self._unique(examples)
 
+    def _learning_objectives(
+        self,
+        title: str,
+        description: str,
+        content: str,
+    ) -> list[str]:
+
+        objectives = [
+            f"Explain {title} in your own words.",
+        ]
+
+        if description:
+            objectives.append(
+                f"Identify where {title} is used in the chapter."
+            )
+
+        if self._examples(content):
+            objectives.append(
+                f"Solve worked examples involving {title}."
+            )
+
+        if self._has_formula_like_content(content):
+            objectives.append(
+                f"Apply formulas and notation related to {title}."
+            )
+
+        return self._unique(objectives)
+
+    def _difficulty(
+        self,
+        title: str,
+        content: str,
+        level: int,
+    ) -> str:
+
+        text = f"{title}\n{content}".lower()
+        score = 0
+
+        if level >= 3:
+            score += 1
+
+        if len(content) > 1200:
+            score += 1
+
+        if self._has_formula_like_content(content):
+            score += 1
+
+        if re.search(
+            r"\b(proof|prove|theorem|inverse|determinant|"
+            r"transformation|application|complex|advanced)\b",
+            text,
+        ):
+            score += 1
+
+        if score >= 3:
+            return "hard"
+
+        if score == 0:
+            return "easy"
+
+        return "medium"
+
+    def _populate_related_concepts(
+        self,
+        concepts: list[Concept],
+        sections,
+    ) -> None:
+
+        concepts_by_section: dict[str, list[Concept]] = {}
+
+        for concept in concepts:
+            concepts_by_section.setdefault(
+                concept.section_id,
+                [],
+            ).append(concept)
+
+        sections_by_id = {
+            section.section_id: section
+            for section in sections
+        }
+
+        for concept in concepts:
+            related: list[str] = []
+            section = sections_by_id.get(concept.section_id)
+
+            if section is not None:
+                related_section_ids = []
+
+                if section.parent_section:
+                    related_section_ids.append(section.parent_section)
+
+                related_section_ids.extend(section.child_sections)
+
+                if section.parent_section:
+                    parent = sections_by_id.get(section.parent_section)
+
+                    if parent is not None:
+                        related_section_ids.extend(parent.child_sections)
+
+                for section_id in related_section_ids:
+                    for related_concept in concepts_by_section.get(
+                        section_id,
+                        [],
+                    ):
+                        if related_concept.concept_id != concept.concept_id:
+                            related.append(related_concept.concept_id)
+
+            concept_terms = self._concept_terms(concept)
+
+            for other in concepts:
+                if other.concept_id == concept.concept_id:
+                    continue
+
+                other_terms = self._concept_terms(other)
+
+                if self._has_named_prerequisite(concept, other):
+                    related.append(other.concept_id)
+                    continue
+
+                shared_terms = concept_terms & other_terms
+
+                if len(shared_terms) >= 2:
+                    related.append(other.concept_id)
+
+            concept.related_concepts = self._unique(related)[:8]
+
+    def _concept_terms(
+        self,
+        concept: Concept,
+    ) -> set[str]:
+
+        terms: set[str] = set()
+
+        for value in [
+            concept.title,
+            *concept.aliases,
+            *concept.keywords,
+            *concept.prerequisites,
+        ]:
+            terms.update(
+                self._term_tokens(value)
+            )
+
+        return terms
+
+    def _has_named_prerequisite(
+        self,
+        concept: Concept,
+        other: Concept,
+    ) -> bool:
+
+        prerequisite_terms = {
+            self._normalize_relation_text(prerequisite)
+            for prerequisite in concept.prerequisites
+        }
+
+        other_names = {
+            self._normalize_relation_text(other.title),
+            *(
+                self._normalize_relation_text(alias)
+                for alias in other.aliases
+            ),
+        }
+
+        return bool(prerequisite_terms & other_names)
+
     def _formatted_terms(
         self,
         content: str,
@@ -396,6 +583,20 @@ class ConceptExtractor:
         )
 
         return identifiers
+
+    def _has_formula_like_content(
+        self,
+        content: str,
+    ) -> bool:
+
+        return bool(
+            re.search(
+                r"(\$\$?.+?\$\$?|\\\(|\\\[|=|<=|>=|"
+                r"\\leq?|\\geq?|\\frac|\\sqrt|\bsin\b|\bcos\b|\btan\b)",
+                content,
+                flags=re.DOTALL,
+            )
+        )
 
     def _repeated_terms(
         self,
@@ -525,6 +726,31 @@ class ConceptExtractor:
             return ""
 
         return term
+
+    def _term_tokens(
+        self,
+        text: str,
+    ) -> set[str]:
+
+        return {
+            token
+            for token in re.findall(
+                r"[A-Za-z][A-Za-z0-9-]*",
+                text.lower(),
+            )
+            if self._is_keyword_candidate(token)
+        }
+
+    def _normalize_relation_text(
+        self,
+        text: str,
+    ) -> str:
+
+        return " ".join(
+            sorted(
+                self._term_tokens(text)
+            )
+        )
 
     @staticmethod
     def _clean_inline_markdown(text: str) -> str:

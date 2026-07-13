@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.services.knowledge_factory.chapter_models import (
     ChapterKnowledge,
     ChapterMetadata,
+    Concept,
     Section,
 )
 from app.services.knowledge_factory.concept_extractor import ConceptExtractor
@@ -113,6 +114,35 @@ def test_section_model_stores_canonical_fields():
     ]
 
 
+def test_concept_model_stores_enhanced_fields():
+    concept = Concept(
+        concept_id="matrix",
+        title="Matrix",
+    )
+
+    assert list(asdict(concept)) == [
+        "concept_id",
+        "title",
+        "section_id",
+        "section_number",
+        "chapter_id",
+        "curriculum_id",
+        "description",
+        "aliases",
+        "keywords",
+        "examples",
+        "prerequisites",
+        "learning_objectives",
+        "related_concepts",
+        "difficulty",
+        "formula_ids",
+        "exercise_ids",
+        "teacher_script_id",
+        "whiteboard_id",
+        "embedding_id",
+    ]
+
+
 def test_concept_extractor_links_concepts_back_to_sections():
     chapter = SectionParser().parse(
         _chapter(
@@ -150,4 +180,67 @@ Find the order of the given matrix.
     assert concept.section_number == "3.1"
     assert concept.chapter_id == "chapter-003"
     assert concept.curriculum_id == "jee-main-2026-mathematics"
-    assert concept.learning_objectives == []
+    assert concept.description == "A matrix is a rectangular arrangement of numbers."
+    assert concept.aliases == []
+    assert concept.keywords == []
+    assert concept.examples == []
+    assert concept.prerequisites == []
+    assert concept.learning_objectives == [
+        "Explain Matrix in your own words.",
+        "Identify where Matrix is used in the chapter.",
+    ]
+    assert concept.related_concepts == []
+    assert concept.difficulty == "easy"
+    assert concept.formula_ids == []
+    assert concept.exercise_ids == []
+    assert concept.teacher_script_id == ""
+    assert concept.whiteboard_id == ""
+    assert concept.embedding_id == ""
+
+
+def test_concept_extractor_populates_enhanced_fields_and_related_concepts():
+    chapter = SectionParser().parse(
+        _chapter(
+            """
+# Matrices
+
+## 3.1 Matrix
+
+A matrix is a rectangular arrangement of numbers.
+
+### 3.1.1 Order of a Matrix
+
+The order of a matrix is also called dimension.
+
+order = rows x columns
+
+Example 1: Identify the order of a matrix with 2 rows and 3 columns.
+Solution: Its order is 2 x 3.
+"""
+        )
+    )
+
+    chapter = ConceptExtractor().extract(chapter)
+
+    concepts = {
+        concept.concept_id: concept
+        for concept in chapter.concepts
+    }
+
+    matrix = concepts["matrix"]
+    order = concepts["order-of-a-matrix"]
+
+    assert matrix.related_concepts == ["order-of-a-matrix"]
+    assert order.related_concepts == ["matrix"]
+    assert order.aliases == ["dimension"]
+    assert order.examples == [
+        "Example 1: Identify the order of a matrix with 2 rows and 3 columns.\n"
+        "Solution: Its order is 2 x 3."
+    ]
+    assert order.learning_objectives == [
+        "Explain Order of a Matrix in your own words.",
+        "Identify where Order of a Matrix is used in the chapter.",
+        "Solve worked examples involving Order of a Matrix.",
+        "Apply formulas and notation related to Order of a Matrix.",
+    ]
+    assert order.difficulty == "medium"
