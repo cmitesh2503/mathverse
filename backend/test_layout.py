@@ -1,13 +1,19 @@
+import os
 from pathlib import Path
 
 from azure.ai.documentintelligence import DocumentIntelligenceClient
 from azure.ai.documentintelligence.models import AnalyzeDocumentRequest
 from azure.core.credentials import AzureKeyCredential
 
-ENDPOINT = "https://mathverse-docai.cognitiveservices.azure.com/"
-KEY = ""
+ENDPOINT = os.getenv(
+    "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT",
+    "https://mathverse-docai.cognitiveservices.azure.com/",
+)
+KEY = os.getenv("AZURE_DOCUMENT_INTELLIGENCE_KEY")
+if not KEY:
+    raise RuntimeError("Set AZURE_DOCUMENT_INTELLIGENCE_KEY before running this script.")
 
-PDF = Path(r"C:\Users\mites\Downloads\Matrices.pdf")
+PDF = Path(os.getenv("MATHVERSE_LAYOUT_TEST_PDF", r"C:\Users\mites\Downloads\Matrices.pdf"))
 
 client = DocumentIntelligenceClient(
     endpoint=ENDPOINT,
