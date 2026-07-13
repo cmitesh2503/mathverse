@@ -52,12 +52,12 @@ class Section:
     """
 
     section_id: str
-    number: str
     title: str
+    number: str
     level: int
     content: str
-    parent: Optional[str] = None
-    children: List[str] = field(default_factory=list)
+    parent_section: Optional[str] = None
+    child_sections: List[str] = field(default_factory=list)
     concept_ids: List[str] = field(default_factory=list)
     formula_ids: List[str] = field(default_factory=list)
     example_ids: List[str] = field(default_factory=list)
@@ -65,7 +65,7 @@ class Section:
     figure_ids: List[str] = field(default_factory=list)
     teacher_script_ids: List[str] = field(default_factory=list)
     whiteboard_ids: List[str] = field(default_factory=list)
-    section_type: str = "content"
+
 # ============================================================
 # Learning Objectives
 # ============================================================

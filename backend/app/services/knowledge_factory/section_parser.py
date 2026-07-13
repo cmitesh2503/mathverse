@@ -106,8 +106,8 @@ class SectionParser:
 
             if stack:
                 parent = stack[-1]
-                section.parent = parent.section_id
-                parent.children.append(section.section_id)
+                section.parent_section = parent.section_id
+                parent.child_sections.append(section.section_id)
 
             stack.append(section)
 

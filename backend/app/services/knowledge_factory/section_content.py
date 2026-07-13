@@ -19,7 +19,7 @@ def local_section_content(
 ) -> str:
     content_end = len(section.content)
 
-    for child_id in section.children:
+    for child_id in section.child_sections:
         child = sections_by_id.get(child_id)
 
         if child is None:

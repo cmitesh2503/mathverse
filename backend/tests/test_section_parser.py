@@ -1,4 +1,5 @@
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -6,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.services.knowledge_factory.chapter_models import (
     ChapterKnowledge,
     ChapterMetadata,
+    Section,
 )
 from app.services.knowledge_factory.concept_extractor import ConceptExtractor
 from app.services.knowledge_factory.section_parser import SectionParser
@@ -61,15 +63,15 @@ Square and diagonal matrices are common types.
     order = sections["3-1-1-order-of-a-matrix"]
     types = sections["3-2-types-of-matrices"]
 
-    assert root.parent is None
-    assert root.children == [
+    assert root.parent_section is None
+    assert root.child_sections == [
         "3-1-matrix",
         "3-2-types-of-matrices",
     ]
-    assert matrix.parent == "matrices"
-    assert matrix.children == ["3-1-1-order-of-a-matrix"]
-    assert order.parent == "3-1-matrix"
-    assert types.parent == "matrices"
+    assert matrix.parent_section == "matrices"
+    assert matrix.child_sections == ["3-1-1-order-of-a-matrix"]
+    assert order.parent_section == "3-1-matrix"
+    assert types.parent_section == "matrices"
 
     assert "### 3.1.1 Order of a Matrix" in matrix.content
     assert "## 3.2 Types of Matrices" not in matrix.content
@@ -82,6 +84,33 @@ Square and diagonal matrices are common types.
     assert matrix.figure_ids == []
     assert matrix.teacher_script_ids == []
     assert matrix.whiteboard_ids == []
+
+
+def test_section_model_stores_canonical_fields():
+    section = Section(
+        section_id="3-1-matrix",
+        title="Matrix",
+        number="3.1",
+        level=2,
+        content="A matrix is a rectangular arrangement.",
+    )
+
+    assert list(asdict(section)) == [
+        "section_id",
+        "title",
+        "number",
+        "level",
+        "content",
+        "parent_section",
+        "child_sections",
+        "concept_ids",
+        "formula_ids",
+        "example_ids",
+        "exercise_ids",
+        "figure_ids",
+        "teacher_script_ids",
+        "whiteboard_ids",
+    ]
 
 
 def test_concept_extractor_links_concepts_back_to_sections():
