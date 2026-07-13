@@ -53,36 +53,80 @@ class SectionParser:
             return chapter
 
         sections: list[Section] = []
+        seen_section_ids: dict[str, int] = {}
 
         for index, marker in enumerate(markers):
 
             content_start = marker["end"]
 
-            if index + 1 < len(markers):
-                content_end = markers[index + 1]["start"]
-            else:
-                content_end = len(markdown)
+            content_end = self._section_content_end(
+                index,
+                markers,
+                len(markdown),
+            )
 
             content = markdown[
                 content_start:content_end
             ].strip()
 
-            section = Section(
-                section_id=self._section_id(
-                    marker["number"],
-                    marker["title"],
+            section_id = self._unique_section_id(
+                self._section_id(
+                    str(marker["number"]),
+                    str(marker["title"]),
                 ),
-                number=marker["number"],
-                title=marker["title"],
-                level=marker["level"],
+                seen_section_ids,
+            )
+
+            section = Section(
+                section_id=section_id,
+                number=str(marker["number"]),
+                title=str(marker["title"]),
+                level=int(marker["level"]),
                 content=content,
             )
 
             sections.append(section)
 
+        self._link_hierarchy(sections)
+
         chapter.sections = sections
 
         return chapter
+
+    def _link_hierarchy(
+        self,
+        sections: list[Section],
+    ) -> None:
+
+        stack: list[Section] = []
+
+        for section in sections:
+            while stack and stack[-1].level >= section.level:
+                stack.pop()
+
+            if stack:
+                parent = stack[-1]
+                section.parent = parent.section_id
+                parent.children.append(section.section_id)
+
+            stack.append(section)
+
+    def _section_content_end(
+        self,
+        index: int,
+        markers: list[dict[str, int | str]],
+        markdown_length: int,
+    ) -> int:
+
+        current_level = int(markers[index]["level"])
+
+        for next_marker in markers[index + 1:]:
+            next_level = int(next_marker["level"])
+
+            if next_level <= current_level:
+                return int(next_marker["start"])
+
+        return markdown_length
 
     def _find_section_markers(
         self,
@@ -213,6 +257,20 @@ class SectionParser:
             return self._slug(f"{number}-{title}")
 
         return self._slug(title)
+
+    def _unique_section_id(
+        self,
+        section_id: str,
+        seen_section_ids: dict[str, int],
+    ) -> str:
+
+        count = seen_section_ids.get(section_id, 0) + 1
+        seen_section_ids[section_id] = count
+
+        if count == 1:
+            return section_id
+
+        return f"{section_id}-{count}"
 
     @staticmethod
     def _slug(text: str) -> str:

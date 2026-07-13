@@ -56,6 +56,15 @@ class Section:
     title: str
     level: int
     content: str
+    parent: Optional[str] = None
+    children: List[str] = field(default_factory=list)
+    concept_ids: List[str] = field(default_factory=list)
+    formula_ids: List[str] = field(default_factory=list)
+    example_ids: List[str] = field(default_factory=list)
+    exercise_ids: List[str] = field(default_factory=list)
+    figure_ids: List[str] = field(default_factory=list)
+    teacher_script_ids: List[str] = field(default_factory=list)
+    whiteboard_ids: List[str] = field(default_factory=list)
     section_type: str = "content"
 # ============================================================
 # Learning Objectives
@@ -85,6 +94,10 @@ class Concept:
 
     section_number: str = ""
 
+    chapter_id: str = ""
+
+    curriculum_id: str = ""
+
     description: str = ""
 
     keywords: List[str] = field(default_factory=list)
@@ -95,6 +108,12 @@ class Concept:
 
     prerequisites: List[str] = field(default_factory=list)
 
+    learning_objectives: List[str] = field(default_factory=list)
+
+    examples: List[str] = field(default_factory=list)
+
+    formula_ids: List[str] = field(default_factory=list)
+
 
 # ============================================================
 # Formula
@@ -104,9 +123,21 @@ class Concept:
 class Formula:
     formula_id: str
 
-    title: str
+    title: str = ""
 
-    latex: str
+    latex: str = ""
+
+    meaning: str = ""
+
+    variables: List[str] = field(default_factory=list)
+
+    units: List[str] = field(default_factory=list)
+
+    description: str = ""
+
+    section_id: str = ""
+
+    concept_ids: List[str] = field(default_factory=list)
 
     explanation: str = ""
 
@@ -121,13 +152,17 @@ class Formula:
 class Example:
     example_id: str
 
-    title: str
+    title: str = ""
 
-    problem: str
+    problem: str = ""
 
-    solution: str
+    solution: str = ""
 
     difficulty: str = "Medium"
+
+    concept_ids: List[str] = field(default_factory=list)
+
+    section_id: str = ""
 
 
 # ============================================================

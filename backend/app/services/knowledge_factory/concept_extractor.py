@@ -19,6 +19,7 @@ Consumes SectionParser output.
 
 from __future__ import annotations
 
+from collections import Counter
 import re
 
 from app.services.knowledge_factory.chapter_models import (
@@ -47,6 +48,69 @@ class ConceptExtractor:
         flags=re.IGNORECASE,
     )
 
+    _EXAMPLE_PATTERN = re.compile(
+        r"^(?:#{1,6}\s+)?"
+        r"(?:solved\s+example|worked\s+example|example|illustration)\b",
+        flags=re.IGNORECASE,
+    )
+
+    _ALIAS_PATTERN = re.compile(
+        r"\b(?:also\s+called|called|known\s+as|abbreviated\s+as)\s+"
+        r"([A-Za-z][A-Za-z0-9\s\-]{2,80})",
+        flags=re.IGNORECASE,
+    )
+
+    _PREREQUISITE_PATTERN = re.compile(
+        r"\b(?:using|recall|as\s+learned\s+in|previously\s+studied|based\s+on)\s+"
+        r"([A-Za-z][A-Za-z0-9\s\-]{2,80})",
+        flags=re.IGNORECASE,
+    )
+
+    _STOPWORDS = {
+        "about",
+        "above",
+        "after",
+        "again",
+        "also",
+        "another",
+        "because",
+        "been",
+        "before",
+        "being",
+        "between",
+        "called",
+        "chapter",
+        "does",
+        "each",
+        "every",
+        "example",
+        "from",
+        "given",
+        "have",
+        "into",
+        "learned",
+        "matrix",
+        "more",
+        "only",
+        "other",
+        "same",
+        "section",
+        "should",
+        "such",
+        "than",
+        "that",
+        "their",
+        "there",
+        "these",
+        "this",
+        "through",
+        "under",
+        "using",
+        "where",
+        "which",
+        "with",
+    }
+
     def extract(
         self,
         chapter: ChapterKnowledge,
@@ -55,6 +119,9 @@ class ConceptExtractor:
         concepts: list[Concept] = []
 
         seen: set[str] = set()
+
+        for section in chapter.sections:
+            section.concept_ids = []
 
         for section in chapter.sections:
 
@@ -87,76 +154,434 @@ class ConceptExtractor:
 
             seen.add(slug)
 
-            description = self._first_paragraph(section.content)
-
-            concepts.append(
-                Concept(
-                    concept_id=slug,
-                    title=title,
-                    section_id=section.section_id,
-                    section_number=section.number,
-                    description=description,
-                    keywords=self._keywords(title),
-                )
+            description = self._first_meaningful_paragraph(
+                section.content
             )
+
+            concept = Concept(
+                concept_id=slug,
+                title=title,
+                section_id=section.section_id,
+                section_number=section.number,
+                chapter_id=chapter.metadata.chapter_id,
+                curriculum_id=chapter.metadata.curriculum_id,
+                description=description,
+                keywords=self._keywords(
+                    title,
+                    section.content,
+                ),
+                aliases=self._aliases(
+                    title,
+                    section.content,
+                ),
+                prerequisites=self._prerequisites(
+                    section.content,
+                ),
+                examples=self._examples(
+                    section.content,
+                ),
+            )
+
+            concepts.append(concept)
+
+            section.concept_ids.append(concept.concept_id)
 
         chapter.concepts = concepts
 
         return chapter
 
-    @staticmethod
-    def _first_paragraph(text: str) -> str:
+    def _first_meaningful_paragraph(self, text: str) -> str:
         """
-        Returns the first non-empty paragraph.
+        Returns the first non-empty non-heading non-example paragraph.
         """
 
         if not text:
             return ""
 
-        cleaned = re.sub(
-            r"<!--.*?-->",
-            "",
-            text,
-            flags=re.DOTALL,
-        )
-
-        cleaned = re.sub(
-            r"={5,}",
-            "",
-            cleaned,
-        )
-
-        paragraphs = []
-
-        for paragraph in cleaned.split("\n\n"):
+        for paragraph in self._paragraph_blocks(text):
             paragraph = paragraph.strip()
 
             if not paragraph:
                 continue
 
-            if paragraph.startswith("#"):
+            if self._is_heading(paragraph):
                 continue
 
-            paragraphs.append(paragraph)
+            if self._is_example(paragraph):
+                continue
 
-        if not paragraphs:
-            return ""
+            if self._is_noise(paragraph):
+                continue
 
-        return paragraphs[0]
+            return self._clean_inline_markdown(paragraph)
 
-    @staticmethod
-    def _keywords(text: str) -> list[str]:
+        return ""
 
-        words = re.findall(
-            r"[A-Za-z][A-Za-z0-9-]*",
-            text.lower(),
+    def _keywords(
+        self,
+        title: str,
+        content: str,
+    ) -> list[str]:
+
+        candidates: list[str] = []
+
+        candidates.extend(
+            self._formatted_terms(content)
         )
+
+        candidates.extend(
+            self._math_identifiers(content)
+        )
+
+        candidates.extend(
+            self._repeated_terms(
+                f"{title}\n\n{content}"
+            )
+        )
+
+        return self._unique(
+            self._normalize_term(term)
+            for term in candidates
+            if self._normalize_term(term)
+        )
+
+    def _aliases(
+        self,
+        title: str,
+        content: str,
+    ) -> list[str]:
+
+        aliases: list[str] = []
+
+        aliases.extend(
+            re.findall(
+                r"\(([^()]{3,80})\)",
+                f"{title}\n{content}",
+            )
+        )
+
+        for match in self._ALIAS_PATTERN.finditer(content):
+            aliases.extend(
+                self._split_alias_phrase(match.group(1))
+            )
+
+        aliases.extend(
+            re.findall(
+                r"\bor\s+([A-Z][A-Za-z0-9\s\-]{2,60})",
+                content,
+            )
+        )
+
+        return self._unique(
+            self._normalize_term(term)
+            for term in aliases
+            if self._normalize_term(term)
+        )
+
+    def _split_alias_phrase(
+        self,
+        phrase: str,
+    ) -> list[str]:
+
+        return [
+            part.strip()
+            for part in re.split(
+                r"\s+(?:or|and)\s+|[,;/]",
+                phrase,
+            )
+            if part.strip()
+        ]
+
+    def _prerequisites(
+        self,
+        content: str,
+    ) -> list[str]:
+
+        return self._unique(
+            self._normalize_term(match.group(1))
+            for match in self._PREREQUISITE_PATTERN.finditer(content)
+            if self._normalize_term(match.group(1))
+        )
+
+    def _examples(
+        self,
+        content: str,
+    ) -> list[str]:
+
+        examples: list[str] = []
+
+        lines = content.splitlines()
+
+        index = 0
+
+        while index < len(lines):
+            line = lines[index]
+
+            if not self._EXAMPLE_PATTERN.match(line.strip()):
+                index += 1
+                continue
+
+            block = [line.rstrip()]
+
+            index += 1
+
+            while index < len(lines):
+                next_line = lines[index]
+                stripped = next_line.strip()
+
+                if stripped.startswith("#"):
+                    break
+
+                if (
+                    stripped
+                    and self._EXAMPLE_PATTERN.match(stripped)
+                    and any(item.strip() for item in block)
+                ):
+                    break
+
+                block.append(next_line.rstrip())
+
+                index += 1
+
+            examples.append(
+                "\n".join(block).strip()
+            )
+
+        return self._unique(examples)
+
+    def _formatted_terms(
+        self,
+        content: str,
+    ) -> list[str]:
+
+        terms: list[str] = []
+
+        patterns = (
+            r"\*\*([^*\n][^*\n]+?)\*\*",
+            r"__([^_\n][^_\n]+?)__",
+            r"(?<!\*)\*([^*\n][^*\n]+?)\*(?!\*)",
+            r"(?<!_)_([^_\n][^_\n]+?)_(?!_)",
+        )
+
+        for pattern in patterns:
+            terms.extend(
+                re.findall(
+                    pattern,
+                    content,
+                )
+            )
+
+        return terms
+
+    def _math_identifiers(
+        self,
+        content: str,
+    ) -> list[str]:
+
+        identifiers: list[str] = []
+
+        for expression in re.findall(r"\$([^$]+)\$", content):
+            identifiers.extend(
+                re.findall(
+                    r"[A-Za-z][A-Za-z0-9_]*",
+                    expression,
+                )
+            )
+
+        identifiers.extend(
+            re.findall(
+                r"\b[A-Z](?:\^\{?\d+\}?|_\{?[A-Za-z0-9]+\}?)?\b",
+                content,
+            )
+        )
+
+        return identifiers
+
+    def _repeated_terms(
+        self,
+        text: str,
+    ) -> list[str]:
+
+        words = [
+            word.lower()
+            for word in re.findall(
+                r"[A-Za-z][A-Za-z0-9-]*",
+                text,
+            )
+            if self._is_keyword_candidate(word)
+        ]
+
+        counts = Counter(words)
 
         return [
             word
-            for word in words
-            if len(word) > 2
+            for word, count in counts.items()
+            if count > 1
         ]
+
+    def _paragraph_blocks(
+        self,
+        text: str,
+        clean: bool = True,
+    ) -> list[str]:
+
+        source = text
+
+        if clean:
+            source = re.sub(
+                r"<!--.*?-->",
+                "",
+                source,
+                flags=re.DOTALL,
+            )
+
+            source = re.sub(
+                r"={5,}",
+                "",
+                source,
+            )
+
+        return [
+            block.strip()
+            for block in re.split(
+                r"\n\s*\n",
+                source,
+            )
+            if block.strip()
+        ]
+
+    def _is_keyword_candidate(
+        self,
+        word: str,
+    ) -> bool:
+
+        normalized = word.lower()
+
+        return (
+            len(normalized) > 3
+            and normalized not in self._STOPWORDS
+        )
+
+    def _is_heading(
+        self,
+        paragraph: str,
+    ) -> bool:
+
+        first_line = paragraph.strip().splitlines()[0].strip()
+
+        return first_line.startswith("#")
+
+    def _is_example(
+        self,
+        paragraph: str,
+    ) -> bool:
+
+        first_line = paragraph.strip().splitlines()[0].strip()
+
+        return bool(self._EXAMPLE_PATTERN.match(first_line))
+
+    @staticmethod
+    def _is_noise(paragraph: str) -> bool:
+
+        stripped = paragraph.strip()
+
+        if not stripped:
+            return True
+
+        return bool(re.fullmatch(r"[-=_\s]+", stripped))
+
+    def _normalize_term(
+        self,
+        term: str,
+    ) -> str:
+
+        term = self._clean_inline_markdown(term)
+
+        term = re.split(
+            r"[.;,\n:]",
+            term,
+            maxsplit=1,
+        )[0]
+
+        term = re.sub(
+            r"\s+",
+            " ",
+            term,
+        ).strip()
+
+        term = term.strip("()[]{}")
+
+        term = re.sub(
+            r"^(?:the|a|an)\s+",
+            "",
+            term,
+            flags=re.IGNORECASE,
+        )
+
+        if not term:
+            return ""
+
+        if term.lower() in self._STOPWORDS:
+            return ""
+
+        return term
+
+    @staticmethod
+    def _clean_inline_markdown(text: str) -> str:
+
+        cleaned = re.sub(
+            r"`([^`]+)`",
+            r"\1",
+            text,
+        )
+
+        cleaned = re.sub(
+            r"\*\*([^*]+)\*\*",
+            r"\1",
+            cleaned,
+        )
+
+        cleaned = re.sub(
+            r"__([^_]+)__",
+            r"\1",
+            cleaned,
+        )
+
+        cleaned = re.sub(
+            r"(?<!\*)\*([^*]+)\*(?!\*)",
+            r"\1",
+            cleaned,
+        )
+
+        cleaned = re.sub(
+            r"(?<!_)_([^_]+)_(?!_)",
+            r"\1",
+            cleaned,
+        )
+
+        return cleaned.strip()
+
+    @staticmethod
+    def _unique(values) -> list[str]:
+
+        seen: set[str] = set()
+
+        unique_values: list[str] = []
+
+        for value in values:
+            if not value:
+                continue
+
+            key = value.casefold()
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+
+            unique_values.append(value)
+
+        return unique_values
 
     @staticmethod
     def _slug(text: str) -> str:

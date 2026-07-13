@@ -11,6 +11,15 @@ from app.services.knowledge_factory.chapter_firestore_writer import (
 from app.services.knowledge_factory.concept_extractor import (
     ConceptExtractor,
 )
+from app.services.knowledge_factory.formula_extractor import (
+    FormulaExtractor,
+)
+from app.services.knowledge_factory.example_extractor import (
+    ExampleExtractor,
+)
+from app.services.knowledge_factory.syllabus_curriculum_linker import (
+    SyllabusCurriculumLinker,
+)
 
 
 
@@ -24,7 +33,9 @@ class ChapterImporter:
     2. Parse chapter metadata
     3. Parse sections
     4. Extract concepts
-    5. Persist chapter knowledge
+    5. Extract formulas
+    6. Extract examples
+    7. Persist chapter knowledge
     """
 
     def __init__(self) -> None:
@@ -37,7 +48,13 @@ class ChapterImporter:
 
         self.concept_extractor = ConceptExtractor()
 
+        self.formula_extractor = FormulaExtractor()
+
+        self.example_extractor = ExampleExtractor()
+
         self.writer = ChapterFirestoreWriter()
+
+        self.syllabus_linker = SyllabusCurriculumLinker()
         
     def import_pdf(
         self,
@@ -105,6 +122,34 @@ class ChapterImporter:
         )
 
         #
+        # Formulas
+        #
+
+        chapter = self.formula_extractor.extract(
+            chapter
+        )
+
+        print()
+
+        print(
+            f"Formulas extracted: {len(chapter.formulas)}"
+        )
+
+        #
+        # Examples
+        #
+
+        chapter = self.example_extractor.extract(
+            chapter
+        )
+
+        print()
+
+        print(
+            f"Examples extracted: {len(chapter.examples)}"
+        )
+
+        #
         # Save
         #
 
@@ -112,8 +157,16 @@ class ChapterImporter:
             chapter
         )
 
+        linked_topics = self.syllabus_linker.link_chapter(
+            chapter
+        )
+
         print()
 
         print("Firestore write completed.")
+
+        print(
+            f"Syllabus topics linked: {linked_topics}"
+        )
 
         return curriculum_id
