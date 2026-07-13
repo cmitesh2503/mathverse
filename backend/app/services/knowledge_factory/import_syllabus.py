@@ -2,7 +2,12 @@ from pathlib import Path
 import json
 
 from app.services.knowledge_factory.syllabus_parser import SyllabusParser
-from app.services.knowledge_factory.firestore_writer import FirestoreWriter
+from app.services.knowledge_factory.syllabus_firestore_writer import (
+    SyllabusFirestoreWriter,
+)
+from app.services.knowledge_factory.syllabus_curriculum_linker import (
+    SyllabusCurriculumLinker,
+)
 
 
 import sys
@@ -28,17 +33,22 @@ def main():
 
     parser = SyllabusParser()
 
-    curriculum = parser.parse(azure_json)
+    syllabus = parser.parse(azure_json, source_path=str(json_path))
 
-    writer = FirestoreWriter()
+    linker = SyllabusCurriculumLinker()
 
-    writer.save_curriculum(curriculum)
+    syllabus = linker.link_syllabus(syllabus)
+
+    writer = SyllabusFirestoreWriter()
+
+    writer.save(syllabus)
 
     print()
     print("Import completed successfully.")
-    print(f"Exam      : {curriculum.exam}")
-    print(f"Subject   : {curriculum.subject}")
-    print(f"Chapters  : {len(curriculum.chapters)}")
+    print(f"Board     : {syllabus.board}")
+    print(f"Grade     : {syllabus.grade}")
+    print(f"Subject   : {syllabus.subject}")
+    print(f"Chapters  : {len(syllabus.chapters)}")
 
 
 if __name__ == "__main__":

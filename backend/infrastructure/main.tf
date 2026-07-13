@@ -752,7 +752,7 @@ resource "google_cloudfunctions2_function" "knowledge_compiler" {
 
     event_filters {
       attribute = "bucket"
-      value     = google_storage_bucket.jee_assets.name
+      value     = google_storage_bucket.content_bucket.name
     }
 
   }

@@ -35,6 +35,10 @@ def get_compiler():
 
 SUPPORTED_FOLDERS = (
 
+    "curriculum/",
+
+    "syllabus/",
+
     "raw-pdfs/",
 
 )
@@ -67,10 +71,12 @@ def process_knowledge_document(event, context):
 
         return
 
-    if not blob_name.lower().endswith(".pdf"):
+    if not is_supported_document(
+        blob_name
+    ):
 
         logger.info(
-            "Ignoring non-PDF file."
+            "Ignoring unsupported document type."
         )
 
         return
@@ -81,6 +87,17 @@ def process_knowledge_document(event, context):
 
         logger.info(
             f"Ignoring unsupported folder: {blob_name}"
+        )
+
+        return
+
+    if is_misplaced_syllabus(
+        blob_name
+    ):
+
+        logger.warning(
+            "Ignoring syllabus PDF uploaded under curriculum/. "
+            "Upload syllabus PDFs under syllabus/."
         )
 
         return
@@ -140,9 +157,41 @@ def get_document_type(
     blob_name: str
 ) -> str:
 
+    if blob_name.startswith("curriculum/"):
+        return "curriculum"
+
+    if blob_name.startswith("syllabus/"):
+        return "syllabus"
+
     if blob_name.startswith(
         "raw-pdfs/"
     ):
         return "jee_raw_pdf"
 
     return "unknown"
+
+
+def is_misplaced_syllabus(
+    blob_name: str
+) -> bool:
+
+    return (
+        blob_name.startswith("curriculum/")
+        and Path(blob_name).name.lower().startswith("syllabus")
+    )
+
+
+def is_supported_document(
+    blob_name: str
+) -> bool:
+
+    suffix = Path(blob_name).suffix.lower()
+
+    if blob_name.startswith("syllabus/"):
+        return suffix in {
+            ".pdf",
+            ".odf",
+            ".odt",
+        }
+
+    return suffix == ".pdf"

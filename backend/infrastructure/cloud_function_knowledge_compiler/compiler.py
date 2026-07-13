@@ -9,6 +9,9 @@ from google.cloud import storage
 from app.services.knowledge_factory.chapter_importer import (
     ChapterImporter,
 )
+from app.services.knowledge_factory.syllabus_importer import (
+    SyllabusImporter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +22,13 @@ class KnowledgeCompiler:
 
         self.storage = storage.Client()
 
-        self.importer = ChapterImporter()
+        self.chapter_importer = ChapterImporter()
+
+        self.syllabus_importer = SyllabusImporter()
+
+        # Backward-compatible alias for any direct callers that still access
+        # KnowledgeCompiler.importer.
+        self.importer = self.chapter_importer
 
     def compile(
         self,
@@ -45,9 +54,10 @@ class KnowledgeCompiler:
 
         try:
 
-            curriculum_id = self.importer.import_pdf(
+            import_result = self._import_document(
                 pdf_file,
-                output_root=pdf_file.parent,
+                blob_name,
+                document_type,
             )
 
         finally:
@@ -69,13 +79,49 @@ class KnowledgeCompiler:
 
             "document_type": document_type,
 
-            "curriculum_id": curriculum_id,
-
             "started": started.isoformat(),
 
             "completed": finished.isoformat(),
 
+            **import_result,
+
         }
+
+    def _import_document(
+        self,
+        pdf_file: Path,
+        blob_name: str,
+        document_type: str,
+    ) -> dict:
+
+        normalized_type = (document_type or "").lower()
+
+        if normalized_type == "syllabus":
+
+            syllabus_id = self.syllabus_importer.import_document(
+                pdf_file,
+                source_path=blob_name,
+                output_root=pdf_file.parent,
+            )
+
+            return {
+                "syllabus_id": syllabus_id,
+            }
+
+        if normalized_type in {"curriculum", "jee_raw_pdf"}:
+
+            curriculum_id = self.chapter_importer.import_pdf(
+                pdf_file,
+                output_root=pdf_file.parent,
+            )
+
+            return {
+                "curriculum_id": curriculum_id,
+            }
+
+        raise ValueError(
+            f"Unsupported document_type={document_type!r} for {blob_name}"
+        )
 
     def _download_pdf(
         self,

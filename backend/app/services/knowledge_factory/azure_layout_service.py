@@ -27,6 +27,10 @@ from azure.ai.documentintelligence import DocumentIntelligenceClient
 from azure.core.credentials import AzureKeyCredential
 
 from app.core import config
+from app.services.knowledge_factory.text_sanitizer import (
+    sanitize_json_value,
+    sanitize_text,
+)
 
 
 class AzureLayoutService:
@@ -46,11 +50,20 @@ class AzureLayoutService:
     def analyze(
         self,
         pdf_file: str | Path,
+        output_dir: str | Path | None = None,
     ) -> dict[str, Any]:
 
         pdf_file = Path(pdf_file)
 
-        output_dir = pdf_file.parent
+        output_dir = (
+            Path(output_dir)
+            if output_dir is not None
+            else pdf_file.parent
+        )
+        output_dir.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
 
         json_file = output_dir / f"{pdf_file.stem}.json"
 
@@ -66,9 +79,15 @@ class AzureLayoutService:
 
         result = poller.result()
 
-        markdown = result.content or ""
+        raw_json = sanitize_json_value(
+            result.as_dict()
+        )
 
-        raw_json = result.as_dict()
+        markdown = raw_json.get("content")
+        if not isinstance(markdown, str):
+            markdown = sanitize_text(
+                result.content or ""
+            )
 
         #
         # Save Markdown

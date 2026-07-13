@@ -5,11 +5,12 @@ from pathlib import Path
 
 
 @dataclass(slots=True)
-class ChapterPipelineResult:
+class DocumentPipelineResult:
     """
-    Output of the PDF-to-markdown pipeline.
+    Output of document processing pipelines.
 
-    JSON remains per chunk. Downstream parsers read only merged markdown.
+    Chapter importers read merged markdown. Syllabus PDF importers read Azure
+    Layout JSON when json_files are present.
     """
 
     markdown: str
@@ -21,3 +22,6 @@ class ChapterPipelineResult:
     markdown_files: list[Path]
 
     json_files: list[Path]
+
+
+ChapterPipelineResult = DocumentPipelineResult
