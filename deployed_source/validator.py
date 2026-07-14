@@ -38,6 +38,47 @@ class Validator:
                         f"Concept missing in {chapter.name}"
                     )
 
+            for formula in chapter.formulas:
+
+                if not formula.latex:
+                    errors.append(
+                        f"Formula latex missing in {chapter.name}"
+                    )
+
+                if not formula.chapter_id:
+                    errors.append(
+                        f"Formula chapter_id missing in {chapter.name}"
+                    )
+
+            for example in chapter.examples:
+
+                if not example.problem:
+                    errors.append(
+                        f"Example problem missing in {chapter.name}"
+                    )
+
+                if not example.solution:
+                    errors.append(
+                        f"Example solution missing in {chapter.name}"
+                    )
+
+                if not example.chapter_id:
+                    errors.append(
+                        f"Example chapter_id missing in {chapter.name}"
+                    )
+
+            for exercise in chapter.exercises:
+
+                if not exercise.question:
+                    errors.append(
+                        f"Exercise question missing in {chapter.name}"
+                    )
+
+                if not exercise.chapter_id:
+                    errors.append(
+                        f"Exercise chapter_id missing in {chapter.name}"
+                    )
+
         return ValidationResult(
             valid=len(errors) == 0,
             errors=errors

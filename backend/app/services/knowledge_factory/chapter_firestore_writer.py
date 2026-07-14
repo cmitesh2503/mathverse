@@ -69,6 +69,8 @@ class ChapterFirestoreWriter:
 
         metadata["example_count"] = len(chapter.examples)
 
+        metadata["figure_count"] = len(chapter.figures)
+
         chapter_ref.set(metadata)
 
         self._write_collection(
@@ -97,6 +99,13 @@ class ChapterFirestoreWriter:
             "examples",
             chapter.examples,
             "example_id",
+        )
+
+        self._write_collection(
+            chapter_ref,
+            "figures",
+            chapter.figures,
+            "figure_id",
         )
 
         return chapter.metadata.curriculum_id

@@ -17,6 +17,9 @@ from app.services.knowledge_factory.formula_extractor import (
 from app.services.knowledge_factory.example_extractor import (
     ExampleExtractor,
 )
+from app.services.knowledge_factory.figure_extractor import (
+    FigureExtractor,
+)
 from app.services.knowledge_factory.syllabus_curriculum_linker import (
     SyllabusCurriculumLinker,
 )
@@ -51,6 +54,8 @@ class ChapterImporter:
         self.formula_extractor = FormulaExtractor()
 
         self.example_extractor = ExampleExtractor()
+
+        self.figure_extractor = FigureExtractor()
 
         self.writer = ChapterFirestoreWriter()
 
@@ -147,6 +152,20 @@ class ChapterImporter:
 
         print(
             f"Examples extracted: {len(chapter.examples)}"
+        )
+
+        #
+        # Figures
+        #
+
+        chapter = self.figure_extractor.extract(
+            chapter
+        )
+
+        print()
+
+        print(
+            f"Figures extracted: {len(chapter.figures)}"
         )
 
         #

@@ -219,11 +219,25 @@ class PYQ:
 class Figure:
     figure_id: str
 
-    caption: str
+    caption: str = ""
 
-    image_path: str
+    image_path: str = ""
 
     description: str = ""
+
+    reference: str = ""
+
+    image_ref: str = ""
+
+    figure_type: str = "figure"
+
+    section_id: str = ""
+
+    chapter_id: str = ""
+
+    curriculum_id: str = ""
+
+    concept_ids: List[str] = field(default_factory=list)
 
 
 # ============================================================
