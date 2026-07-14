@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Dict, Optional
 from pydantic import BaseModel, Field
 
 class Concept(BaseModel):
@@ -12,7 +12,96 @@ class Concept(BaseModel):
     order: int
 
     prerequisites: List[str] = Field(default_factory=list)
-    
+
+
+class Formula(BaseModel):
+
+    id: str
+
+    chapter_id: str
+
+    order: int
+
+    latex: str
+
+    variables: List[str] = Field(default_factory=list)
+
+    description: str = ""
+
+    meaning: str = ""
+
+    concept_ids: List[str] = Field(default_factory=list)
+
+
+class Example(BaseModel):
+
+    id: str
+
+    chapter_id: str
+
+    order: int
+
+    title: str
+
+    problem: str
+
+    solution: str
+
+    difficulty: str = "Medium"
+
+    concept_ids: List[str] = Field(default_factory=list)
+
+
+class Exercise(BaseModel):
+
+    id: str
+
+    chapter_id: str
+
+    order: int
+
+    title: str = ""
+
+    source: str = ""
+
+    question: str
+
+    question_type: str = "question"
+
+    options: List[str] = Field(default_factory=list)
+
+    answer: str = ""
+
+    marks: Optional[int] = None
+
+    difficulty: str = "Medium"
+
+    concept_ids: List[str] = Field(default_factory=list)
+
+
+class Figure(BaseModel):
+
+    id: str
+
+    chapter_id: str
+
+    order: int
+
+    reference: str = ""
+
+    caption: str = ""
+
+    image_ref: str = ""
+
+    image_path: str = ""
+
+    description: str = ""
+
+    figure_type: str = "figure"
+
+    concept_ids: List[str] = Field(default_factory=list)
+
+
 class Chapter(BaseModel):
 
     id: str
@@ -22,6 +111,14 @@ class Chapter(BaseModel):
     order: int
 
     concepts: List[Concept] = Field(default_factory=list)
+
+    formulas: List[Formula] = Field(default_factory=list)
+
+    examples: List[Example] = Field(default_factory=list)
+
+    exercises: List[Exercise] = Field(default_factory=list)
+
+    figures: List[Figure] = Field(default_factory=list)
 
 
 class ChapterMetadata(BaseModel):

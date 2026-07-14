@@ -1,5 +1,9 @@
 from curriculum_extractor import CurriculumExtractor
 from concept_extractor import ConceptExtractor
+from formula_extractor import FormulaExtractor
+from example_extractor import ExampleExtractor
+from exercise_extractor import ExerciseExtractor
+from figure_extractor import FigureExtractor
 from validator import Validator
 from graph_builder import GraphBuilder
 from firestore_writer import FirestoreWriter
@@ -11,6 +15,10 @@ class KnowledgePipeline:
 
         self.curriculum = CurriculumExtractor()
         self.concepts = ConceptExtractor()
+        self.formulas = FormulaExtractor()
+        self.examples = ExampleExtractor()
+        self.exercises = ExerciseExtractor()
+        self.figures = FigureExtractor()
 
         self.validator = Validator()
         self.graph = GraphBuilder()
@@ -30,7 +38,7 @@ class KnowledgePipeline:
             document_text
         )
 
-        for chapter in curriculum.chapters:
+        for index, chapter in enumerate(curriculum.chapters):
 
             updated = self.concepts.extract(
                 chapter,
@@ -38,6 +46,43 @@ class KnowledgePipeline:
             )
 
             chapter.concepts = updated.concepts
+
+            next_chapter = None
+
+            if index + 1 < len(curriculum.chapters):
+                next_chapter = curriculum.chapters[index + 1]
+
+            updated = self.formulas.extract(
+                chapter,
+                document_text,
+                next_chapter=next_chapter,
+            )
+
+            chapter.formulas = updated.formulas
+
+            updated = self.examples.extract(
+                chapter,
+                document_text,
+                next_chapter=next_chapter,
+            )
+
+            chapter.examples = updated.examples
+
+            updated = self.exercises.extract(
+                chapter,
+                document_text,
+                next_chapter=next_chapter,
+            )
+
+            chapter.exercises = updated.exercises
+
+            updated = self.figures.extract(
+                chapter,
+                document_text,
+                next_chapter=next_chapter,
+            )
+
+            chapter.figures = updated.figures
 
         validation = self.validator.validate(
             curriculum
@@ -55,6 +100,22 @@ class KnowledgePipeline:
         )
         
         self.firestore.save_concepts(
+            curriculum
+        )
+
+        self.firestore.save_formulas(
+            curriculum
+        )
+
+        self.firestore.save_examples(
+            curriculum
+        )
+
+        self.firestore.save_exercises(
+            curriculum
+        )
+
+        self.firestore.save_figures(
             curriculum
         )
 
