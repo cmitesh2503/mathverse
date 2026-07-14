@@ -15,8 +15,22 @@ class SyllabusTopic:
     title: str
     subtopics: list[str] = field(default_factory=list)
     curriculum_chapter_id: str = ""
+    link_confidence: float = 0.0
+    link_method: str = ""
     curriculum_section_ids: list[str] = field(default_factory=list)
     curriculum_concept_ids: list[str] = field(default_factory=list)
+    curriculum_id: str | None = None
+
+    curriculum_chapter_id: str | None = None
+
+    section_ids: list[str] = field(
+       default_factory=list
+    )
+
+    concept_ids: list[str] = field(
+       default_factory=list
+    )
+    
 
 
 @dataclass

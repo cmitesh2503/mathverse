@@ -51,3 +51,16 @@ class FirestoreWriter:
             f"Imported {len(curriculum.chapters)} chapters "
             f"into {curriculum.curriculum_id}"
         )
+        
+    def get_curriculum(
+        self,
+        subject: str,
+    ):
+        """
+        Load the latest curriculum
+        for linking.
+        """
+
+        return self.curriculum_loader.load(
+            subject,
+        ) 

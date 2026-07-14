@@ -175,10 +175,25 @@ class SyllabusCurriculumLinker:
         topic: SyllabusTopic,
         curriculum_chapter: CurriculumChapterRecord | None,
     ) -> None:
+
         if curriculum_chapter is None:
+
+            topic.curriculum_id = ""
+
             topic.curriculum_chapter_id = ""
+
             topic.curriculum_section_ids = []
+
             topic.curriculum_concept_ids = []
+
+            topic.link_confidence = 0.0
+
+            topic.link_method = "unmatched"
+
+            print(
+                f"[KnowledgeLinker] No curriculum match: {topic.title}"
+            )
+
             return
 
         payload = self._topic_link_payload(
@@ -186,16 +201,22 @@ class SyllabusCurriculumLinker:
             curriculum_chapter,
         )
 
-        topic.curriculum_chapter_id = str(
-            payload["curriculum_chapter_id"]
-        )
+        topic.curriculum_id = payload["curriculum_id"]
+
+        topic.curriculum_chapter_id = payload["curriculum_chapter_id"]
+
         topic.curriculum_section_ids = list(
             payload["curriculum_section_ids"]
         )
+
         topic.curriculum_concept_ids = list(
             payload["curriculum_concept_ids"]
         )
 
+        topic.link_confidence = payload["link_confidence"]
+
+        topic.link_method = payload["link_method"]
+    
     def _topic_link_payload(
         self,
         topic: SyllabusTopic,
@@ -212,9 +233,12 @@ class SyllabusCurriculumLinker:
         )
 
         return {
+            "curriculum_id": curriculum_chapter.curriculum_id,
             "curriculum_chapter_id": curriculum_chapter.chapter_id,
             "curriculum_section_ids": section_ids,
             "curriculum_concept_ids": concept_ids,
+            "link_confidence": 1.0,
+            "link_method": "automatic",
         }
 
     def _has_links(

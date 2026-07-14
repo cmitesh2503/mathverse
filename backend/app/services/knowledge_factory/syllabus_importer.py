@@ -13,6 +13,9 @@ from app.services.knowledge_factory.syllabus_curriculum_linker import (
 )
 from app.services.knowledge_factory.syllabus_parser import SyllabusParser
 from app.services.knowledge_factory.syllabus_pipeline import SyllabusPipeline
+from app.services.knowledge_factory.knowledge_linker import (
+    KnowledgeLinker,
+)
 
 
 class SyllabusImporter:
@@ -29,8 +32,8 @@ class SyllabusImporter:
     def __init__(self) -> None:
         self.pipeline = SyllabusPipeline()
         self.parser = SyllabusParser()
-        self.linker = SyllabusCurriculumLinker()
         self.writer = SyllabusFirestoreWriter()
+        self.linker = KnowledgeLinker()
 
     def import_document(
         self,
