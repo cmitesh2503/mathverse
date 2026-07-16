@@ -4,12 +4,13 @@ import asyncio
 import base64
 import contextlib
 import json
-import os
+import logging
 import random
 import re
 import time
 from functools import lru_cache
 from typing import Any
+
 from app.core import config
 
 # Production/ADC-first configuration: do not automatically load .env files here.
@@ -24,6 +25,8 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     ResourceExhausted = None
 
+
+logger = logging.getLogger(__name__)
 
 # GEMINI_API_KEY is not required in production when using ADC/Vertex AI.
 # Keep as None to avoid code paths that expect an explicit key.
@@ -147,9 +150,9 @@ def _is_transient_error(error: Exception) -> bool:
     """Detects temporarily overloaded service and transient back-end connection anomalies."""
     message = str(error).lower()
     return (
-        "503" in message 
-        or "unavailable" in message 
-        or "high demand" in message 
+        "503" in message
+        or "unavailable" in message
+        or "high demand" in message
         or "overloaded" in message
     )
 
@@ -158,10 +161,10 @@ def _handle_generation_error(error: Exception, *, source: str, prompt: str) -> s
     if _is_quota_error(error):
         fallback = _fallback_json()
         set_cache(prompt, fallback)
-        print(f"{source} quota exhausted; returning safe fallback response.")
+        logger.warning("%s quota exhausted; returning safe fallback response.", source)
         return fallback
 
-    print(f"{source} error: {error}")
+    logger.exception("%s error", source, exc_info=error)
     return None
 
 
@@ -169,6 +172,7 @@ def _handle_generation_error(error: Exception, *, source: str, prompt: str) -> s
 def _has_adc_credentials() -> bool:
     try:
         import google.auth
+
         credentials, _ = google.auth.default()
         return credentials is not None
     except Exception:
@@ -178,16 +182,40 @@ def _has_adc_credentials() -> bool:
 def _has_active_auth() -> bool:
     return _has_adc_credentials()
 
-def generate_image_response(
-    prompt,
-    image_bytes
-):    client = _new_sdk_client()
-  
+
+def generate_image_response(prompt, image_bytes):
+    client = _new_sdk_client()
+    return client
+
+
+def _extract_json_payload(text: str) -> str:
+    candidate = (text or "").strip()
+    if not candidate:
+        return ""
+
+    fenced = re.search(r"```(?:json)?\s*(.*?)\s*```", candidate, re.DOTALL | re.IGNORECASE)
+    if fenced:
+        candidate = fenced.group(1).strip()
+
+    first_obj = candidate.find("{")
+    last_obj = candidate.rfind("}")
+    if first_obj != -1 and last_obj != -1 and last_obj > first_obj:
+        candidate = candidate[first_obj : last_obj + 1]
+
+    return candidate.strip()
+
+
+def _parse_structured_response(text: str) -> dict[str, Any]:
+    payload = _extract_json_payload(text)
+    if not payload:
+        raise ValueError("Empty structured response payload")
+    return json.loads(payload)
+
 
 def generate_response(
-    prompt: str, 
-    model: str = DEFAULT_TEXT_MODEL, 
-    response_schema: Any = None
+    prompt: str,
+    model: str = DEFAULT_TEXT_MODEL,
+    response_schema: Any = None,
 ) -> str:
     """
     Primary completion gateway. Implements up to 5 automatic retry turns with
@@ -215,19 +243,16 @@ def generate_response(
             from google.genai import types
 
             if response_schema:
-
                 config = types.GenerateContentConfig(
                     temperature=0.0,
                     response_mime_type="application/json",
                     response_schema=response_schema,
                 )
-
             else:
-
                 config = types.GenerateContentConfig(
-                    temperature=0.0
+                    temperature=0.0,
                 )
-            
+
             for attempt in range(max_retries):
                 try:
                     response = client.models.generate_content(model=model_id, contents=prompt, config=config)
@@ -242,10 +267,15 @@ def generate_response(
                             with contextlib.suppress(ValueError):
                                 requested_delay = float(retry_match.group(1))
                                 if requested_delay > 15.0:
-                                    print(f"⚠️ Requested retry delay ({requested_delay}s) is too long. Failing fast to fallback.")
+                                    logger.warning("Requested retry delay (%ss) is too long. Failing fast to fallback.", requested_delay)
                                     raise err
                                 delay = requested_delay + 1.0
-                        print(f"⚠️ Primary GenAI Client experiencing high demand (503/429). Retrying in {delay:.2f}s... (Attempt {attempt + 1}/{max_retries})")
+                        logger.warning(
+                            "Primary GenAI Client experiencing high demand (503/429). Retrying in %.2fs... (Attempt %s/%s)",
+                            delay,
+                            attempt + 1,
+                            max_retries,
+                        )
                         time.sleep(delay)
                         continue
                     raise err
@@ -262,13 +292,13 @@ def generate_response(
                 legacy_genai = _legacy_genai_module()
                 legacy_model = legacy_genai.GenerativeModel(model_id)
                 gen_config = {
-                    "temperature": 0.0
+                    "temperature": 0.0,
                 }
 
                 if response_schema:
                     gen_config["response_mime_type"] = "application/json"
                     gen_config["response_schema"] = response_schema
-                
+
                 for attempt in range(max_retries):
                     try:
                         response = legacy_model.generate_content(
@@ -287,10 +317,15 @@ def generate_response(
                                 with contextlib.suppress(ValueError):
                                     requested_delay = float(retry_match.group(1))
                                     if requested_delay > 15.0:
-                                        print(f"⚠️ Requested retry delay ({requested_delay}s) is too long. Failing fast to fallback.")
+                                        logger.warning("Requested retry delay (%ss) is too long. Failing fast to fallback.", requested_delay)
                                         raise err
                                     delay = requested_delay + 1.0
-                            print(f"⚠️ Legacy Gemini Client experiencing high demand (503/429). Retrying in {delay:.2f}s... (Attempt {attempt + 1}/{max_retries})")
+                            logger.warning(
+                                "Legacy Gemini Client experiencing high demand (503/429). Retrying in %.2fs... (Attempt %s/%s)",
+                                delay,
+                                attempt + 1,
+                                max_retries,
+                            )
                             time.sleep(delay)
                             continue
                         raise err
@@ -308,40 +343,39 @@ def generate_response(
 LOCAL_AI_API_BASE = config.LOCAL_AI_API_BASE
 LOCAL_AI_MODEL = config.LOCAL_AI_MODEL
 
-def generate_structured_response(
-    prompt: str,
-    response_schema: Any
-) -> dict:
+
+def generate_structured_response(prompt: str, response_schema: Any) -> dict[str, Any]:
     """
     Generate structured JSON using Gemini.
 
     Reuses generate_response() and converts the
     JSON string into a Python dictionary.
     """
-
-    response = generate_response(
-        prompt=prompt,
-        response_schema=response_schema
-    )
+    response = generate_response(prompt=prompt, response_schema=response_schema)
 
     if isinstance(response, dict):
         return response
 
     if not isinstance(response, str):
-        return {}
+        raise RuntimeError("Structured generation returned a non-string response")
 
     try:
-        return json.loads(response)
+        return _parse_structured_response(response)
+    except Exception as first_error:
+        logger.warning("Structured response parsing failed once; retrying with stricter JSON-only prompt.")
+        retry_prompt = (
+            prompt
+            + "\n\nReturn only raw JSON. Do not use markdown fences. Do not include commentary."
+        )
+        retry_response = generate_response(prompt=retry_prompt, response_schema=response_schema)
+        if not isinstance(retry_response, str):
+            raise RuntimeError("Structured generation retry returned a non-string response")
+        try:
+            return _parse_structured_response(retry_response)
+        except Exception as second_error:
+            logger.error("Structured response parse failed after retry", exc_info=second_error)
+            raise RuntimeError("Unable to parse structured JSON response") from second_error
 
-    except Exception as e:
-
-        print("=" * 60)
-        print("STRUCTURED RESPONSE ERROR")
-        print(e)
-        print(response)
-        print("=" * 60)
-
-        return {}
 
 def generate_local_response(prompt: str, model: str = LOCAL_AI_MODEL) -> str:
     """
@@ -349,22 +383,24 @@ def generate_local_response(prompt: str, model: str = LOCAL_AI_MODEL) -> str:
     for tasks like re-explaining concepts or generating dynamic questions.
     """
     import requests
+
     try:
-        print(f"🤖 [LOCAL AI] Routing request to local model {model}...")
+        logger.info("[LOCAL AI] Routing request to local model %s...", model)
         response = requests.post(
             LOCAL_AI_API_BASE,
             json={
                 "model": model,
                 "prompt": prompt,
-                "stream": False
+                "stream": False,
             },
-            timeout=25
+            timeout=25,
         )
         if response.status_code == 200:
             return response.json().get("response", "")
     except Exception as e:
-        print(f"⚠️ [LOCAL AI] Request failed: {e}")
+        logger.warning("[LOCAL AI] Request failed: %s", e)
     return ""
+
 
 async def stream_response(prompt: str, model: str = DEFAULT_TEXT_MODEL, response_schema: Any = None):
     text = generate_response(prompt, model=model, response_schema=response_schema)
@@ -420,11 +456,11 @@ def _generate_audio_sync(transcript: str, voice_name: str, language_code: str | 
     )
 
     # Prefer typed config when available, fallback to plain dict.
-    config: object
+    config_obj: object
     try:
         from google.genai import types as genai_types  # type: ignore
 
-        config = genai_types.GenerateContentConfig(
+        config_obj = genai_types.GenerateContentConfig(
             temperature=0.0,
             response_modalities=["AUDIO"],
             speech_config=genai_types.SpeechConfig(
@@ -437,7 +473,7 @@ def _generate_audio_sync(transcript: str, voice_name: str, language_code: str | 
             ),
         )
     except Exception:
-        config = {
+        config_obj = {
             "temperature": 0.0,
             "response_modalities": ["AUDIO"],
             "speech_config": {
@@ -454,7 +490,7 @@ def _generate_audio_sync(transcript: str, voice_name: str, language_code: str | 
         response = client.models.generate_content(
             model=TTS_MODEL_ID,
             contents=tts_prompt,
-            config=config,
+            config=config_obj,
         )
         return _extract_audio_bytes_from_response(response)
     except Exception as error:
@@ -465,7 +501,7 @@ def _generate_audio_sync(transcript: str, voice_name: str, language_code: str | 
                 with contextlib.suppress(ValueError):
                     retry_delay = max(10.0, float(retry_match.group(1)))
             _tts_retry_after = time.monotonic() + retry_delay
-        print(f"TTS Rate Limit or Quota Exhausted: {error}. Proceeding with clean text execution.")
+        logger.warning("TTS rate limit or quota exhausted: %s. Proceeding with clean text execution.", error)
         return b""
 
 
