@@ -340,6 +340,104 @@ def generate_response(
     return final_text
 
 
+def generate_json_response(
+    prompt: str,
+    model: str = DEFAULT_TEXT_MODEL,
+) -> dict[str, Any]:
+    cached = get_cache(prompt)
+    if cached:
+        try:
+            return _parse_structured_response(cached)
+        except Exception:
+            pass
+
+    model_id = _normalize_model_id(model)
+    max_retries = 5
+    base_delay = 1.0
+    text: str | None = None
+
+    try:
+        client = _new_sdk_client()
+        if client is not None:
+            from google.genai import types
+
+            config = types.GenerateContentConfig(
+                temperature=0.0,
+                response_mime_type="application/json",
+            )
+
+            for attempt in range(max_retries):
+                try:
+                    response = client.models.generate_content(model=model_id, contents=prompt, config=config)
+                    text = getattr(response, "text", None)
+                    if text is not None:
+                        break
+                except Exception as err:
+                    if (_is_transient_error(err) or _is_quota_error(err)) and attempt < max_retries - 1:
+                        delay = (base_delay * (2 ** attempt)) + random.uniform(0.1, 0.4)
+                        retry_match = re.search(r"retry(?: in|Delay['\"]?:\s*['\"]?)\s*(\d+(?:\.\d+)?)s?", str(err), re.IGNORECASE)
+                        if retry_match:
+                            with contextlib.suppress(ValueError):
+                                requested_delay = float(retry_match.group(1))
+                                if requested_delay > 15.0:
+                                    logger.warning("Requested retry delay (%ss) is too long. Failing fast to fallback.", requested_delay)
+                                    raise err
+                                delay = requested_delay + 1.0
+                        logger.warning(
+                            "JSON GenAI Client experiencing high demand (503/429). Retrying in %.2fs... (Attempt %s/%s)",
+                            delay,
+                            attempt + 1,
+                            max_retries,
+                        )
+                        time.sleep(delay)
+                        continue
+                    raise err
+    except Exception as error:  # pragma: no cover - network dependent
+        fallback = _handle_generation_error(error, source="GenAI JSON SDK", prompt=prompt)
+        if fallback is not None:
+            return _parse_structured_response(fallback)
+        raise
+
+    if text is None:
+        raise RuntimeError("JSON generation returned no text")
+
+    try:
+        parsed = _parse_structured_response(text)
+        set_cache(prompt, json.dumps(parsed, ensure_ascii=False))
+        return parsed
+    except Exception as first_error:
+        logger.warning("JSON parsing failed once; retrying with stricter JSON-only prompt.")
+        retry_prompt = prompt + "\n\nReturn only raw JSON. Do not use markdown fences. Do not include commentary."
+        retry_text = None
+        try:
+            client = _new_sdk_client()
+            if client is not None:
+                from google.genai import types
+
+                config = types.GenerateContentConfig(
+                    temperature=0.0,
+                    response_mime_type="application/json",
+                )
+                response = client.models.generate_content(model=model_id, contents=retry_prompt, config=config)
+                retry_text = getattr(response, "text", None)
+        except Exception as error:  # pragma: no cover - network dependent
+            fallback = _handle_generation_error(error, source="GenAI JSON SDK Retry", prompt=retry_prompt)
+            if fallback is not None:
+                return _parse_structured_response(fallback)
+            raise
+
+        if not isinstance(retry_text, str):
+            raise RuntimeError("JSON generation retry returned no text")
+
+        try:
+            parsed = _parse_structured_response(retry_text)
+            set_cache(prompt, json.dumps(parsed, ensure_ascii=False))
+            return parsed
+        except Exception as second_error:
+            logger.error("JSON parse failed after retry", exc_info=second_error)
+            raise RuntimeError("Unable to parse JSON response") from second_error
+
+
 LOCAL_AI_API_BASE = config.LOCAL_AI_API_BASE
 LOCAL_AI_MODEL = config.LOCAL_AI_MODEL
 
