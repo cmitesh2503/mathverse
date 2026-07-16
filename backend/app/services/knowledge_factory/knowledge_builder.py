@@ -7,26 +7,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from app.services.ai_gateway import generate_structured_response
-from app.services.knowledge_factory.knowledge_models import (
-    Chapter,
-    Concept,
-    Curriculum,
-    Definition,
-    Example,
-    ExerciseQuestion,
-    Figure,
-    Formula,
-    KnowledgeDocument,
-    LearningObjective,
-    Metadata,
-    Prerequisite,
-    Property,
-    Relationship,
-    Section,
-    Subsection,
-    Table,
-    Theorem,
-)
+from app.services.knowledge_factory.knowledge_models import KnowledgeDocument
 
 
 KNOWLEDGE_BUILDER_PROMPT = """
@@ -76,10 +57,7 @@ Markdown
 
 
 class KnowledgeBuilder:
-    """
-    Converts Azure Layout markdown into
-    canonical knowledge.json.
-    """
+    """Converts Azure Layout markdown into canonical knowledge.json."""
 
     def build(
         self,
@@ -88,10 +66,7 @@ class KnowledgeBuilder:
         markdown: str,
         source: str = "Azure Document Intelligence",
     ) -> KnowledgeDocument:
-
-        prompt = KNOWLEDGE_BUILDER_PROMPT.format(
-            markdown=markdown
-        )
+        prompt = KNOWLEDGE_BUILDER_PROMPT.format(markdown=markdown)
 
         response = generate_structured_response(
             prompt=prompt,
@@ -99,20 +74,12 @@ class KnowledgeBuilder:
         )
 
         if not response:
-            raise RuntimeError(
-                "Gemini returned an empty KnowledgeDocument."
-            )
+            raise RuntimeError("Gemini returned an empty KnowledgeDocument.")
 
         try:
-            document = KnowledgeDocument.model_validate(
-                response
-            )
-
+            document = KnowledgeDocument.model_validate(response)
         except ValidationError as ex:
-
-            raise RuntimeError(
-                f"Invalid KnowledgeDocument generated.\n{ex}"
-            ) from ex
+            raise RuntimeError(f"Invalid KnowledgeDocument generated.\n{ex}") from ex
 
         document.metadata.document_id = document_id
         document.metadata.source = source
@@ -125,111 +92,55 @@ class KnowledgeBuilder:
         layout_json_path: str | Path,
         document_id: str,
     ) -> KnowledgeDocument:
+        markdown = self._extract_markdown(layout_json_path)
+        return self.build(document_id=document_id, markdown=markdown)
 
-        markdown = self._extract_markdown(
-            layout_json_path
-        )
-
-        return self.build(
-            document_id=document_id,
-            markdown=markdown,
-        )
-
-    def save(
-        self,
-        knowledge: KnowledgeDocument,
-        output_path: str | Path,
-    ) -> None:
-
+    def save(self, knowledge: KnowledgeDocument, output_path: str | Path) -> None:
         output = Path(output_path)
-        output.parent.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
+        output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(
-            knowledge.model_dump_json(
-                indent=2,
-                exclude_none=True,
-            ),
+            knowledge.model_dump_json(indent=2, exclude_none=True),
             encoding="utf-8",
         )
-        
-        def _extract_markdown(
-            self,
-            layout_json_path: str | Path,
-        ) -> str:
 
-            layout_json_path = Path(layout_json_path)
+    def _extract_markdown(self, layout_json_path: str | Path) -> str:
+        layout_json_path = Path(layout_json_path)
 
-            if not layout_json_path.exists():
-                raise FileNotFoundError(layout_json_path)
+        if not layout_json_path.exists():
+            raise FileNotFoundError(layout_json_path)
 
-            data = json.loads(
-                layout_json_path.read_text(
-                    encoding="utf-8"
-                )
-            )
+        data = json.loads(layout_json_path.read_text(encoding="utf-8"))
 
-            #
-            # Azure Layout API
-            #
+        if isinstance(data.get("markdown"), str):
+            return data["markdown"]
 
-            if isinstance(data.get("markdown"), str):
-                return data["markdown"]
+        if isinstance(data.get("content"), str):
+            return data["content"]
 
-            if isinstance(data.get("content"), str):
-                return data["content"]
+        analyze = data.get("analyzeResult")
+        if isinstance(analyze, dict):
+            if isinstance(analyze.get("markdown"), str):
+                return analyze["markdown"]
+            if isinstance(analyze.get("content"), str):
+                return analyze["content"]
 
-            if "analyzeResult" in data:
+        raise RuntimeError("Unable to locate markdown/content in layout.json.")
 
-                analyze = data["analyzeResult"]
+    @staticmethod
+    def load(knowledge_json_path: str | Path) -> KnowledgeDocument:
+        knowledge_json_path = Path(knowledge_json_path)
 
-                if isinstance(analyze.get("markdown"), str):
-                    return analyze["markdown"]
+        if not knowledge_json_path.exists():
+            raise FileNotFoundError(knowledge_json_path)
 
-                if isinstance(analyze.get("content"), str):
-                    return analyze["content"]
+        return KnowledgeDocument.model_validate_json(
+            knowledge_json_path.read_text(encoding="utf-8")
+        )
 
-            raise RuntimeError(
-                "Unable to locate markdown/content in layout.json."
-            )
+    @staticmethod
+    def to_dict(knowledge: KnowledgeDocument) -> dict[str, Any]:
+        return knowledge.model_dump(exclude_none=True)
 
-        @staticmethod
-        def load(
-            knowledge_json_path: str | Path,
-        ) -> KnowledgeDocument:
-
-            knowledge_json_path = Path(
-                knowledge_json_path
-            )
-
-            if not knowledge_json_path.exists():
-                raise FileNotFoundError(
-                    knowledge_json_path
-                )
-
-            return KnowledgeDocument.model_validate_json(
-                knowledge_json_path.read_text(
-                    encoding="utf-8"
-                )
-            )
-
-        @staticmethod
-        def to_dict(
-            knowledge: KnowledgeDocument,
-        ) -> dict[str, Any]:
-
-            return knowledge.model_dump(
-                exclude_none=True
-            )
-
-        @staticmethod
-        def to_json(
-            knowledge: KnowledgeDocument,
-        ) -> str:
-
-            return knowledge.model_dump_json(
-                indent=2,
-                exclude_none=True,
-            )
+    @staticmethod
+    def to_json(knowledge: KnowledgeDocument) -> str:
+        return knowledge.model_dump_json(indent=2, exclude_none=True)
