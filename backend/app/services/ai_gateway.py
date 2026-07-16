@@ -246,7 +246,7 @@ def generate_response(
                 config = types.GenerateContentConfig(
                     temperature=0.0,
                     response_mime_type="application/json",
-                    response_schema=response_schema,
+                    
                 )
             else:
                 config = types.GenerateContentConfig(
