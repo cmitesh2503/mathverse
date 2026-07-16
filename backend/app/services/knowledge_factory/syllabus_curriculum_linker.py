@@ -320,18 +320,73 @@ class SyllabusCurriculumLinker:
         topic_text = self._topic_text(topic)
 
         for section in chapter.sections:
+
+            section_text = " ".join(
+                [
+                    section.title,
+                    section.number,
+                    section.section_id,
+                ]
+            )
+
             score = max(
-                self._coverage_score(topic.title, section.title),
-                self._coverage_score(topic_text, section.title),
+
+                self._coverage_score(
+                    topic.title,
+                    section_text,
+                ),
+
+                self._coverage_score(
+                    topic_text,
+                    section_text,
+                ),
+            )
+
+            #
+            # Bonus score if topic title
+            # directly contains section title.
+            #
+
+            if (
+                section.title.lower()
+                in topic.title.lower()
+            ):
+                score += 0.25
+
+            #
+            # Bonus if section number
+            # appears in topic.
+            #
+
+            if (
+                section.number
+                and section.number
+                in topic_text
+            ):
+                score += 0.15
+
+            score = min(
+                score,
+                1.0,
+            )
+
+            print(
+                f"[SECTION] "
+                f"{topic.title}"
+                f" -> "
+                f"{section.section_id}"
+                f" score={score:.2f}"
             )
 
             if score < self._MIN_SECTION_SCORE:
                 continue
 
             scored_sections.append(
-                (score, section.section_id)
+                (
+                    score,
+                    section.section_id,
+                )
             )
-
         return self._ordered_unique(
             section_id
             for _, section_id in sorted(

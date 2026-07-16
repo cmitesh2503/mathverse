@@ -113,6 +113,29 @@ class ConceptExtractor:
         "which",
         "with",
     }
+    
+    _SKIP_PREFIXES = (
+                "example",
+                "examples",
+                "exercise",
+                "solution",
+                "proof",
+                "remark",
+                "note",
+                "observation",
+                "miscellaneous",
+                "appendix",
+            )
+
+    _SKIP_PATTERNS = (
+            r"^[0-9\-\.\(\) ]+$",
+            r"^[a-z]-[a-z]$",
+            r"^[ivxlcdm]+[-0-9a-z]*$",
+            r"^[A-Z]\s*=",
+        )
+
+    _MIN_TITLE_LENGTH = 3
+    _MAX_TITLE_LENGTH = 80
 
     def extract(
         self,
@@ -128,9 +151,15 @@ class ConceptExtractor:
 
         for section in chapter.sections:
 
-            title = section.title.strip()
+            title = self._normalize_title(
+                section.title
+            )
 
             if not title:
+                continue
+
+            if not self._is_valid_concept(title):
+                print(f"[Skipped] {section.title}")
                 continue
 
             title_lower = title.lower()
@@ -160,6 +189,12 @@ class ConceptExtractor:
             description = self._first_meaningful_paragraph(
                 section.content
             )
+            
+            description = (
+                paragraphs[0].strip()
+                if paragraphs
+                else ""
+            )
             aliases = self._aliases(
                 title,
                 section.content,
@@ -172,6 +207,8 @@ class ConceptExtractor:
                 section.content,
             )
 
+            print(f"[Concept] {title}")
+            
             concept = Concept(
                 concept_id=slug,
                 title=title,
@@ -197,7 +234,8 @@ class ConceptExtractor:
                     int(section.level),
                 ),
             )
-
+            
+            
             concepts.append(concept)
 
             section.concept_ids.append(concept.concept_id)
@@ -210,6 +248,37 @@ class ConceptExtractor:
         chapter.concepts = concepts
 
         return chapter
+    
+    def _is_valid_concept(
+        self,
+        title: str,
+    ) -> bool:
+
+        title = title.strip()
+
+        if len(title) < self._MIN_TITLE_LENGTH:
+            return False
+
+        if len(title) > self._MAX_TITLE_LENGTH:
+            return False
+
+        lower = title.lower()
+
+        for prefix in self._SKIP_PREFIXES:
+
+            if lower.startswith(prefix):
+                return False
+
+        for pattern in self._SKIP_PATTERNS:
+
+            if re.match(
+                pattern,
+                title,
+                flags=re.IGNORECASE,
+            ):
+                return False
+
+        return True
 
     def _first_meaningful_paragraph(self, text: str) -> str:
         """
@@ -514,6 +583,25 @@ class ConceptExtractor:
             )
 
         return terms
+    
+    def _normalize_title(
+        self,
+        title: str,
+    ) -> str:
+
+        title = re.sub(
+            r"\s+",
+            " ",
+            title,
+        ).strip()
+
+        title = re.sub(
+            r"^[0-9\.]+\s*",
+            "",
+            title,
+        )
+
+        return title
 
     def _has_named_prerequisite(
         self,
