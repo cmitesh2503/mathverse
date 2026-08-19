@@ -543,3 +543,12 @@ def __getattr__(name: str) -> str:
     value = _env_or_secret(name, secret_name)
     globals()[name] = value
     return value
+KNOWLEDGE_FACTORY_PROJECT_ID = _env(
+    "KNOWLEDGE_FACTORY_PROJECT_ID",
+    "knowledge-factory-prod",
+)
+
+KNOWLEDGE_FACTORY_COLLECTION = _env(
+    "KNOWLEDGE_FACTORY_COLLECTION",
+    "knowledge_packages",
+)
