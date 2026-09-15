@@ -1,0 +1,196 @@
+backend/.env.example:115:KNOWLEDGE_FACTORY_PROJECT_ID=knowledge-factory-prod
+backend/.env.example:116:KNOWLEDGE_FACTORY_COLLECTION=knowledge_packages
+backend/app/api/knowledge/knowledge_compiler.py:4:from app.services.knowledge_factory.compiler import (
+backend/app/api/knowledge/knowledge_compiler.py:5:    KnowledgeCompiler
+backend/app/api/knowledge/knowledge_compiler.py:10:compiler = KnowledgeCompiler()
+backend/app/api/knowledge/knowledge_compiler.py:13:class KnowledgeCompileRequest(BaseModel):
+backend/app/api/knowledge/knowledge_compiler.py:25:async def compile_knowledge(
+backend/app/api/knowledge/knowledge_compiler.py:26:    request: KnowledgeCompileRequest
+backend/app/core/config.py:546:KNOWLEDGE_FACTORY_PROJECT_ID = _env(
+backend/app/core/config.py:547:    "KNOWLEDGE_FACTORY_PROJECT_ID",
+backend/app/core/config.py:551:KNOWLEDGE_FACTORY_COLLECTION = _env(
+backend/app/core/config.py:552:    "KNOWLEDGE_FACTORY_COLLECTION",
+backend/app/core/config.py:555:KNOWLEDGE_FACTORY_VECTOR_COLLECTION = _env(
+backend/app/core/config.py:556:    "KNOWLEDGE_FACTORY_VECTOR_COLLECTION",
+backend/app/main.py:38:#from app.api.knowledge.knowledge_compiler import (
+backend/app/services/knowledge_factory/azure_layout_service.py:30:from app.services.knowledge_factory.text_sanitizer import (
+backend/app/services/knowledge_factory/base_document_pipeline.py:13:from app.services.knowledge_factory.pipeline_result import (
+backend/app/services/knowledge_factory/base_document_pipeline.py:40:            from app.services.knowledge_factory.azure_layout_service import (
+backend/app/services/knowledge_factory/chapter_firestore_writer.py:18:from app.services.knowledge_factory.chapter_models import ChapterKnowledge
+backend/app/services/knowledge_factory/chapter_importer.py:5:from app.services.knowledge_factory.chapter_pipeline import ChapterPipeline
+backend/app/services/knowledge_factory/chapter_importer.py:6:from app.services.knowledge_factory.chapter_parser import ChapterParser
+backend/app/services/knowledge_factory/chapter_importer.py:7:from app.services.knowledge_factory.section_parser import SectionParser
+backend/app/services/knowledge_factory/chapter_importer.py:8:from app.services.knowledge_factory.chapter_firestore_writer import (
+backend/app/services/knowledge_factory/chapter_importer.py:11:from app.services.knowledge_factory.concept_extractor import (
+backend/app/services/knowledge_factory/chapter_importer.py:14:from app.services.knowledge_factory.formula_extractor import (
+backend/app/services/knowledge_factory/chapter_importer.py:17:from app.services.knowledge_factory.example_extractor import (
+backend/app/services/knowledge_factory/chapter_importer.py:20:from app.services.knowledge_factory.figure_extractor import (
+backend/app/services/knowledge_factory/chapter_importer.py:23:from app.services.knowledge_factory.syllabus_curriculum_linker import (
+backend/app/services/knowledge_factory/chapter_parser.py:23:from app.services.knowledge_factory.chapter_models import (
+backend/app/services/knowledge_factory/chapter_pipeline.py:10:from app.services.knowledge_factory.base_document_pipeline import (
+backend/app/services/knowledge_factory/cheatsheet_extractor.py:1:from app.services.knowledge_factory.models import (
+backend/app/services/knowledge_factory/concept_ai_enricher.py:5:from app.services.knowledge_factory.chapter_models import (
+backend/app/services/knowledge_factory/concept_extractor.py:25:from app.services.knowledge_factory.chapter_models import (
+backend/app/services/knowledge_factory/curriculum_extractor.py:7:from app.services.knowledge_factory.models import (
+backend/app/services/knowledge_factory/example_extractor.py:17:from app.services.knowledge_factory.chapter_models import (
+backend/app/services/knowledge_factory/example_extractor.py:21:from app.services.knowledge_factory.section_content import (
+backend/app/services/knowledge_factory/figure_extractor.py:18:from app.services.knowledge_factory.chapter_models import (
+backend/app/services/knowledge_factory/figure_extractor.py:22:from app.services.knowledge_factory.section_content import (
+backend/app/services/knowledge_factory/firestore_writer.py:3:from app.services.knowledge_factory.models import Curriculum
+backend/app/services/knowledge_factory/formula_extractor.py:17:from app.services.knowledge_factory.chapter_models import (
+backend/app/services/knowledge_factory/formula_extractor.py:21:from app.services.knowledge_factory.section_content import (
+backend/app/services/knowledge_factory/graph_builder.py:1:from app.services.knowledge_factory.models import (
+backend/app/services/knowledge_factory/import_chapter.py:3:from app.services.knowledge_factory.chapter_importer import ChapterImporter
+backend/app/services/knowledge_factory/import_syllabus.py:4:from app.services.knowledge_factory.syllabus_parser import SyllabusParser
+backend/app/services/knowledge_factory/import_syllabus.py:5:from app.services.knowledge_factory.syllabus_firestore_writer import (
+backend/app/services/knowledge_factory/import_syllabus.py:8:from app.services.knowledge_factory.syllabus_curriculum_linker import (
+backend/app/services/knowledge_factory/knowledge_builder.py:10:from app.services.knowledge_factory.knowledge_models import (
+backend/app/services/knowledge_factory/section_content.py:13:from app.services.knowledge_factory.chapter_models import Section
+backend/app/services/knowledge_factory/section_parser.py:26:from app.services.knowledge_factory.chapter_models import (
+backend/app/services/knowledge_factory/syllabus_curriculum_linker.py:8:from app.services.knowledge_factory.chapter_models import ChapterKnowledge
+backend/app/services/knowledge_factory/syllabus_curriculum_linker.py:9:from app.services.knowledge_factory.syllabus_models import (
+backend/app/services/knowledge_factory/syllabus_firestore_writer.py:7:from app.services.knowledge_factory.syllabus_models import Syllabus
+backend/app/services/knowledge_factory/syllabus_importer.py:8:from app.services.knowledge_factory.syllabus_firestore_writer import (
+backend/app/services/knowledge_factory/syllabus_importer.py:11:from app.services.knowledge_factory.syllabus_curriculum_linker import (
+backend/app/services/knowledge_factory/syllabus_importer.py:14:from app.services.knowledge_factory.syllabus_parser import SyllabusParser
+backend/app/services/knowledge_factory/syllabus_importer.py:15:from app.services.knowledge_factory.syllabus_pipeline import SyllabusPipeline
+backend/app/services/knowledge_factory/syllabus_importer.py:16:from app.services.knowledge_factory.knowledge_linker import (
+backend/app/services/knowledge_factory/syllabus_parser.py:8:from app.services.knowledge_factory.syllabus_models import (
+backend/app/services/knowledge_factory/syllabus_pipeline.py:19:from app.services.knowledge_factory.base_document_pipeline import (
+backend/app/services/knowledge_factory/syllabus_pipeline.py:22:from app.services.knowledge_factory.pipeline_result import (
+backend/app/services/knowledge_factory/syllabus_pipeline.py:25:from app.services.knowledge_factory.text_sanitizer import (
+backend/app/services/knowledge_factory/teacher_script_extractor.py:1:from app.services.knowledge_factory.models import (
+backend/app/services/knowledge_factory/validator.py:1:from app.services.knowledge_factory.models import (
+backend/app/services/knowledge_factory/whiteboard_extractor.py:1:from app.services.knowledge_factory.models import (
+backend/infrastructure/cloud_function_knowledge_compiler/compiler.py:9:from app.services.knowledge_factory.chapter_importer import (
+backend/infrastructure/cloud_function_knowledge_compiler/compiler.py:12:from app.services.knowledge_factory.syllabus_importer import (
+backend/infrastructure/cloud_function_knowledge_compiler/compiler.py:19:class KnowledgeCompiler:
+backend/infrastructure/cloud_function_knowledge_compiler/compiler.py:30:        # KnowledgeCompiler.importer.
+backend/infrastructure/cloud_function_knowledge_compiler/main.py:31:    from compiler import KnowledgeCompiler
+backend/infrastructure/cloud_function_knowledge_compiler/main.py:33:    return KnowledgeCompiler()
+Binary file backend/infrastructure/knowledge_compiler.zip matches
+backend/infrastructure/main.tf:171:resource "google_storage_bucket_object" "knowledge_compiler_zip" {
+backend/infrastructure/main.tf:173:  name = "knowledge-compiler-${data.archive_file.knowledge_compiler_zip.output_md5}.zip"
+backend/infrastructure/main.tf:177:  source = data.archive_file.knowledge_compiler_zip.output_path
+backend/infrastructure/main.tf:182:  knowledge_compiler_app_files = fileset("${path.module}/../app", "**")
+backend/infrastructure/main.tf:184:  knowledge_compiler_function_files = fileset(
+backend/infrastructure/main.tf:185:    "${path.module}/cloud_function_knowledge_compiler",
+backend/infrastructure/main.tf:189:  knowledge_compiler_source_hash = sha256(join("", concat(
+backend/infrastructure/main.tf:191:      for file in sort(local.knowledge_compiler_app_files) :
+backend/infrastructure/main.tf:195:      for file in sort(local.knowledge_compiler_function_files) :
+backend/infrastructure/main.tf:196:      "infrastructure/cloud_function_knowledge_compiler/${file}:${filesha256("${path.module}/cloud_function_knowledge_compiler/${file}")}"
+backend/infrastructure/main.tf:199:      "scripts/build_knowledge_compiler.py:${filesha256("${path.module}/../scripts/build_knowledge_compiler.py")}"
+backend/infrastructure/main.tf:204:resource "null_resource" "build_knowledge_compiler" {
+backend/infrastructure/main.tf:206:    source_hash = local.knowledge_compiler_source_hash
+backend/infrastructure/main.tf:210:    command     = "python ../scripts/build_knowledge_compiler.py"
+backend/infrastructure/main.tf:215:data "archive_file" "knowledge_compiler_zip" {
+backend/infrastructure/main.tf:221:  output_path = "${path.module}/knowledge_compiler.zip"
+backend/infrastructure/main.tf:224:    null_resource.build_knowledge_compiler,
+backend/infrastructure/main.tf:683:resource "google_cloudfunctions2_function" "knowledge_compiler" {
+backend/infrastructure/main.tf:685:  name = "knowledge-compiler"
+backend/infrastructure/main.tf:698:      GOOGLE_FUNCTION_SOURCE = "infrastructure/cloud_function_knowledge_compiler/main.py"
+backend/infrastructure/main.tf:707:        object = google_storage_bucket_object.knowledge_compiler_zip.name
+backend/infrastructure/terraform.tfstate:176:      "name": "knowledge_compiler_zip",
+backend/infrastructure/terraform.tfstate:189:            "output_path": "./knowledge_compiler.zip",
+backend/infrastructure/terraform.tfstate:805:      "name": "knowledge_compiler",
+backend/infrastructure/terraform.tfstate:820:                  "GOOGLE_FUNCTION_SOURCE": "infrastructure/cloud_function_knowledge_compiler/main.py"
+backend/infrastructure/terraform.tfstate:832:                        "object": "knowledge-compiler-5b95a8911d672daf44c2cd8d7a667d09.zip"
+backend/infrastructure/terraform.tfstate:853:                "pubsub_topic": "projects/matverse/topics/eventarc-us-central1-knowledge-compiler-473030-172",
+backend/infrastructure/terraform.tfstate:856:                "trigger": "projects/matverse/locations/us-central1/triggers/knowledge-compiler-473030",
+backend/infrastructure/terraform.tfstate:860:            "id": "projects/matverse/locations/us-central1/functions/knowledge-compiler",
+backend/infrastructure/terraform.tfstate:864:            "name": "knowledge-compiler",
+backend/infrastructure/terraform.tfstate:887:                "service": "projects/matverse/locations/us-central1/services/knowledge-compiler",
+backend/infrastructure/terraform.tfstate:890:                "uri": "https://knowledge-compiler-kpelsnq63a-uc.a.run.app",
+backend/infrastructure/terraform.tfstate:899:            "url": "https://us-central1-matverse.cloudfunctions.net/knowledge-compiler"
+backend/infrastructure/terraform.tfstate:905:            "data.archive_file.knowledge_compiler_zip",
+backend/infrastructure/terraform.tfstate:917:            "google_storage_bucket_object.knowledge_compiler_zip",
+backend/infrastructure/terraform.tfstate:918:            "null_resource.build_knowledge_compiler"
+backend/infrastructure/terraform.tfstate:2301:      "name": "knowledge_compiler_zip",
+backend/infrastructure/terraform.tfstate:2319:            "id": "mathverse-function-source-matverse-knowledge-compiler-5b95a8911d672daf44c2cd8d7a667d09.zip",
+backend/infrastructure/terraform.tfstate:2322:            "media_link": "https://storage.googleapis.com/download/storage/v1/b/mathverse-function-source-matverse/o/knowledge-compiler-5b95a8911d672daf44c2cd8d7a667d09.zip?generation=1783924943208132\u0026alt=media",
+backend/infrastructure/terraform.tfstate:2324:            "name": "knowledge-compiler-5b95a8911d672daf44c2cd8d7a667d09.zip",
+backend/infrastructure/terraform.tfstate:2325:            "output_name": "knowledge-compiler-5b95a8911d672daf44c2cd8d7a667d09.zip",
+backend/infrastructure/terraform.tfstate:2327:            "self_link": "https://www.googleapis.com/storage/v1/b/mathverse-function-source-matverse/o/knowledge-compiler-5b95a8911d672daf44c2cd8d7a667d09.zip",
+backend/infrastructure/terraform.tfstate:2328:            "source": "./knowledge_compiler.zip",
+backend/infrastructure/terraform.tfstate:2344:            "data.archive_file.knowledge_compiler_zip",
+backend/infrastructure/terraform.tfstate:2346:            "null_resource.build_knowledge_compiler"
+backend/infrastructure/terraform.tfstate:2406:      "name": "build_knowledge_compiler",
+backend/infrastructure/terraform.tfstate.backup:176:      "name": "knowledge_compiler_zip",
+backend/infrastructure/terraform.tfstate.backup:189:            "output_path": "./knowledge_compiler.zip",
+backend/infrastructure/terraform.tfstate.backup:805:      "name": "knowledge_compiler",
+backend/infrastructure/terraform.tfstate.backup:820:                  "GOOGLE_FUNCTION_SOURCE": "infrastructure/cloud_function_knowledge_compiler/main.py"
+backend/infrastructure/terraform.tfstate.backup:832:                        "object": "knowledge-compiler-21c73c478b67fb491707aab283bdefb2.zip"
+backend/infrastructure/terraform.tfstate.backup:853:                "pubsub_topic": "projects/matverse/topics/eventarc-us-central1-knowledge-compiler-473030-172",
+backend/infrastructure/terraform.tfstate.backup:856:                "trigger": "projects/matverse/locations/us-central1/triggers/knowledge-compiler-473030",
+backend/infrastructure/terraform.tfstate.backup:860:            "id": "projects/matverse/locations/us-central1/functions/knowledge-compiler",
+backend/infrastructure/terraform.tfstate.backup:864:            "name": "knowledge-compiler",
+backend/infrastructure/terraform.tfstate.backup:887:                "service": "projects/matverse/locations/us-central1/services/knowledge-compiler",
+backend/infrastructure/terraform.tfstate.backup:890:                "uri": "https://knowledge-compiler-kpelsnq63a-uc.a.run.app",
+backend/infrastructure/terraform.tfstate.backup:899:            "url": "https://us-central1-matverse.cloudfunctions.net/knowledge-compiler"
+backend/infrastructure/terraform.tfstate.backup:905:            "data.archive_file.knowledge_compiler_zip",
+backend/infrastructure/terraform.tfstate.backup:917:            "google_storage_bucket_object.knowledge_compiler_zip",
+backend/infrastructure/terraform.tfstate.backup:918:            "null_resource.build_knowledge_compiler"
+backend/infrastructure/terraform.tfstate.backup:2301:      "name": "knowledge_compiler_zip",
+backend/infrastructure/terraform.tfstate.backup:2319:            "id": "mathverse-function-source-matverse-knowledge-compiler-21c73c478b67fb491707aab283bdefb2.zip",
+backend/infrastructure/terraform.tfstate.backup:2322:            "media_link": "https://storage.googleapis.com/download/storage/v1/b/mathverse-function-source-matverse/o/knowledge-compiler-21c73c478b67fb491707aab283bdefb2.zip?generation=1783922659742056\u0026alt=media",
+backend/infrastructure/terraform.tfstate.backup:2324:            "name": "knowledge-compiler-21c73c478b67fb491707aab283bdefb2.zip",
+backend/infrastructure/terraform.tfstate.backup:2325:            "output_name": "knowledge-compiler-21c73c478b67fb491707aab283bdefb2.zip",
+backend/infrastructure/terraform.tfstate.backup:2327:            "self_link": "https://www.googleapis.com/storage/v1/b/mathverse-function-source-matverse/o/knowledge-compiler-21c73c478b67fb491707aab283bdefb2.zip",
+backend/infrastructure/terraform.tfstate.backup:2328:            "source": "./knowledge_compiler.zip",
+backend/infrastructure/terraform.tfstate.backup:2344:            "data.archive_file.knowledge_compiler_zip",
+backend/infrastructure/terraform.tfstate.backup:2346:            "null_resource.build_knowledge_compiler"
+backend/infrastructure/terraform.tfstate.backup:2406:      "name": "build_knowledge_compiler",
+backend/scripts/build_knowledge_compiler.py:12:FUNCTION_DIR = INFRASTRUCTURE_DIR / "cloud_function_knowledge_compiler"
+backend/scripts/build_knowledge_compiler.py:97:        / "cloud_function_knowledge_compiler"
+backend/scripts/build_knowledge_compiler.py:119:    print(f"Knowledge compiler deployment built: {deployment_dir}")
+backend/scripts/publish_matrices_knowledge_vectors.py:26:    print("1. Loading real Matrices KnowledgePackage...")
+backend/test_layout_service.py:3:from app.services.knowledge_factory.azure_layout_service import (
+backend/test_parser.py:3:from app.services.knowledge_factory.chapter_parser import ChapterParser
+backend/test_parser.py:4:from app.services.knowledge_factory.section_parser import SectionParser
+backend/test_pdf_import.py:3:from app.services.knowledge_factory.chapter_importer import (
+backend/test_pipeline.py:3:from app.services.knowledge_factory.chapter_pipeline import (
+backend/tests/test_cloud_example_extractor.py:7:    / "cloud_function_knowledge_compiler"
+backend/tests/test_cloud_exercise_extractor.py:7:    / "cloud_function_knowledge_compiler"
+backend/tests/test_cloud_figure_extractor.py:7:    / "cloud_function_knowledge_compiler"
+backend/tests/test_cloud_formula_extractor.py:7:    / "cloud_function_knowledge_compiler"
+backend/tests/test_example_extractor.py:6:from app.services.knowledge_factory.chapter_models import (
+backend/tests/test_example_extractor.py:10:from app.services.knowledge_factory.concept_extractor import ConceptExtractor
+backend/tests/test_example_extractor.py:11:from app.services.knowledge_factory.example_extractor import ExampleExtractor
+backend/tests/test_example_extractor.py:12:from app.services.knowledge_factory.section_parser import SectionParser
+backend/tests/test_figure_extractor.py:6:from app.services.knowledge_factory.chapter_models import (
+backend/tests/test_figure_extractor.py:11:from app.services.knowledge_factory.chapter_firestore_writer import (
+backend/tests/test_figure_extractor.py:14:from app.services.knowledge_factory.concept_extractor import ConceptExtractor
+backend/tests/test_figure_extractor.py:15:from app.services.knowledge_factory.figure_extractor import FigureExtractor
+backend/tests/test_figure_extractor.py:16:from app.services.knowledge_factory.section_parser import SectionParser
+backend/tests/test_formula_extractor.py:6:from app.services.knowledge_factory.chapter_models import (
+backend/tests/test_formula_extractor.py:10:from app.services.knowledge_factory.concept_extractor import ConceptExtractor
+backend/tests/test_formula_extractor.py:11:from app.services.knowledge_factory.formula_extractor import FormulaExtractor
+backend/tests/test_formula_extractor.py:12:from app.services.knowledge_factory.section_parser import SectionParser
+backend/tests/test_knowledge_compiler_routing.py:7:    / "cloud_function_knowledge_compiler"
+backend/tests/test_knowledge_compiler_routing.py:20:def test_knowledge_compiler_routes_by_gcs_prefix():
+backend/tests/test_knowledge_compiler_routing.py:27:def test_knowledge_compiler_accepts_curriculum_and_syllabus_prefixes():
+backend/tests/test_knowledge_compiler_routing.py:33:def test_knowledge_compiler_detects_misplaced_syllabus_pdf():
+backend/tests/test_knowledge_compiler_routing.py:39:def test_knowledge_compiler_accepts_open_document_only_for_syllabus():
+backend/tests/test_knowledge_factory_client.py:7:from app.services.knowledge_factory.knowledge_factory_client import (
+backend/tests/test_knowledge_factory_client_real.py:2:from app.services.knowledge_factory.knowledge_factory_client import (
+backend/tests/test_knowledge_factory_client_real.py:14:        project_id=config.KNOWLEDGE_FACTORY_PROJECT_ID,
+backend/tests/test_knowledge_factory_client_real.py:15:        collection_name=config.KNOWLEDGE_FACTORY_COLLECTION,
+backend/tests/test_knowledge_factory_client_real.py:20:    print("2. Reading published Matrices KnowledgePackage...")
+backend/tests/test_knowledge_factory_vector_search_real.py:6:from app.services.knowledge_factory.knowledge_factory_client import (
+backend/tests/test_knowledge_factory_vector_search_real.py:29:            config.KNOWLEDGE_FACTORY_PROJECT_ID
+backend/tests/test_knowledge_factory_vector_search_real.py:69:            config.KNOWLEDGE_FACTORY_PROJECT_ID
+backend/tests/test_knowledge_factory_vector_search_real.py:72:            config.KNOWLEDGE_FACTORY_VECTOR_COLLECTION
+backend/tests/test_section_parser.py:7:from app.services.knowledge_factory.chapter_models import (
+backend/tests/test_section_parser.py:13:from app.services.knowledge_factory.concept_extractor import ConceptExtractor
+backend/tests/test_section_parser.py:14:from app.services.knowledge_factory.section_parser import SectionParser
+backend/tests/test_syllabus_curriculum_linker.py:6:from app.services.knowledge_factory.chapter_models import (
+backend/tests/test_syllabus_curriculum_linker.py:12:from app.services.knowledge_factory.syllabus_curriculum_linker import (
+backend/tests/test_syllabus_curriculum_linker.py:15:from app.services.knowledge_factory.syllabus_models import (
+backend/tests/test_syllabus_parser.py:6:from app.services.knowledge_factory.syllabus_parser import SyllabusParser
+backend/tests/test_syllabus_pipeline.py:8:from app.services.knowledge_factory.pipeline_result import DocumentPipelineResult
+backend/tests/test_syllabus_pipeline.py:9:from app.services.knowledge_factory.syllabus_importer import SyllabusImporter
+backend/tests/test_syllabus_pipeline.py:10:from app.services.knowledge_factory.syllabus_parser import SyllabusParser
+backend/tests/test_syllabus_pipeline.py:11:from app.services.knowledge_factory.syllabus_pipeline import SyllabusPipeline
+deployed_source/compiler.py:19:class KnowledgeCompiler:
+deployed_source/main.py:3:from compiler import KnowledgeCompiler
+deployed_source/main.py:11:compiler = KnowledgeCompiler()
