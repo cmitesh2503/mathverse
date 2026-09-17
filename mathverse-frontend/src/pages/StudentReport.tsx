@@ -221,7 +221,7 @@ export default function StudentReport({ onNavigate }: Props) {
                 </ul>
               </div>
               <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
-                <p className="font-semibold text-rose-800">Weak Areas (Let's Revise These)</p>
+                <p className="font-semibold text-rose-800">Weak Areas (Let&apos;s Revise These)</p>
                 <ul className="mt-2 space-y-2 text-sm text-rose-900">
                   {(selected.concept_mastery_insights?.weak_concepts || []).map((item) => <li key={item}>- {item}</li>)}
                 </ul>
@@ -262,6 +262,8 @@ export default function StudentReport({ onNavigate }: Props) {
               <p className="text-sm font-semibold">Your Scanned Paper Markup</p>
               {answerSheetImageSrc ? (
                 <div className="mt-3 space-y-3">
+                  {/* Scanned answer sheets are uploaded/generated images served by the API. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={answerSheetImageSrc}
                     alt={`Scanned paper for ${breakdown.student_name}`}
@@ -300,7 +302,7 @@ export default function StudentReport({ onNavigate }: Props) {
                     <p>{selectedDetail.step_by_step_audit}</p>
                   </div>
                   <div className="rounded-lg bg-white p-3">
-                    <p className="font-semibold">Arvind Sir's Actionable Advice</p>
+                    <p className="font-semibold">Arvind Sir&apos;s Actionable Advice</p>
                     <p>{selectedDetail.remediation_advice}</p>
                   </div>
                 </div>

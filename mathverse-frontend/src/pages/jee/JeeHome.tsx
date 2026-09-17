@@ -1,7 +1,8 @@
 import React from "react";
+import type { PageKey } from "../../App";
 
 type Props = {
-  onNavigate: (page: any) => void;
+  onNavigate: (page: PageKey) => void;
 };
 
 export default function JeeHome({

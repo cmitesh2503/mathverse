@@ -158,3 +158,33 @@ def get_firestore_client():
 
     validate_required_gcloud_account()
     return firestore.Client(project=project_id)
+
+
+@lru_cache(maxsize=1)
+def get_knowledge_factory_firestore_client():
+    """Create the separately configured, read-only KF Firestore client."""
+
+    from google.cloud import firestore
+
+    project_id = config.KNOWLEDGE_FACTORY_PROJECT_ID.strip()
+    database_id = config.KNOWLEDGE_FACTORY_DATABASE_ID.strip() or "(default)"
+    if not project_id:
+        raise RuntimeError(
+            "KNOWLEDGE_FACTORY_PROJECT_ID is required for knowledge access."
+        )
+
+    service_account_path = get_firestore_service_account_path()
+    if service_account_path:
+        from google.oauth2 import service_account
+
+        credentials = service_account.Credentials.from_service_account_file(
+            service_account_path
+        )
+        return firestore.Client(
+            project=project_id,
+            database=database_id,
+            credentials=credentials,
+        )
+
+    validate_required_gcloud_account()
+    return firestore.Client(project=project_id, database=database_id)

@@ -151,60 +151,16 @@ def ingest_gcs_pdf_to_rag(
     school_board: str | None = None
 ) -> int:
     """
-    Core RAG ingestion controller. Resolves parameters dynamically from 
-    GCS file path directory metadata structures if they are not explicitly passed.
-    """
-    # Auto-extract parameters from directory structure if not explicitly provided
-    if not all([grade, chapter_slug, phase, school_board]):
-        parsed_grade, parsed_chapter, parsed_phase, parsed_board = parse_metadata_from_path(blob_name)
-        grade = grade or parsed_grade
-        chapter_slug = chapter_slug or parsed_chapter
-        phase = phase or parsed_phase
-        school_board = school_board or parsed_board
+    Legacy ingestion entry point retained only for compatibility.
 
-    temp_file = None
-    try:
-        # Step 1: Download binary from bucket
-        temp_file = download_blob_to_temp(bucket_name, blob_name)
-        
-        # Step 2: Extract text pages
-        pages_text = extract_text_from_pdf(temp_file)
-        if not pages_text:
-            print("⚠️ No readable text found in PDF. Ingestion cancelled.")
-            return 0
-            
-        # Step 3: Segment text into overlapping chunks
-        chunks = chunk_text(pages_text)
-        
-        # Step 4: Define Metadata
-        metadata = {
-            "grade": str(grade),
-            "chapter": chapter_slug,
-            "phase": phase,
-            "board": school_board,
-            "source": blob_name
-        }
-        
-        # Step 5: Embed & Save into Firestore via our RAG service
-        print("⚡ Generating embeddings and writing batch transaction to Firestore...")
-        chunks_stored = store_context_chunks(
-            chunks=chunks,
-            metadata=metadata,
-            doc_prefix=f"gcs_{chapter_slug}_{phase}"
-        )
-        
-        print(f"🎉 SUCCESS! Successfully indexed {chunks_stored} chunks in Firestore '/pdf_chunks'.")
-        return chunks_stored
-        
-    except Exception as e:
-        print(f"❌ Ingestion failed: {str(e)}")
-        raise e
-        
-    finally:
-        # Cleanup temp file securely
-        if temp_file and temp_file.exists():
-            temp_file.unlink()
-            print("🧹 Cleaned up temporary system files.")
+    Knowledge Factory is the sole knowledge publisher for MathVerse. Local
+    PDF ingestion must not write a competing knowledge collection.
+    """
+    del bucket_name, blob_name, grade, chapter_slug, phase, school_board
+    raise RuntimeError(
+        "MathVerse no longer ingests local PDFs into Firestore. "
+        "Publish canonical knowledge through Knowledge Factory."
+    )
 
 
 def gcs_trigger_cloud_function(event, context) -> dict:

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ChapterTest, ChapterTestResult } from "../types/chapter-test";
 
 type ChapterTestTabProps = {
@@ -45,52 +45,57 @@ export default function ChapterTestTab({
 
   const canAutoPrepare = lessonStage === "WRAP";
 
-  const loadChapterTest = async (refresh = false) => {
-    if (!apiBase || !sessionId) {
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-    try {
-      const suffix = refresh ? "?refresh=true" : "";
-      const response = await fetch(
-        `${apiBase}/evaluation/chapter-test/${encodeURIComponent(sessionId)}${suffix}`
-      );
-      if (!response.ok) {
-        throw new Error("Could not load the chapter test.");
+  const loadChapterTest = useCallback(
+    async (refresh = false) => {
+      if (!apiBase || !sessionId) {
+        return;
       }
 
-      const payload = (await response.json()) as ChapterTestResponse;
-      setChapterTest(payload.chapter_test);
-      setResult(payload.latest_result ?? null);
-      setAnswers((current) => {
-        const next: Record<string, string> = {};
-        for (const question of payload.chapter_test.questions) {
-          next[question.id] = current[question.id] ?? "";
+      setIsLoading(true);
+      setError(null);
+      try {
+        const suffix = refresh ? "?refresh=true" : "";
+        const response = await fetch(
+          `${apiBase}/evaluation/chapter-test/${encodeURIComponent(sessionId)}${suffix}`
+        );
+        if (!response.ok) {
+          throw new Error("Could not load the chapter test.");
         }
-        return next;
-      });
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Could not load the chapter test.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+
+        const payload = (await response.json()) as ChapterTestResponse;
+        setChapterTest(payload.chapter_test);
+        setResult(payload.latest_result ?? null);
+        setAnswers((current) => {
+          const next: Record<string, string> = {};
+          for (const question of payload.chapter_test.questions) {
+            next[question.id] = current[question.id] ?? "";
+          }
+          return next;
+        });
+      } catch (loadError) {
+        setError(
+          loadError instanceof Error ? loadError.message : "Could not load the chapter test."
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [apiBase, sessionId]
+  );
 
   useEffect(() => {
     if (!enabled || !sessionId || !apiBase) {
       return;
     }
     void loadChapterTest();
-  }, [apiBase, enabled, sessionId]);
+  }, [apiBase, enabled, loadChapterTest, sessionId]);
 
   useEffect(() => {
     if (!enabled || !canAutoPrepare || !sessionId || !apiBase || chapterTest) {
       return;
     }
     void loadChapterTest();
-  }, [apiBase, canAutoPrepare, chapterTest, enabled, sessionId]);
+  }, [apiBase, canAutoPrepare, chapterTest, enabled, loadChapterTest, sessionId]);
 
   useEffect(() => {
     setChapterTest(null);

@@ -1,7 +1,20 @@
 import React, { useState } from "react";
+import type { PageKey } from "../../App";
 
 type Props = {
-  onNavigate: (page: string) => void;
+  onNavigate: (page: PageKey) => void;
+};
+
+type JeeSolveResult = {
+  question_id?: string;
+  question?: string;
+  answer?: string;
+  solution?: string;
+};
+
+type JeeChatResult = {
+  answer?: string;
+  response?: string;
 };
 
 export default function JeeSolveQuestion({
@@ -15,7 +28,7 @@ export default function JeeSolveQuestion({
     useState(false);
 
   const [result, setResult] =
-    useState<any>(null);
+    useState<JeeSolveResult | null>(null);
 
   const [chatQuestion, setChatQuestion] =
     useState("");
@@ -57,7 +70,7 @@ export default function JeeSolveQuestion({
           );
 
         const data =
-          await response.json();
+          (await response.json()) as JeeSolveResult;
 
         console.log(
           "SOLVE RESPONSE",
@@ -67,17 +80,17 @@ export default function JeeSolveQuestion({
           setResult(data);
           localStorage.setItem(
             "jee_question",
-            data.question
+            data.question || ""
           );
           
           localStorage.setItem(
             "jee_answer",
-            data.answer
+            data.answer || ""
           );
 
           localStorage.setItem(
               "jee_solution",
-              data.solution
+              data.solution || ""
           );
 
       } catch (err) {
@@ -125,7 +138,7 @@ export default function JeeSolveQuestion({
           );
 
         const data =
-          await response.json();
+          (await response.json()) as JeeChatResult;
 
         console.log(
           "CHAT RESPONSE",

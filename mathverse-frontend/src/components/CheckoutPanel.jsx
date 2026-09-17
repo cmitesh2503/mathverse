@@ -5,7 +5,7 @@ const requestTimeoutMs = 15000;
 
 export default function CheckoutPanel({ userId, grade, onSubscriptionUnlocked }) {
   const [promoCode, setPromoCode] = useState('');
-  const [billingMessage, setBillingMessage] = useState('Standard Grade Subscription: ₹500/month');
+  const billingMessage = 'Standard Grade Subscription: ₹500/month';
   const [isLoading, setIsLoading] = useState(false);
 
   const loadRazorpayScript = () => {

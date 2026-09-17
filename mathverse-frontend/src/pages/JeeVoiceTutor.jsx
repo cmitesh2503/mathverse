@@ -1,7 +1,8 @@
 import React, {
 useState,
 useRef,
-useEffect
+useEffect,
+useCallback
 } from "react";
 
 import { Whiteboard } from "../components/Whiteboard";
@@ -46,23 +47,54 @@ const [whiteboardData, setWhiteboardData] =
 useState(null);
 
 const wsRef = useRef(null);
+const hasConnectedRef = useRef(false);
 
-useEffect(() => {
+const speak = useCallback(async (
+text
+) => {
 
 
-if (
-  questionId &&
-  !connected
-) {
+try {
 
-  connectTutor();
+  const response =
+    await fetch(
+      "http://localhost:8000/api/jee/tts",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
+        body: JSON.stringify({
+          text
+        })
+      }
+    );
 
+  const blob =
+    await response.blob();
+
+  const url =
+    URL.createObjectURL(
+      blob
+    );
+
+  const audio =
+    new Audio(url);
+
+  await audio.play();
+
+} catch (err) {
+
+  console.log(
+    err
+  );
 }
 
 
 }, []);
 
-const connectTutor = () => {
+const connectTutor = useCallback(() => {
 
 
 const ws = new WebSocket(
@@ -172,7 +204,32 @@ ws.onclose = () => {
 wsRef.current = ws;
 
 
-};
+}, [
+  questionId,
+  speak
+]);
+
+useEffect(() => {
+
+
+if (
+  !questionId ||
+  hasConnectedRef.current
+) {
+
+  return;
+}
+
+hasConnectedRef.current = true;
+
+connectTutor();
+
+
+
+}, [
+  connectTutor,
+  questionId
+]);
 
 const startRecording = async () => {
 
@@ -269,51 +326,6 @@ if (
 
   setRecording(
     false
-  );
-}
-
-
-};
-
-const speak = async (
-text
-) => {
-
-
-try {
-
-  const response =
-    await fetch(
-      "http://localhost:8000/api/jee/tts",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type":
-            "application/json"
-        },
-        body: JSON.stringify({
-          text
-        })
-      }
-    );
-
-  const blob =
-    await response.blob();
-
-  const url =
-    URL.createObjectURL(
-      blob
-    );
-
-  const audio =
-    new Audio(url);
-
-  await audio.play();
-
-} catch (err) {
-
-  console.log(
-    err
   );
 }
 

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
 
 import ClassWhiteboard, { type WhiteboardPayload } from "./ClassWhiteboard";
 import TeacherAvatar from "./TeacherAvatar";
@@ -11,8 +10,6 @@ import { useChatStore } from "../store/useChatStore";
 const ENV_API_BASE = process.env.NEXT_PUBLIC_API_BASE;
 const ENV_WS_BASE = process.env.NEXT_PUBLIC_WS_BASE;
 const STUDENT_ID_KEY = "mathverse-student-id";
-const LIVE_INPUT_SAMPLE_RATE = 16000;
-
 const dedupeValues = (values: Array<string | undefined>) =>
   Array.from(new Set(values.filter((value): value is string => Boolean(value))));
 
@@ -152,79 +149,9 @@ const getStudentId = () => {
   return next;
 };
 
-const createFreshStudentId = () => {
-  const next = `student-${window.crypto.randomUUID()}`;
-  window.localStorage.setItem(STUDENT_ID_KEY, next);
-  return next;
-};
-
-const formatWhen = (value?: string) => {
-  if (!value) {
-    return "Just now";
-  }
-
-  const date = new Date(value);
-  return date.toLocaleString([], {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-};
-
 const getAudioContextConstructor = () => {
   const browserWindow = window as BrowserWindow;
   return browserWindow.AudioContext || browserWindow.webkitAudioContext;
-};
-
-const downsampleFloat32ToInt16 = (
-  input: Float32Array,
-  inputSampleRate: number,
-  outputSampleRate: number
-) => {
-  if (inputSampleRate === outputSampleRate) {
-    const buffer = new Int16Array(input.length);
-    for (let index = 0; index < input.length; index += 1) {
-      const sample = Math.max(-1, Math.min(1, input[index] ?? 0));
-      buffer[index] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
-    }
-    return buffer;
-  }
-
-  const ratio = inputSampleRate / outputSampleRate;
-  const length = Math.max(1, Math.round(input.length / ratio));
-  const output = new Int16Array(length);
-
-  let outputIndex = 0;
-  let inputIndex = 0;
-  while (outputIndex < length) {
-    const nextIndex = Math.min(input.length, Math.round((outputIndex + 1) * ratio));
-    let sum = 0;
-    let count = 0;
-
-    for (let cursor = inputIndex; cursor < nextIndex; cursor += 1) {
-      sum += input[cursor] ?? 0;
-      count += 1;
-    }
-
-    const sample = count > 0 ? sum / count : input[inputIndex] ?? 0;
-    const clamped = Math.max(-1, Math.min(1, sample));
-    output[outputIndex] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
-    outputIndex += 1;
-    inputIndex = nextIndex;
-  }
-
-  return output;
-};
-
-const uint8ArrayToBase64 = (bytes: Uint8Array) => {
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    const chunk = bytes.subarray(index, index + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return window.btoa(binary);
 };
 
 const base64ToUint8Array = (value: string) => {
@@ -255,14 +182,6 @@ const toSpokenText = (value: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-const getPreviewText = (value: string, maxLength = 240) => {
-  const spoken = toSpokenText(value);
-  if (spoken.length <= maxLength) {
-    return spoken;
-  }
-  return `${spoken.slice(0, maxLength).trimEnd()}...`;
-};
-
 export default function Chat() {
   const avatarProvider = getAvatarProviderConfig();
   const ws = useRef<WebSocket | null>(null);
@@ -272,13 +191,6 @@ export default function Chat() {
   const playbackCursorRef = useRef(0);
   const playbackTimerRef = useRef<number | null>(null);
   const autoListenTimerRef = useRef<number | null>(null);
-  const inputAudioContextRef = useRef<AudioContext | null>(null);
-  const inputSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const inputProcessorRef = useRef<ScriptProcessorNode | null>(null);
-  const inputSilenceRef = useRef<GainNode | null>(null);
-  const inputSilenceTimerRef = useRef<number | null>(null);
-  const inputSpeechDetectedRef = useRef(false);
-  const inputClosingRef = useRef(false);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const activePlaybackSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const speechTurnRequestedRef = useRef(false);
@@ -289,37 +201,27 @@ export default function Chat() {
   const [grade, setGrade] = useState(10);
   const [studentId, setStudentId] = useState("");
   const [sessionMeta, setSessionMeta] = useState<SessionMeta | null>(null);
-  const [archive, setArchive] = useState<ArchiveSession[]>([]);
+  const [, setArchive] = useState<ArchiveSession[]>([]);
   const [lessonState, setLessonState] = useState<LessonStatePayload | null>(null);
   const [wsStatus, setWsStatus] = useState("Offline");
-  const [tutorStatus, setTutorStatus] = useState("Preparing your lesson...");
+  const [, setTutorStatus] = useState("Preparing your lesson...");
   const [isBootstrapping, setIsBootstrapping] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isHandsFreeMode, setIsHandsFreeMode] = useState(true);
-  const [tutorAudioMuted, setTutorAudioMuted] = useState(false);
+  const [isHandsFreeMode] = useState(true);
+  const [tutorAudioMuted] = useState(false);
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   const [speechRecognitionSupported, setSpeechRecognitionSupported] = useState(false);
-  const [liveAudioSupported, setLiveAudioSupported] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [isBiDiStreaming, setIsBiDiStreaming] = useState(false);
-  const [liveReady, setLiveReady] = useState(false);
   const [liveConnected, setLiveConnected] = useState(false);
-  const [showFullTranscript, setShowFullTranscript] = useState(false);
   const [liveAvatarStatus, setLiveAvatarStatus] = useState<LiveAvatarStatusPayload | null>(null);
   const [liveAvatarEmbedUrl, setLiveAvatarEmbedUrl] = useState<string | null>(null);
   const liveSquelchRef = useRef(false);
   const [isBootingHumanAvatar, setIsBootingHumanAvatar] = useState(false);
   const [avatarStatusRefreshKey, setAvatarStatusRefreshKey] = useState(0);
-  const [wsReopenTick, setWsReopenTick] = useState(0);
-  const [mounted, setMounted] = useState(false);
+  const [wsReopenTick] = useState(0);
   const [activeApiBase, setActiveApiBase] = useState<string>(ENV_API_BASE ?? "");
   const [activeWsBase, setActiveWsBase] = useState<string>(ENV_WS_BASE ?? "");
-  const [resourceTab, setResourceTab] = useState<"notes" | "homework">("notes");
   const [activeTab, setActiveTab] = useState("Homework");
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const {
     messages,
@@ -489,7 +391,7 @@ export default function Chat() {
     [activeApiBase]
   );
 
-  const startHumanAvatar = async () => {
+  const startHumanAvatar = useEffectEvent(async () => {
     if (avatarProvider.provider !== "liveavatar" || isBootingHumanAvatar) {
       return;
     }
@@ -525,26 +427,7 @@ export default function Chat() {
     } finally {
       setIsBootingHumanAvatar(false);
     }
-  };
-
-  const startFreshClassroom = () => {
-    const nextStudentId = createFreshStudentId();
-    pauseStudentListening();
-    stopLiveAudioPlayback();
-    clearMessages();
-    setInput("");
-    setArchive([]);
-    setLessonState(null);
-    setSessionMeta(null);
-    setLiveAvatarEmbedUrl(null);
-    setTutorAudioMuted(false);
-    setTutorStatus("Starting a fresh lesson...");
-    void bootstrapSession({
-      gradeOverride: grade,
-      startNew: true,
-      studentIdOverride: nextStudentId,
-    });
-  };
+  });
 
   useEffect(() => {
     setStudentId(getStudentId());
@@ -694,7 +577,6 @@ export default function Chat() {
       setSpeechRecognitionSupported(true);
     }
 
-    setLiveAudioSupported(Boolean(getAudioContextConstructor()));
   }, []);
 
   useEffect(() => {
@@ -917,17 +799,12 @@ export default function Chat() {
         window.clearTimeout(speechRestartTimerRef.current);
         speechRestartTimerRef.current = null;
       }
-      if (inputSilenceTimerRef.current) {
-        window.clearTimeout(inputSilenceTimerRef.current);
-        inputSilenceTimerRef.current = null;
-      }
       if (playbackTimerRef.current) {
         window.clearTimeout(playbackTimerRef.current);
         playbackTimerRef.current = null;
       }
       playbackCursorRef.current = 0;
       setIsSpeaking(false);
-      void inputAudioContextRef.current?.close();
       void outputAudioContextRef.current?.close();
     };
   }, []);
@@ -1225,7 +1102,7 @@ export default function Chat() {
         } else {
           throw new Error("Speech recognition not initialized");
         }
-      } catch (err) {
+      } catch {
         speechTurnRequestedRef.current = false;
         setIsListening(false);
         setTutorStatus("Could not start voice input. Please check microphone permissions.");
@@ -1234,15 +1111,6 @@ export default function Chat() {
       setTutorStatus("Microphone access denied. Please enable microphone permissions in browser settings.");
       setIsListening(false);
     });
-  };
-
-  const stopListening = () => {
-    if (!recognitionRef.current || !isListening) {
-      return;
-    }
-
-    pauseStudentListening();
-    setTutorStatus("Voice input stopped.");
   };
 
   const autoStartListening = useEffectEvent(() => {
@@ -1291,203 +1159,6 @@ export default function Chat() {
     speechRecognitionSupported,
     wsStatus,
   ]);
-
-  const finishBiDiTurn = (status = "Sending your question to Ava...") => {
-    if (inputClosingRef.current) {
-      return;
-    }
-
-    inputClosingRef.current = true;
-
-    if (inputSilenceTimerRef.current) {
-      window.clearTimeout(inputSilenceTimerRef.current);
-      inputSilenceTimerRef.current = null;
-    }
-
-    inputProcessorRef.current?.disconnect();
-    inputSourceRef.current?.disconnect();
-    inputSilenceRef.current?.disconnect();
-    inputProcessorRef.current = null;
-    inputSourceRef.current = null;
-    inputSilenceRef.current = null;
-
-    if (inputAudioContextRef.current) {
-      void inputAudioContextRef.current.close();
-      inputAudioContextRef.current = null;
-    }
-
-    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      ws.current.send(JSON.stringify({ type: "audio_stream_end" }));
-    }
-
-    inputSpeechDetectedRef.current = false;
-    setIsBiDiStreaming(false);
-    setTutorStatus(status);
-    inputClosingRef.current = false;
-  };
-
-  const startBiDiStreaming = async () => {
-    if (!liveConnected || !liveAudioSupported || !ws.current) {
-      setTutorStatus("Gemini Live audio is not ready yet.");
-      return;
-    }
-
-    const AudioContextConstructor = getAudioContextConstructor();
-    if (!AudioContextConstructor) {
-      setTutorStatus("Web Audio is not available in this browser.");
-      return;
-    }
-
-    let stream = videoStream;
-    if (!stream || stream.getAudioTracks().length === 0) {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        setVideoStream(stream);
-      } catch {
-        setTutorStatus("Microphone input is not available for the live channel.");
-        return;
-      }
-    }
-
-    stopLiveAudioPlayback();
-    const audioContext = new AudioContextConstructor();
-    await audioContext.resume();
-    inputSpeechDetectedRef.current = false;
-    inputClosingRef.current = false;
-
-    if (inputSilenceTimerRef.current) {
-      window.clearTimeout(inputSilenceTimerRef.current);
-      inputSilenceTimerRef.current = null;
-    }
-
-    const sourceNode = audioContext.createMediaStreamSource(
-      new MediaStream(stream.getAudioTracks())
-    );
-    const processor = audioContext.createScriptProcessor(4096, 1, 1);
-    const silence = audioContext.createGain();
-    silence.gain.value = 0;
-
-    processor.onaudioprocess = (event) => {
-      if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
-        return;
-      }
-
-      const inputData = event.inputBuffer.getChannelData(0);
-      let energy = 0;
-      for (let index = 0; index < inputData.length; index += 1) {
-        const sample = inputData[index] ?? 0;
-        energy += sample * sample;
-      }
-      const rms = Math.sqrt(energy / Math.max(1, inputData.length));
-
-      if (rms > 0.012 && !inputSpeechDetectedRef.current) {
-        // First detection of student voice: hard interrupt tutor audio.
-        inputSpeechDetectedRef.current = true;
-        liveSquelchRef.current = true;
-        stopLiveAudioPlayback();
-        if (ws.current.readyState === WebSocket.OPEN) {
-          ws.current.send(JSON.stringify({ type: "interrupt" }));
-        }
-      }
-
-      const pcm = downsampleFloat32ToInt16(
-        inputData,
-        audioContext.sampleRate,
-        LIVE_INPUT_SAMPLE_RATE
-      );
-      ws.current.send(
-        JSON.stringify({
-          type: "live_input_audio",
-          data: uint8ArrayToBase64(new Uint8Array(pcm.buffer)),
-          sample_rate: LIVE_INPUT_SAMPLE_RATE,
-        })
-      );
-
-      if (rms > 0.016) {
-        inputSpeechDetectedRef.current = true;
-        if (inputSilenceTimerRef.current) {
-          window.clearTimeout(inputSilenceTimerRef.current);
-        }
-        inputSilenceTimerRef.current = window.setTimeout(() => {
-          finishBiDiTurn("Ava is listening and preparing a reply...");
-        }, 1200);
-      }
-    };
-
-    sourceNode.connect(processor);
-    processor.connect(silence);
-    silence.connect(audioContext.destination);
-
-    inputAudioContextRef.current = audioContext;
-    inputSourceRef.current = sourceNode;
-    inputProcessorRef.current = processor;
-    inputSilenceRef.current = silence;
-    setIsBiDiStreaming(true);
-    setTutorStatus("Your turn. Speak naturally, then pause for Ava to answer.");
-  };
-
-  const stopBiDiStreaming = () => {
-    finishBiDiTurn("Live mic channel is off.");
-  };
-
-  const quickPrompt = (prompt: string) => {
-    setInput("");
-    sendMessage(prompt);
-  };
-
-  const selectArchiveSession = (session: ArchiveSession) => {
-    void bootstrapSession({
-      requestedSessionId: session.session_id,
-      gradeOverride: session.grade,
-    });
-  };
-
-  const visibleNotes =
-    lessonState?.note_cards?.length
-      ? lessonState.note_cards
-      : sessionMeta?.lesson_notes?.length
-        ? sessionMeta.lesson_notes
-        : [
-            "Your class notes will appear here as Ava explains the concept.",
-            "Every session is saved so you can revisit it later.",
-          ];
-  const visibleHomework =
-    lessonState?.homework?.length
-      ? lessonState.homework
-      : Array.isArray(sessionMeta?.metadata?.homework)
-        ? sessionMeta.metadata.homework.filter((item): item is string => typeof item === "string")
-        : [
-            "Homework will appear here when Ava finishes the class.",
-            "Each class ends with 2-3 NCERT homework questions.",
-          ];
-  const classDurationMinutes =
-    lessonState?.class_duration_minutes ??
-    (typeof sessionMeta?.metadata?.class_duration_minutes === "number"
-      ? sessionMeta.metadata.class_duration_minutes
-      : 45);
-  const chapterLabel =
-    lessonState?.chapter_label ||
-    (typeof sessionMeta?.metadata?.chapter_label === "string"
-      ? sessionMeta.metadata.chapter_label
-      : "Chapter sequence");
-
-  const visibleTranscriptMessages = showFullTranscript ? messages : messages.slice(-4);
-  const hiddenTurnCount = Math.max(0, messages.length - visibleTranscriptMessages.length);
-  const latestTeacherMessage =
-    [...messages].reverse().find((message) => message.role === "assistant") ?? null;
-  const isTeacherNarrating = isSpeaking || isStreaming;
-  const isFocusScreen = !showFullTranscript;
-  const currentWhiteboard =
-    lessonState?.whiteboard ??
-    ((sessionMeta?.metadata?.whiteboard as WhiteboardPayload | undefined) ?? null);
-  const avatarProviderLabel =
-    mounted && avatarProvider.provider === "liveavatar" && liveAvatarStatus?.configured
-      ? liveAvatarEmbedUrl
-        ? "LiveAvatar Human Video"
-        : "LiveAvatar Ready"
-      : null;
-  const avatarSetupHint =
-    mounted && avatarProvider.provider === "liveavatar" ? liveAvatarStatus?.setup_hint : undefined;
 
   return (
     <div className="h-screen w-full bg-white p-4 flex flex-col gap-4">

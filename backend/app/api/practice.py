@@ -1,15 +1,14 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Optional
-import random
-
-from ..data.question_loader import QUESTIONS
 
 
 # ✅ Request model (FIXES 422)
 class PracticeRequest(BaseModel):
     session_id: str
     answer: Optional[str] = None
+    grade: int = 10
+    chapter: Optional[str] = None
 
 
 router = APIRouter()
@@ -27,29 +26,6 @@ def _get_engine():
 
 # ✅ Track last question
 last_question_id = None
-
-
-# ✅ Question selector (no repetition)
-def select_question(topic="quadratics", difficulty="easy"):
-    global last_question_id
-
-    filtered = [
-        q for q in QUESTIONS
-        if q.get("topic") == topic and q.get("difficulty") == difficulty
-    ]
-
-    if not filtered:
-        return random.choice(QUESTIONS)
-
-    available = [q for q in filtered if q.get("id") != last_question_id]
-
-    if not available:
-        available = filtered
-
-    q = random.choice(available)
-    last_question_id = q.get("id")
-
-    return q
 
 
 # 🔥 ANSWER API (FIXED)
@@ -90,19 +66,21 @@ def next_question(req: PracticeRequest):
         engine = _get_engine()
         state = engine._ensure_state(req.session_id)
 
-        # ✅ NOW SAFE
-        difficulty = engine.get_difficulty(state)
+        from ..services.cbse_exercises import load_chapter_pdf_exercises
 
-        q = select_question(difficulty=difficulty)
+        chapter_title = req.chapter or getattr(state, "chapter_title", "") or getattr(state, "topic", "")
+        problems = load_chapter_pdf_exercises(
+            req.grade or getattr(state, "grade", 10),
+            getattr(state, "chapter_index", 1),
+            chapter_title,
+        )
+        if not problems:
+            return {"question": "No Knowledge Factory practice question is available for this chapter."}
 
-        state.active_problem = q
-
-        print("DIFFICULTY:", difficulty)
-        print("QUESTION:", q.get("prompt"))
-
-        return {
-            "question": q.get("prompt")
-        }
+        question = problems[state.class_problem_cursor % len(problems)]
+        state.class_problem_cursor += 1
+        state.active_problem = question
+        return {"question": question.get("prompt"), "source": "knowledge_factory"}
 
     except Exception as e:
         print("❌ ERROR:", e)

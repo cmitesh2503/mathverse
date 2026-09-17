@@ -8,8 +8,7 @@ from app.core import config
 from ..cache.cache_manager import get_cache, set_cache
 from ..core.firestore_client import (
     FIRESTORE_TIMEOUT_SECONDS,
-    get_firestore_client,
-    resolve_firestore_project_id,
+    get_knowledge_factory_firestore_client,
 )
 
 RAG_COLLECTION = config.MATHVERSE_RAG_COLLECTION
@@ -69,7 +68,7 @@ def _distance_measure_enum():
 
 @lru_cache(maxsize=1)
 def _firestore_client():
-    return get_firestore_client()
+    return get_knowledge_factory_firestore_client()
 
 
 def _collection_ref():
@@ -79,7 +78,7 @@ def _collection_ref():
 @lru_cache(maxsize=1)
 def _init_vertexai() -> None:
     import vertexai
-    project_id = resolve_firestore_project_id()
+    project_id = config.KNOWLEDGE_FACTORY_PROJECT_ID
     if project_id:
         vertexai.init(project=project_id, location=VERTEX_AI_LOCATION)
     else:

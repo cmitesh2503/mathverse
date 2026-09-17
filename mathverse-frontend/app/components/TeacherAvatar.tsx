@@ -27,7 +27,7 @@ const SSR_SAFE_AVATAR_PROVIDER: AvatarProviderConfig = {
   setupHint: "",
 };
 
-const trimCopy = (value: any, maxLength: number) => {
+const trimCopy = (value: unknown, maxLength: number) => {
   if (!value || typeof value !== "string") return "";
 
   if (value.length <= maxLength) {

@@ -19,11 +19,15 @@ export default function Subscription({ onNavigate }: Props) {
   const [unlocked, setUnlocked] = useState(false);
 
   useEffect(() => {
-    const userId = localStorage.getItem("mathverse_user_id");
-    const grade = localStorage.getItem("mathverse_grade");
-    if (userId && grade) {
-      setSignup({ userId, grade });
-    }
+    const timer = window.setTimeout(() => {
+      const userId = localStorage.getItem("mathverse_user_id");
+      const grade = localStorage.getItem("mathverse_grade");
+      if (userId && grade) {
+        setSignup({ userId, grade });
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, []);
 
   return (

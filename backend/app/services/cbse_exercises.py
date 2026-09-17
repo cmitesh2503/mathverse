@@ -5,17 +5,11 @@ import json
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 from app.cache.cache_manager import get_cache, set_cache
 from app.core import config
 
-EXERCISES_SOURCE = config.MATHVERSE_EXERCISES_SOURCE.strip().lower()
-USE_FIRESTORE_EXERCISES = EXERCISES_SOURCE == "firestore"
-ALLOW_LOCAL_EXERCISE_FALLBACK = config.MATHVERSE_EXERCISES_ALLOW_LOCAL_FALLBACK
-
-BACKEND_DIR = Path(__file__).resolve().parents[2]
 GENAI_HTTP_TIMEOUT_MS = 300_000
 
 GRADE_10_PDF_CHAPTERS = {
@@ -83,79 +77,10 @@ class PdfExercise:
         return payload
 
 
-def _clean_text(text: str) -> str:
-    """Cleans up white spacing anomalies from raw extracted string inputs."""
-    if not text:
-        return ""
-    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\xff]", "", text)
-    return " ".join(text.split())
-
-
-def extract_pdf_text(path: Path | str) -> str:
-    """Reads local assets using safe fallback frameworks."""
-    try:
-        from pypdf import PdfReader
-        reader = PdfReader(str(path))
-        return _clean_text("\n".join(page.extract_text() or "" for page in reader.pages))
-    except Exception as e:
-        print(f"Error parsing local PDF asset {path}: {e}")
-        return ""
-
-
 def get_pdf_chapter_number(grade: int, chapter_info: dict[str, Any], fallback: int) -> int:
     """Resolves chapter indices mapping directly to schema matrices."""
     title_slug = str(chapter_info.get("title", "")).lower().replace(" ", "_")
     return GRADE_10_PDF_CHAPTERS.get(title_slug, fallback)
-
-
-def _exercise_segments(text: str) -> list[tuple[str, str]]:
-    matches = list(re.finditer(r"\bEXERCISE\s+(\d+(?:\.\d+)*)\b", text, flags=re.IGNORECASE))
-    segments: list[tuple[str, str]] = []
-    for index, match in enumerate(matches):
-        start = match.end()
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        body = text[start:end]
-        next_section = re.search(r"\n\s*\d+\.\d+\s+[A-Z][A-Za-z]", body)
-        if next_section:
-            body = body[: next_section.start()]
-        segments.append((match.group(1), body.strip()))
-    return segments
-
-
-def _split_questions(body: str) -> list[tuple[str, str]]:
-    body = re.sub(r"\n+", "\n", body)
-    markers = list(re.finditer(r"(?:^|\n)\s*(\d+)\.\s*", body))
-    questions: list[tuple[str, str]] = []
-    for index, marker in enumerate(markers):
-        start = marker.end()
-        end = markers[index + 1].start() if index + 1 < len(markers) else len(body)
-        prompt = body[start:end].strip()
-        prompt = re.sub(r"\s*\n\s*", " ", prompt)
-        prompt = re.sub(r"\s{2,}", " ", prompt).strip(" -")
-        if 12 <= len(prompt) <= 1600:
-            questions.append((marker.group(1), prompt))
-    return questions
-
-
-def _split_subparts(prompt: str) -> list[tuple[str, str]]:
-    text = str(prompt or "").strip()
-    if not text:
-        return []
-    markers = list(re.finditer(r"\(\s*(i{1,3}|iv|v|vi{0,3}|ix|x)\s*\)", text, flags=re.IGNORECASE))
-    if len(markers) < 2:
-        return []
-    stem = text[: markers[0].start()].strip(" :-")
-    parts: list[tuple[str, str]] = []
-    for idx, marker in enumerate(markers):
-        start = marker.end()
-        end = markers[idx + 1].start() if idx + 1 < len(markers) else len(text)
-        roman = marker.group(1).lower()
-        sub = text[start:end].strip(" .;:")
-        if not sub:
-            continue
-        combined = f"{stem} ({roman}) {sub}" if stem else f"({roman}) {sub}"
-        parts.append((roman, combined))
-    return parts
 
 
 def _figure_hint_from_prompt(prompt: str, chapter_title: str) -> str | None:
@@ -191,87 +116,76 @@ def load_chapter_pdf_exercises(
     chapter_index: int,
     chapter_title: str,
 ) -> list[dict[str, Any]]:
-    text = ""
-    if USE_FIRESTORE_EXERCISES:
-        try:
-            from google.cloud import firestore
-            from app.core.firestore_client import get_firestore_client
-            db = get_firestore_client()
-            collection = "pdf_chunks"
-            docs = db.collection(collection).where(filter=firestore.FieldFilter("metadata.phase", "==", "practice")).stream(timeout=10)
-            chunks = []
-            for doc in docs:
-                data = doc.to_dict()
-                meta_ch = str(data.get("metadata", {}).get("chapter", "")).lower()
-                if not meta_ch or meta_ch in chapter_title.lower() or chapter_title.lower() in meta_ch or f"ch_{chapter_index:02d}" in meta_ch:
-                    chunks.append(data.get("text", ""))
-            if chunks:
-                text = "\n\n".join(chunks)
-        except Exception as error:
-            print(f"Firestore practice retrieval failed: {error}")
+    from app.tutor_brain.curriculum import get_grade_curriculum
 
-    if not text:
+    curriculum = get_grade_curriculum(grade)
+    chapter = next(
+        (
+            item
+            for item in curriculum.get("chapters", [])
+            if str(item.get("title", "")).strip().lower() == str(chapter_title).strip().lower()
+            or str(item.get("number", "")) == str(chapter_index)
+        ),
+        None,
+    )
+    if not chapter:
         return []
 
-    exercises: list[PdfExercise] = []
-    segments = _exercise_segments(text)
-    if not segments:
-        segments = [("Practice", text)]
-        
-    for exercise_name, body in segments:
-        for number, prompt in _split_questions(body):
-            subparts = _split_subparts(prompt)
-            fig_hint = _figure_hint_from_prompt(prompt, chapter_title)
-            if subparts:
-                for roman, subprompt in subparts:
-                    exercises.append(
-                        PdfExercise(
-                            chapter_index=chapter_index,
-                            chapter_title=chapter_title,
-                            exercise=f"Exercise {exercise_name}",
-                            number=f"{number}({roman})",
-                            prompt=subprompt,
-                            source_file="firestore_db",
-                            source_file_path=None,
-                            figure_hint=fig_hint
-                        )
-                    )
-            else:
-                exercises.append(
-                    PdfExercise(
-                        chapter_index=chapter_index,
-                        chapter_title=chapter_title,
-                        exercise=f"Exercise {exercise_name}",
-                        number=number,
-                        prompt=prompt,
-                        source_file="firestore_db",
-                        source_file_path=None,
-                        figure_hint=fig_hint
-                    )
-                )
-    return [ex.as_problem() for ex in exercises]
+    package = curriculum.get("knowledge_package") or {}
+    exercises: list[dict[str, Any]] = []
+    for exercise in package.get("exercises") or []:
+        if not isinstance(exercise, dict):
+            continue
+        for question in exercise.get("questions") or []:
+            if not isinstance(question, dict) or not str(question.get("question") or "").strip():
+                continue
+            prompt = str(question["question"]).strip()
+            problem = {
+                "chapter_index": chapter_index,
+                "chapter_title": chapter_title,
+                "exercise": f"Exercise {exercise.get('number') or exercise.get('id') or 'Practice'}",
+                "number": str(question.get("number") or ""),
+                "prompt": prompt,
+                "source_file": "knowledge_factory",
+                "source": "knowledge_factory",
+            }
+            figure_hint = _figure_hint_from_prompt(prompt, chapter_title)
+            if figure_hint:
+                problem["figure_hint"] = figure_hint
+            exercises.append(problem)
+
+    return exercises
 
 
 def load_chapter_pdf_theory(grade: int, chapter_index: int, chapter_title: str = "") -> str:
-    text = ""
-    if USE_FIRESTORE_EXERCISES:
-        try:
-            from google.cloud import firestore
-            from app.core.firestore_client import get_firestore_client
-            db = get_firestore_client()
-            collection = "pdf_chunks"
-            docs = db.collection(collection).where(filter=firestore.FieldFilter("metadata.phase", "==", "theory")).stream(timeout=10)
-            chunks = []
-            for doc in docs:
-                data = doc.to_dict()
-                meta_ch = str(data.get("metadata", {}).get("chapter", "")).lower()
-                if not meta_ch or meta_ch in chapter_title.lower() or chapter_title.lower() in meta_ch or f"ch_{chapter_index:02d}" in meta_ch:
-                    chunks.append(data.get("text", ""))
-            if chunks:
-                text = "\n\n".join(chunks)
-        except Exception as error:
-            print(f"Firestore theory retrieval failed: {error}")
-    return text
+    from app.tutor_brain.curriculum import get_grade_curriculum
+
+    curriculum = get_grade_curriculum(grade)
+    chapter = next(
+        (
+            item
+            for item in curriculum.get("chapters", [])
+            if str(item.get("title", "")).strip().lower() == str(chapter_title).strip().lower()
+            or str(item.get("number", "")) == str(chapter_index)
+        ),
+        None,
+    )
+    if not chapter:
+        return ""
+
+    package = curriculum.get("knowledge_package") or {}
+    chapter_number = str(chapter.get("number") or chapter_index)
+    concepts = [
+        item
+        for item in package.get("concepts") or []
+        if isinstance(item, dict)
+        and str(item.get("section_number") or "").startswith(chapter_number)
+    ]
+    return "\n\n".join(
+        str(item.get("name") or "").strip()
+        for item in concepts
+        if str(item.get("name") or "").strip()
+    )
 
 
 def load_all_pdf_exercises(grade: int, chapters: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -1,125 +1,136 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
+import logging
 from typing import List, Optional
+import logging
 
 from app.core import config
-
-try:
-    from app.core.firestore_client import FIRESTORE_TIMEOUT_SECONDS, get_firestore_client
-    from app.services.cbse_exercises import GRADE_10_PDF_CHAPTERS
-except ModuleNotFoundError:
-    from ..core.firestore_client import FIRESTORE_TIMEOUT_SECONDS, get_firestore_client
-    from ..services.cbse_exercises import GRADE_10_PDF_CHAPTERS
+from app.core.firestore_client import get_knowledge_factory_firestore_client
+from app.services.knowledge_factory.knowledge_factory_client import (
+    KnowledgeFactoryClient,
+)
 
 
-LOCAL_CURRICULUM_DIR = Path(__file__).resolve().parents[1] / "data" / "curriculum"
-USE_FIRESTORE_CURRICULUM = config.MATHVERSE_CURRICULUM_SOURCE.strip().lower() == "firestore"
 _CURRICULUM_CACHE: dict[tuple[int, str], dict] = {}
-CBSE10_CHAPTER_TITLES: dict[str, str] = {
-    "real_numbers": "Real Numbers",
-    "polynomials": "Polynomials",
-    "pair_of_linear_equations": "Pair of Linear Equations in Two Variables",
-    "quadratic_equations": "Quadratic Equations",
-    "arithmetic_progressions": "Arithmetic Progressions",
-    "triangles": "Triangles",
-    "coordinate_geometry": "Coordinate Geometry",
-    "introduction_to_trigonometry": "Introduction to Trigonometry",
-    "applications_of_trigonometry": "Some Applications of Trigonometry",
-    "circles": "Circles",
-    "constructions": "Constructions",
-    "areas_related_to_circles": "Areas Related to Circles",
-    "surface_areas_and_volumes": "Surface Areas and Volumes",
-    "statistics": "Statistics",
-    "probability": "Probability",
-}
+logger = logging.getLogger("mathverse.knowledge_factory")
+logger = logging.getLogger("mathverse.knowledge_factory")
 
 
-def _load_local_curriculum(grade: int, exam: str = "cbse") -> dict:
-    candidates = [
-        LOCAL_CURRICULUM_DIR / f"{exam}_{grade}.json",
-        LOCAL_CURRICULUM_DIR / "cbse_10.json",
-    ]
-    for path in candidates:
-        if not path.exists():
+def _normalise(value: object) -> str:
+    return " ".join(str(value or "").strip().lower().replace("_", " ").split())
+
+
+def _package_to_curriculum(package_id: str, package: dict) -> dict:
+    concepts = package.get("concepts") or []
+    chapters = []
+    for chapter in package.get("chapters") or []:
+        if not isinstance(chapter, dict):
             continue
-        try:
-            with path.open("r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-            if isinstance(payload, dict):
-                return payload
-            if isinstance(payload, list):
-                return {"chapters": payload}
-        except Exception as error:
-            print(f"Local curriculum read failed ({path.name}): {error}")
-    return {}
+        chapter_number = chapter.get("number")
+        chapter_id = str(chapter.get("id") or chapter_number or "").strip()
+        chapter_title = str(chapter.get("title") or "").strip()
+        chapter_concepts = [
+            item
+            for item in concepts
+            if isinstance(item, dict)
+            and (
+                not chapter_number
+                or _normalise(item.get("section_number")).startswith(
+                    _normalise(chapter_number)
+                )
+            )
+        ]
+        chapters.append(
+            {
+                "id": chapter_id,
+                "slug": _normalise(chapter_title).replace(" ", "_"),
+                "number": chapter_number,
+                "title": chapter_title,
+                "summary": "",
+                "concepts": chapter_concepts,
+                "knowledge_package_document_id": package_id,
+            }
+        )
 
-
-def _augment_curriculum_from_pdf(payload: dict, grade: int, exam: str) -> dict:
-    if not isinstance(payload, dict):
-        return payload
-    if str(exam or "").lower() != "cbse" or int(grade or 0) != 10:
-        return payload
-
-    chapters = payload.get("chapters")
-    if not isinstance(chapters, list):
-        chapters = []
-
-    existing_slugs = {str(item.get("slug") or "").strip() for item in chapters if isinstance(item, dict)}
-    for slug, chapter_no in sorted(GRADE_10_PDF_CHAPTERS.items(), key=lambda item: item[1]):
-        if chapter_no <= 0 or slug in existing_slugs:
-            continue
-        title = CBSE10_CHAPTER_TITLES.get(slug, slug.replace("_", " ").title())
-        chapter_obj = {
-            "slug": slug,
-            "title": title,
-            "summary": f"NCERT Class 10 Chapter {chapter_no}: {title}",
-            "book_topics": [title],
-            "concepts": [
-                {
-                    "id": f"{slug}_introduction",
-                    "title": f"Introduction to {title}",
-                    "definition": f"Key ideas from NCERT Class 10 Chapter {chapter_no}: {title}.",
-                    "explanation": f"Understand the main definitions, properties, and theorems used in {title}.",
-                    "board_work": [],
-                    "ncert_examples": [],
-                }
-            ],
-        }
-        chapters.append(chapter_obj)
-
-    payload["chapters"] = chapters
-    return payload
+    return {
+        "document_id": package_id,
+        "schema_version": package.get("schema_version"),
+        "metadata": package.get("metadata") or {},
+        "chapters": chapters,
+        "knowledge_package": package,
+    }
 
 
 def get_grade_curriculum(grade: int, exam: str = "cbse") -> dict:
-    """Fetch grade+exam curriculum from local JSON, with optional Firestore source."""
+    """Fetch curriculum only from the configured Knowledge Factory package."""
     cache_key = (int(grade or 10), str(exam or "cbse").lower())
     cached = _CURRICULUM_CACHE.get(cache_key)
     if cached is not None:
         return cached
 
-    if not USE_FIRESTORE_CURRICULUM:
-        payload = _augment_curriculum_from_pdf(_load_local_curriculum(grade, exam), grade, exam)
-        _CURRICULUM_CACHE[cache_key] = payload
-        return payload
-
     try:
-        db = get_firestore_client()
-        doc_ref = db.collection("curriculums").document(f"{exam}_{grade}")
-        doc = doc_ref.get(timeout=FIRESTORE_TIMEOUT_SECONDS)
-        if doc.exists:
-            data = doc.to_dict()
-            if isinstance(data, dict):
-                payload = _augment_curriculum_from_pdf(data, grade, exam)
-                _CURRICULUM_CACHE[cache_key] = payload
-                return payload
-        print(f"Firestore curriculum missing for {exam}_{grade}. Using local fallback.")
+        client = KnowledgeFactoryClient.from_config(
+            firestore_client=get_knowledge_factory_firestore_client()
+        )
+        packages = client.list_packages()
+        if config.APP_ENV.lower() in {"development", "dev", "test"}:
+            logger.info(
+                "Knowledge Factory lookup subject=Mathematics grade=%s board=%s chapter=<curriculum> document_id=%s source=firestore",
+                grade,
+                exam,
+                config.KNOWLEDGE_FACTORY_DOCUMENT_ID or "<metadata-resolution>",
+            )
     except Exception as error:
-        print(f"Firestore fetch failed: {error}")
+        raise RuntimeError(
+            "Knowledge Factory Firestore could not be read; "
+            "MathVerse has no local knowledge fallback."
+        ) from error
+    selected: tuple[str, dict] | None = None
+    for package_id, package in packages:
+        if config.KNOWLEDGE_FACTORY_DOCUMENT_ID and package_id == config.KNOWLEDGE_FACTORY_DOCUMENT_ID:
+            selected = (package_id, package)
+            break
+        metadata = package.get("metadata") if isinstance(package, dict) else None
+        if not isinstance(metadata, dict):
+            continue
+        if (
+            _normalise(metadata.get("subject")) == _normalise("Mathematics")
+            and _normalise(metadata.get("grade")) in {_normalise(grade), _normalise(f"Grade {grade}")}
+            and _normalise(metadata.get("board")) in {_normalise(exam), _normalise("CBSE")}
+        ):
+            selected = (package_id, package)
+            break
 
-    payload = _augment_curriculum_from_pdf(_load_local_curriculum(grade, exam), grade, exam)
+    if selected is None:
+        raise LookupError(
+            f"No Knowledge Factory package resolved for subject=Mathematics "
+            f"grade={grade} board={exam}. Configure metadata or "
+            "KNOWLEDGE_FACTORY_DOCUMENT_ID; no local fallback is available."
+        )
+
+    if config.APP_ENV.lower() in {"development", "dev", "test"}:
+        logger.info(
+            "Knowledge Factory resolution subject=%s grade=%s board=%s chapter=%s document_id=%s source=firestore",
+            "Mathematics",
+            grade,
+            exam,
+            "<all-chapters>",
+            selected[0],
+        )
+        print(
+            "[mathverse] Knowledge Factory resolution: "
+            f"subject=Mathematics grade={grade} board={exam} "
+            f"chapter=<all-chapters> document_id={selected[0]} source=firestore"
+        )
+
+    payload = _package_to_curriculum(*selected)
+    if config.APP_ENV.lower() in {"development", "dev", "test"}:
+        logger.info(
+            "Knowledge Factory resolved subject=Mathematics grade=%s board=%s chapter=<package> document_id=%s source=firestore",
+            grade,
+            exam,
+            selected[0],
+        )
     _CURRICULUM_CACHE[cache_key] = payload
     return payload
 

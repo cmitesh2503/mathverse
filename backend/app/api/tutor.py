@@ -3330,35 +3330,3 @@ async def ask_tutor(req: TutorRequest):
         logging.getLogger(__name__).exception("Tutor ask endpoint failed with exception")
         print("Tutor ask endpoint failed:", error)
         raise
-
-def _print_startup_report():
-    import os
-    import json
-    app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    packs_dir = os.path.join(app_dir, "data", "curriculum", "packs")
-    if not os.path.exists(packs_dir):
-        return
-    print("\n" + "="*50)
-    print("🚀 MATHVERSE STARTUP REPORT: TEACHING PACKS")
-    print("="*50)
-    for filename in os.listdir(packs_dir):
-        if not filename.endswith(".json"):
-            continue
-        filepath = os.path.join(packs_dir, filename)
-        try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                pack = json.load(f)
-            chapter = pack.get("chapter", filename)
-            concepts = pack.get("concepts", [])
-            missing_whiteboard = sum(1 for c in concepts if not c.get("whiteboard_steps") and not c.get("board_templates"))
-            missing_script = sum(1 for c in concepts if not c.get("teacher_script") and not c.get("board_templates"))
-            print(f"Chapter: {chapter}")
-            print(f"  Concept Count: {len(concepts)}")
-            print(f"  Missing Whiteboard Steps: {missing_whiteboard}")
-            print(f"  Missing Teacher Scripts: {missing_script}")
-            print("-" * 50)
-        except Exception as e:
-            print(f"Error reading {filename}: {e}")
-    print("="*50 + "\n")
-
-_print_startup_report()

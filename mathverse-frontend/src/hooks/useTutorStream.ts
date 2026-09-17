@@ -71,8 +71,6 @@ export function useTutorStream({ sessionId, examMode, teachingLanguage, onRespon
       setActiveStepIndex(null);
       lastGradeRef.current = typeof input.grade === "number" ? input.grade : lastGradeRef.current;
       lastSubjectRef.current = typeof input.subject === "string" ? input.subject : lastSubjectRef.current;
-      const isAutoContinueTurn = options?.silent && String(input.action || "").toLowerCase() === "continue";
-
       try {
         const requestedGrade = typeof input.grade === "number" ? input.grade : undefined;
         const userId = localStorage.getItem("mathverse_user_id") || undefined;

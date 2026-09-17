@@ -4,6 +4,13 @@ import base64
 import json
 import os
 import sys
+import importlib
+
+# Keep the existing ``app.*`` imports working when launched as
+# ``backend.app.main:app`` from the repository root.
+if __package__ and __package__.startswith("backend."):
+    sys.modules.setdefault("app", importlib.import_module("backend.app"))
+import logging
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -47,6 +54,32 @@ from app.api.jee.whiteboard import (
 from app.core import config
 
 app = FastAPI(title="MathVerse API")
+
+
+if config.APP_ENV.lower() in {"development", "dev", "test"}:
+    print(
+        "[mathverse] Knowledge Factory runtime: "
+        f"project={config.KNOWLEDGE_FACTORY_PROJECT_ID or '<missing>'} "
+        f"database={config.KNOWLEDGE_FACTORY_DATABASE_ID} "
+        f"package_collection={config.KNOWLEDGE_FACTORY_PACKAGE_COLLECTION} "
+        f"vector_collection={config.KNOWLEDGE_FACTORY_VECTOR_COLLECTION} "
+        f"environment={config.APP_ENV}"
+    )
+
+logger = logging.getLogger("mathverse.runtime")
+
+
+@app.on_event("startup")
+async def log_runtime_source() -> None:
+    if config.APP_ENV.lower() in {"development", "dev", "test"}:
+        logger.info(
+            "MathVerse runtime source environment=%s project=%s database=%s package_collection=%s vector_collection=%s",
+            config.APP_ENV,
+            config.KNOWLEDGE_FACTORY_PROJECT_ID,
+            config.KNOWLEDGE_FACTORY_DATABASE_ID,
+            config.KNOWLEDGE_FACTORY_PACKAGE_COLLECTION,
+            config.KNOWLEDGE_FACTORY_VECTOR_COLLECTION,
+        )
 
 
 

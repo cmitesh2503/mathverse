@@ -292,24 +292,46 @@ MATHVERSE_ENABLE_FIREBASE = _env_flag(
 # Knowledge Factory
 # ==========================================================
 
+KNOWLEDGE_FACTORY_PROJECT_ID = _env(
+    "KNOWLEDGE_FACTORY_PROJECT_ID",
+    "",
+)
+
+KNOWLEDGE_FACTORY_DATABASE_ID = _env(
+    "KNOWLEDGE_FACTORY_DATABASE_ID",
+    "(default)",
+)
+
+KNOWLEDGE_FACTORY_PACKAGE_COLLECTION = _env(
+    "KNOWLEDGE_FACTORY_PACKAGE_COLLECTION",
+    "knowledge_packages",
+)
+
+KNOWLEDGE_FACTORY_COLLECTION = KNOWLEDGE_FACTORY_PACKAGE_COLLECTION
+
+KNOWLEDGE_FACTORY_VECTOR_COLLECTION = _env(
+    "KNOWLEDGE_FACTORY_VECTOR_COLLECTION",
+    "knowledge_vectors",
+)
+
+KNOWLEDGE_FACTORY_BACKEND_URL = _env(
+    "KNOWLEDGE_FACTORY_BACKEND_URL",
+    "",
+)
+
+KNOWLEDGE_FACTORY_DOCUMENT_ID = _env(
+    "KNOWLEDGE_FACTORY_DOCUMENT_ID",
+    "",
+)
+
 MATHVERSE_CURRICULUM_SOURCE = _env(
     "MATHVERSE_CURRICULUM_SOURCE",
-    "local",
+    "knowledge_factory",
 )
 
 MATHVERSE_EXERCISES_SOURCE = _env(
     "MATHVERSE_EXERCISES_SOURCE",
-    "firestore",
-)
-
-MATHVERSE_EXERCISES_ALLOW_LOCAL_FALLBACK = _env_flag(
-    "MATHVERSE_EXERCISES_ALLOW_LOCAL_FALLBACK",
-    default=False,
-)
-
-MATHVERSE_LOCAL_PDF_ROOT = _env(
-    "MATHVERSE_LOCAL_PDF_ROOT",
-    "offline_assets/pdfs",
+    "knowledge_factory",
 )
 
 # ==========================================================
@@ -318,7 +340,7 @@ MATHVERSE_LOCAL_PDF_ROOT = _env(
 
 MATHVERSE_RAG_COLLECTION = _env(
     "MATHVERSE_RAG_COLLECTION",
-    "pdf_chunks",
+    KNOWLEDGE_FACTORY_VECTOR_COLLECTION,
 )
 
 MATHVERSE_RAG_CACHE_TTL_SECONDS = _env_int(
@@ -543,16 +565,3 @@ def __getattr__(name: str) -> str:
     value = _env_or_secret(name, secret_name)
     globals()[name] = value
     return value
-KNOWLEDGE_FACTORY_PROJECT_ID = _env(
-    "KNOWLEDGE_FACTORY_PROJECT_ID",
-    "knowledge-factory-prod",
-)
-
-KNOWLEDGE_FACTORY_COLLECTION = _env(
-    "KNOWLEDGE_FACTORY_COLLECTION",
-    "knowledge_packages",
-)
-KNOWLEDGE_FACTORY_VECTOR_COLLECTION = _env(
-    "KNOWLEDGE_FACTORY_VECTOR_COLLECTION",
-    "knowledge_vectors",
-)

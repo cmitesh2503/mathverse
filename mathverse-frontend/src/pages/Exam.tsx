@@ -349,15 +349,18 @@ export default function Exam() {
   useEffect(() => {
     if (!examAllowed) return;
     bootstrapSentRef.current = false;
-    setConnectionState("connecting");
-    setConnectionError(null);
-    setCaption("Connecting to the AI Proctor...");
-    setStudentTranscript("");
-    setWhiteboardActions([]);
-    setWarnings(0);
-    setWarningReason(null);
-    setIsTerminated(false);
     assistantBufferRef.current = "";
+
+    const resetStateTimer = window.setTimeout(() => {
+      setConnectionState("connecting");
+      setConnectionError(null);
+      setCaption("Connecting to the AI Proctor...");
+      setStudentTranscript("");
+      setWhiteboardActions([]);
+      setWarnings(0);
+      setWarningReason(null);
+      setIsTerminated(false);
+    }, 0);
 
     const socket = new WebSocket(tutorWsUrl(sessionId));
     socketRef.current = socket;
@@ -384,6 +387,7 @@ export default function Exam() {
     };
 
     return () => {
+      window.clearTimeout(resetStateTimer);
       stopMicrophone();
       stopCameraStream();
       if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {

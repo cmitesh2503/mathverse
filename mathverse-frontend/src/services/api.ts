@@ -303,6 +303,28 @@ export type TestMaterialsUploadPayload = {
   marking_scheme: File;
 };
 
+export type KnowledgeFactoryCurriculum = {
+  source?: string;
+  document_id: string;
+  schema_version?: string;
+  metadata: Record<string, unknown>;
+  knowledge_package?: {
+    concepts?: Array<Record<string, unknown>>;
+    formulas?: Array<Record<string, unknown>>;
+    examples?: Array<Record<string, unknown>>;
+    exercises?: Array<Record<string, unknown>>;
+    figures?: Array<Record<string, unknown>>;
+    sections?: Array<Record<string, unknown>>;
+  };
+  chapters: Array<{
+    id: string;
+    slug: string;
+    number?: number | string | null;
+    title: string;
+    concepts?: Array<Record<string, unknown>>;
+  }>;
+};
+
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 const api = axios.create({
@@ -344,6 +366,11 @@ export async function sendAnswer<T = TutorResponse>(payload: TutorPayload): Prom
 export async function getAttemptHistory(studentId: string): Promise<AttemptRecord[]> {
   const { data } = await api.get<{ attempts: AttemptRecord[] }>(`/api/tutor/attempts/${encodeURIComponent(studentId)}`);
   return data.attempts || [];
+}
+
+export async function getKnowledgeFactoryCurriculum(grade: number): Promise<KnowledgeFactoryCurriculum> {
+  const { data } = await api.get<KnowledgeFactoryCurriculum>(`/session/curriculum/${grade}`);
+  return data;
 }
 
 export async function getStudentMarksheet(studentId: string): Promise<StudentMarksheetResponse> {

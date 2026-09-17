@@ -1,7 +1,4 @@
 from flask import session
-from sentence_transformers import evaluation
-
-from app.api.routes import evaluation
 from app.services.teaching_strategy import TeachingStrategy
 
 
