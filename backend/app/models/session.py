@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -136,6 +137,9 @@ class TutorSessionRecord(BaseModel):
     topic_title: str | None = None
     tutor_name: str = "Ava"
     lesson_stage: str = "INTRO"
+    lesson_id: str = ""
+    current_concept: str = ""
+    concept_index: int = 0
     summary: str = ""
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)

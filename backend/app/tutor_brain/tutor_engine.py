@@ -166,6 +166,7 @@ class ClassroomState:
     homework: list[str] = field(default_factory=list)
     class_duration_minutes: int = CLASS_DURATION_MINUTES
     chapter_label: str = ""
+    lesson_id: str = ""
     exam: str = "cbse"
     active_phase: SessionPhase = SessionPhase.TEACHING
     stats: dict[str, Any] = field(default_factory=_default_stats)
@@ -288,6 +289,17 @@ class TutorEngine:
             state.grade = getattr(session, "grade", state.grade)
             state.active_phase = getattr(session, "active_phase", state.active_phase)
             state.stage = getattr(session, "lesson_stage", state.stage) or state.stage
+            lesson_id = getattr(session, "lesson_id", "")
+            if isinstance(lesson_id, str) and lesson_id.strip():
+                state.lesson_id = lesson_id.strip()
+
+            current_concept = getattr(session, "current_concept", "")
+            if isinstance(current_concept, str) and current_concept.strip():
+                state.current_concept = current_concept.strip()
+
+            concept_index = getattr(session, "concept_index", None)
+            if isinstance(concept_index, int) and concept_index >= 0:
+                state.current_concept_index = concept_index
             if getattr(session, "topic_slug", None):
                 self._set_topic(state, session.grade, session.topic_slug, reset=True)
                 state.stage = getattr(session, "lesson_stage", state.stage) or state.stage

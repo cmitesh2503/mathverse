@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import json
@@ -156,7 +157,9 @@ class SessionService:
             latest_session_id = self._latest_session_id(store, request.student_id, request.grade)
             latest_session: TutorSessionRecord | None = None
             if latest_session_id and latest_session_id in store["sessions"]:
-                latest_session = TutorSessionRecord.model_validate(store["sessions"][latest_session_id])
+                latest_session = TutorSessionRecord.model_validate(
+                    store["sessions"][latest_session_id]
+                )
 
             session_id = request.session_id
             if not request.start_new and not session_id:
@@ -170,15 +173,22 @@ class SessionService:
                 if request.topic_slug and request.topic_slug != session.topic_slug:
                     topic = get_topic(request.grade, request.topic_slug)
                     session.topic_slug = request.topic_slug
-                    session.topic_title = topic["title"] if topic else request.topic_slug.replace("_", " ").title()
+                    session.topic_title = (
+                        topic["title"]
+                        if topic
+                        else request.topic_slug.replace("_", " ").title()
+                    )
                     session.title = self._build_title(request.grade, session.topic_title)
-                    session.summary = f"{session.topic_title or 'Math lesson'} is ready to begin."
+                    session.summary = (
+                        f"{session.topic_title or 'Math lesson'} is ready to begin."
+                    )
                 session.updated_at = utc_now()
             else:
                 seed_metadata: dict = {}
                 topic_slug = request.topic_slug
                 continuing_previous_class = False
                 advancing_to_next_chapter = False
+
                 if not topic_slug and request.start_new and latest_session:
                     if latest_session.lesson_stage == "WRAP":
                         next_topic = get_next_topic(request.grade, latest_session.topic_slug)
@@ -190,22 +200,39 @@ class SessionService:
                     else:
                         topic_slug = latest_session.topic_slug or None
                         continuing_previous_class = True
-                        for key in ("concept_id", "concept_title", "whiteboard", "homework"):
+                        for key in (
+                            "concept_id",
+                            "concept_title",
+                            "whiteboard",
+                            "homework",
+                        ):
                             if key in latest_session.metadata:
                                 seed_metadata[key] = latest_session.metadata[key]
 
                 if not topic_slug:
                     chapters = list_chapters(request.grade)
-                    topic_slug = chapters[0]["slug"] if chapters else get_default_topic_slug(request.grade)
+                    topic_slug = (
+                        chapters[0]["slug"]
+                        if chapters
+                        else get_default_topic_slug(request.grade)
+                    )
 
                 topic = get_topic(request.grade, topic_slug)
                 topic_title = topic["title"] if topic else None
+
                 if advancing_to_next_chapter:
-                    summary = f"Starting the next chapter in order: {topic_title or 'Math lesson'}."
+                    summary = (
+                        f"Starting the next chapter in order: "
+                        f"{topic_title or 'Math lesson'}."
+                    )
                 elif continuing_previous_class:
-                    summary = f"Continuing {topic_title or 'math lesson'} from your last class."
+                    summary = (
+                        f"Continuing {topic_title or 'math lesson'} "
+                        f"from your last class."
+                    )
                 else:
                     summary = f"{topic_title or 'Math lesson'} is ready to begin."
+
                 session = TutorSessionRecord(
                     session_id=session_id or str(uuid.uuid4()),
                     student_id=request.student_id,
@@ -221,12 +248,19 @@ class SessionService:
 
             if session.session_id in profile.session_ids:
                 profile.session_ids = [
-                    current for current in profile.session_ids if current != session.session_id
+                    current
+                    for current in profile.session_ids
+                    if current != session.session_id
                 ]
+
             profile.session_ids.insert(0, session.session_id)
 
             if session.topic_title:
-                recent_topics = [topic for topic in profile.recent_topics if topic != session.topic_title]
+                recent_topics = [
+                    topic
+                    for topic in profile.recent_topics
+                    if topic != session.topic_title
+                ]
                 recent_topics.insert(0, session.topic_title)
                 profile.recent_topics = recent_topics[:8]
 
@@ -258,6 +292,7 @@ class SessionService:
                 raw = store["sessions"].get(session_id)
                 if not raw:
                     continue
+
                 session = TutorSessionRecord.model_validate(raw)
                 if grade is None or session.grade == grade:
                     sessions.append(self._overview(session))
@@ -280,7 +315,11 @@ class SessionService:
 
             session = TutorSessionRecord.model_validate(raw)
             session.transcript.append(
-                TranscriptTurn(role=role, content=content, transport=transport)
+                TranscriptTurn(
+                    role=role,
+                    content=content,
+                    transport=transport,
+                )
             )
             session.updated_at = utc_now()
             session.summary = self._auto_summary(session)
@@ -303,10 +342,13 @@ class SessionService:
             session.lesson_stage = snapshot.stage
             session.topic_slug = snapshot.topic_slug or session.topic_slug
             session.topic_title = snapshot.topic_title or session.topic_title
+
             if snapshot.summary:
                 session.summary = snapshot.summary
+
             if snapshot.note_cards:
                 session.lesson_notes = snapshot.note_cards[:6]
+
             session.metadata.update(
                 {
                     "concept_id": snapshot.concept_id,
@@ -317,6 +359,41 @@ class SessionService:
                     "chapter_label": snapshot.chapter_label,
                 }
             )
+
+            session.updated_at = utc_now()
+            store["sessions"][session_id] = self._serialize(session)
+            self._save_store(store)
+            return session
+
+    def update_lesson_state(
+        self,
+        session_id: str,
+        *,
+        lesson_id: str | None = None,
+        current_concept: str | None = None,
+        concept_index: int | None = None,
+        lesson_stage: str | None = None,
+    ) -> TutorSessionRecord | None:
+        with self._lock:
+            store = self._load_store()
+            raw = store["sessions"].get(session_id)
+            if not raw:
+                return None
+
+            session = TutorSessionRecord.model_validate(raw)
+
+            if lesson_id is not None:
+                session.lesson_id = lesson_id
+
+            if current_concept is not None:
+                session.current_concept = current_concept
+
+            if concept_index is not None and concept_index >= 0:
+                session.concept_index = concept_index
+
+            if lesson_stage is not None:
+                session.lesson_stage = lesson_stage
+
             session.updated_at = utc_now()
             store["sessions"][session_id] = self._serialize(session)
             self._save_store(store)
@@ -340,7 +417,11 @@ class SessionService:
             self._save_store(store)
             return session
 
-    def serialize_session(self, session: TutorSessionRecord, include_transcript: bool = False) -> dict:
+    def serialize_session(
+        self,
+        session: TutorSessionRecord,
+        include_transcript: bool = False,
+    ) -> dict:
         payload = {
             "session_id": session.session_id,
             "student_id": session.student_id,
@@ -358,8 +439,13 @@ class SessionService:
             "lesson_notes": session.lesson_notes,
             "metadata": session.metadata,
         }
+
         if include_transcript:
-            payload["transcript"] = [self._serialize(turn) for turn in session.transcript]
+            payload["transcript"] = [
+                self._serialize(turn)
+                for turn in session.transcript
+            ]
+
         return payload
 
     def build_memory_context(self, session_id: str) -> str:
@@ -372,11 +458,18 @@ class SessionService:
             session = TutorSessionRecord.model_validate(raw)
             recent_turns = session.transcript[-6:]
             history = "\n".join(
-                f"{turn.role.title()}: {turn.content}" for turn in recent_turns if turn.content
+                f"{turn.role.title()}: {turn.content}"
+                for turn in recent_turns
+                if turn.content
             )
 
-            notes = "\n".join(f"- {note}" for note in session.lesson_notes[:4])
+            notes = "\n".join(
+                f"- {note}"
+                for note in session.lesson_notes[:4]
+            )
+
             topic_label = session.topic_title or "current topic"
+
             previous_sessions = self._sessions_for_student(
                 store,
                 session.student_id,
@@ -398,21 +491,32 @@ class SessionService:
                 f"Lesson stage: {session.lesson_stage}\n"
                 f"Session summary: {session.summary}\n"
                 f"Key notes:\n{notes or '- No notes yet.'}\n"
-                f"Recent conversation:\n{history or 'No prior conversation yet.'}\n"
+                f"Recent conversation:\n"
+                f"{history or 'No prior conversation yet.'}\n"
                 f"Memory from earlier saved classes:\n"
                 f"{previous_memory or '- No earlier saved classes yet.'}"
             )
 
     def _auto_summary(self, session: TutorSessionRecord) -> str:
         topic_label = session.topic_title or "Math lesson"
+
         last_user = next(
-            (turn.content for turn in reversed(session.transcript) if turn.role == "user"),
+            (
+                turn.content
+                for turn in reversed(session.transcript)
+                if turn.role == "user"
+            ),
             "",
         )
+
         if not last_user:
             return session.summary or f"{topic_label} is ready to begin."
+
         preview = last_user.strip().replace("\n", " ")
-        preview = preview[:100] + ("..." if len(preview) > 100 else "")
+        preview = preview[:100] + (
+            "..." if len(preview) > 100 else ""
+        )
+
         return f"{topic_label}: recently discussed '{preview}'."
 
 
