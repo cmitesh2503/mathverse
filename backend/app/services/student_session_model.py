@@ -25,15 +25,16 @@ class TeachingState(str, Enum):
     HINT = "hint"
     CHECK_UNDERSTANDING = "check_understanding"
     WHITEBOARD = "whiteboard"
-    
-    class LessonStage(str, Enum):
-        CHAPTER_INTRO = "chapter_intro"
-        CONCEPT_EXPLANATION = "concept_explanation"
-        UNDERSTANDING_CHECK = "understanding_check"
-        WORKED_EXAMPLE = "worked_example"
-        STUDENT_PRACTICE = "student_practice"
-        EXERCISE = "exercise"
-        SUMMARY = "summary"
+
+
+class LessonStage(str, Enum):
+    CHAPTER_INTRO = "chapter_intro"
+    CONCEPT_EXPLANATION = "concept_explanation"
+    UNDERSTANDING_CHECK = "understanding_check"
+    WORKED_EXAMPLE = "worked_example"
+    STUDENT_PRACTICE = "student_practice"
+    EXERCISE = "exercise"
+    SUMMARY = "summary"
 
 
 @dataclass
