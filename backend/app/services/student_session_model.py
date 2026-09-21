@@ -25,6 +25,15 @@ class TeachingState(str, Enum):
     HINT = "hint"
     CHECK_UNDERSTANDING = "check_understanding"
     WHITEBOARD = "whiteboard"
+    
+    class LessonStage(str, Enum):
+        CHAPTER_INTRO = "chapter_intro"
+        CONCEPT_EXPLANATION = "concept_explanation"
+        UNDERSTANDING_CHECK = "understanding_check"
+        WORKED_EXAMPLE = "worked_example"
+        STUDENT_PRACTICE = "student_practice"
+        EXERCISE = "exercise"
+        SUMMARY = "summary"
 
 
 @dataclass
@@ -57,6 +66,16 @@ class StudentSessionModel:
     current_teaching_state: TeachingState = field(
         default=TeachingState.EXPLAIN
     )
+    
+    # Additive lesson-level state.
+    # Existing question-tutoring behavior remains unchanged.
+    lesson_id: str = ""
+
+    current_concept: str = ""
+
+    concept_index: int = 0
+
+    lesson_stage: LessonStage = LessonStage.CHAPTER_INTRO
 
     started_at: datetime = field(
         default_factory=datetime.utcnow
